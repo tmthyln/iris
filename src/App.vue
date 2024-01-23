@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import Sidebar from "./components/Sidebar.vue";
 import Navbar from "./components/Navbar.vue";
+
+import {onMounted} from "vue";
+
+onMounted(async () => {
+    await fetch('/api/create', {
+        method: 'POST',
+    })
+})
 </script>
 
 <template>
