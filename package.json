@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build",
-    "preview": "vite preview"
+    "build": "vite build",
+    "typecheck": "vue-tsc"
   },
   "dependencies": {
     "bulma": "^0.9.4",
