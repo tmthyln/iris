@@ -6,23 +6,13 @@ export default [
         path: '/',
         component: Home,
     }, {
-        name: 'podcast',
-        path: '/podcasts/:guid',
+        name: 'subscription',
+        path: '/subscriptions/:guid',
         component: () => import('../components/SubscriptionView.vue'),
         props: true,
     }, {
-        name: 'episode',
-        path: '/podcasts/episode/:guid',
-        component: () => import('../components/ItemView.vue'),
-        props: true,
-    }, {
-        name: 'blog',
-        path: '/blogs/:guid',
-        component: () => import('../components/SubscriptionView.vue'),
-        props: true,
-    }, {
-        name: 'post',
-        path: '/blogs/post/:guid',
+        name: 'item',
+        path: '/subscriptions/item/:guid',
         component: () => import('../components/ItemView.vue'),
         props: true,
     },
