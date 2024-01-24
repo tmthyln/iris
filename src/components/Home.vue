@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import SubscriptionPreview from "./SubscriptionPreview.vue";
 import {ref} from "vue";
+import ItemPreview from "./ItemPreview.vue";
 
 const showFeedAdder = ref(false);
 
@@ -32,22 +33,32 @@ async function submitFeedURL() {
   <div>
 
     <section class="section">
-      <h2 class="is-flex is-align-items-center title is-3">
+      <h2 class="is-flex is-align-items-center title is-2">
         Subscriptions
         <button class="button is-small is-primary ml-5" aria-hidden="true" @click="showFeedAdder = true">Add Feed</button>
       </h2>
 
-      <div>
-        <SubscriptionPreview/>
+      <div class="is-flex">
+        <SubscriptionPreview class="mr-4"/>
+        <SubscriptionPreview class="mr-4"/>
+        <SubscriptionPreview class="mr-4"/>
+        <SubscriptionPreview class="mr-4"/>
+        <SubscriptionPreview class="mr-4"/>
       </div>
     </section>
 
     <section class="section">
-      <h2 class="title is-3">
+      <h2 class="title is-2">
         Everything
       </h2>
 
-
+      <div>
+        <ItemPreview class="mb-6"/>
+        <ItemPreview class="mb-6"/>
+        <ItemPreview class="mb-6"/>
+        <ItemPreview class="mb-6"/>
+        <ItemPreview class="mb-6"/>
+      </div>
     </section>
 
     <div class="modal" :class="{'is-active': showFeedAdder}">

@@ -7,10 +7,10 @@
     <p class="menu-label">Category A</p>
 
     <ul class="menu-list">
-      <li><a>Podcast</a></li>
-      <li><a class="is-active">Someone's Blog</a></li>
-      <li><a>Other Podcast</a></li>
-      <li><a>Personal Blog &amp; Comics</a></li>
+      <li><router-link :to="{name: 'subscription', params: {guid: 'jifej5if-3huf388fedhf'}}">Podcast</router-link></li>
+      <li><router-link :to="{name: 'subscription', params: {guid: 'jifej5if-3huf388fedhf'}}" class="is-active">Someone's Blog</router-link></li>
+      <li><router-link :to="{name: 'subscription', params: {guid: 'jifej5if-3huf388fedhf'}}">Other Podcast</router-link></li>
+      <li><router-link :to="{name: 'subscription', params: {guid: 'jifej5if-3huf388fedhf'}}">Personal Blog &amp; Comics</router-link></li>
     </ul>
 
     <p class="menu-label">Category 2</p>
