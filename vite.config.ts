@@ -4,14 +4,14 @@ import viteCompression from 'vite-plugin-compression'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-      vue(),
-      viteCompression({
-        algorithm: 'gzip',
-      }),
-      viteCompression({
-        algorithm: 'brotliCompress',
-        ext: 'br',
-      }),
-  ],
+    plugins: [
+        vue(),
+        viteCompression({
+            algorithm: 'gzip',
+        }),
+        viteCompression({
+            algorithm: 'brotliCompress',
+            ext: 'br',
+        }),
+    ],
 })
