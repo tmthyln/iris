@@ -17,5 +17,5 @@ Features I don't care much about:
 ## Development
 
 ```shell
-npx wrangler pages dev --d1 DB=<database-id> -- npm run dev
+npx wrangler pages dev --r2=RSS_CACHE_BUCKET --d1 DB=<database-id> -- npm run dev
 ```
