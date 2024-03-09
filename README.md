@@ -1,4 +1,4 @@
-# Iris - an attempt to create an RSS aggregator
+# Iris - a simple opinionated feed aggregator
 
 Due to the decommissioning of Google Podcasts in April 2024,
 this is my attempt to create a replacement podcast aggregator.
@@ -8,7 +8,7 @@ While I'm at it, I might as well try to make a full RSS reader
 Features I care about:
 - Listing podcast and blog episodes
 - Tracking which episodes I have already watched/posts I have already read
-- Complete lists of episodes/posts (many RSS feeds have a recency bias)
+- Complete lists of episodes/posts (many RSS feeds are only an incomplete set)
 - Playback and queueing of episodes; displaying blog posts, comics, etc.
 
 Features I don't care much about:
@@ -28,10 +28,12 @@ npx wrangler pages dev --r2=RSS_CACHE_BUCKET --d1 DB=<database-id> -- npm run de
 4. Set up R2 buckets for prod and preview.
 5. Adding D1 and R2 bindings to Pages Functions.
 6. Set up Cloudflare Zero Trust protection to gateway access to the webapp (optional).
+7. Visit the site for the first time.
+8. Deploy the updater worker and bind the D1 databases and R2 buckets.
 
 ## Pricing
 
-The cost for hosting the code and data is lower than I originally projected.
+The cost for hosting the code and data is lower than I originally guessed.
 There are multiple Cloudflare services used with pricing models:
 - D1 (currently in beta)
 - R2 bucket storage
@@ -88,5 +90,7 @@ The website frontend does not make any calls that touch R2.
 
 ### Pages
 
-Pages is free to build and host. 
-(The domain is not, but I already pay for that separately.)
+Pages is free to build and host if you don't build too frequently
+(which should be the case in a production deployment). 
+(The domain is not, but I already pay for that separately
+and is not a required component.)
