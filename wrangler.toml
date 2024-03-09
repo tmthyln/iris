@@ -1,0 +1,5 @@
+[[ d1_databases ]]
+binding = "DB"
+database_name = "iris"
+database_id = "962886b7-e979-475d-9b74-c22f56a24eb6"
+preview_database_id = "6dc72db6-7c48-4049-ba75-ac83ae139b6f"
