@@ -9,5 +9,5 @@ export async function onRequestGet(context) {
             ORDER BY feed_item.date DESC`)
         .all()
 
-    return Response.json(results.map(item => new ClientFeedItem(new ServerFeedItem(results))))
+    return Response.json(results.map(item => new ClientFeedItem(new ServerFeedItem(item))))
 }
