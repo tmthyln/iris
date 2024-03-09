@@ -3,6 +3,7 @@
 CREATE INDEX IF NOT EXISTS ix_feed__last_updated ON feed(last_updated DESC) WHERE active = TRUE;
 
 CREATE INDEX IF NOT EXISTS ix_feed_item__source_feed ON feed_item(source_feed);
+CREATE INDEX IF NOT EXISTS ix_feed_item__date ON feed_item(date DESC);
 
 CREATE INDEX IF NOT EXISTS ix_feed_source__referenced_feed ON feed_source(referenced_feed);
 
