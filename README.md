@@ -84,9 +84,15 @@ $0.82125/year for the Class A operations and $0.0657/year for Class B operations
 
 The website frontend does not make any calls that touch R2.
 
-### D1
-
 ### Workers
+
+The feed updater worker runs once an hour and 
+refreshes feeds from their active feed sources.
+Not every feed will be fetched hourly
+(depending on an estimate of each feed's update frequency),
+and most feeds will not have updates every time they're fetched.
+
+### D1
 
 ### Pages
 
