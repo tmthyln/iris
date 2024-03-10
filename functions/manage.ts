@@ -72,7 +72,8 @@ export async function getFeedItems(db: D1Database) {
             SELECT feed_item.* FROM feed_item
             JOIN feed ON feed_item.source_feed = feed.guid
             WHERE feed.active = TRUE
-            ORDER BY feed_item.date DESC`)
+            ORDER BY feed_item.date DESC
+            LIMIT 20`)
         .all()
 
     return results.map(item => new ServerFeedItem(item, 'persisted'))
