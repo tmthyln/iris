@@ -153,7 +153,7 @@ export class ServerFeed extends ServerEntity {
         this.image_alt = data.image_alt
         this.last_updated = asDate(data.last_updated)
         this.update_frequency = data.update_frequency
-        this.link = data.link
+        this.link = data.link ?? ''
         this.categories = asStringList(data.categories)
     }
 
@@ -253,7 +253,7 @@ export class ServerFeedItem extends ServerEntity {
         this.enclosure_type = data.enclosure_type
         this.duration = data.duration
         this.duration_unit = data.duration_unit
-        this.encoded_content = data.encoded_content
+        this.encoded_content = data.encoded_content ?? ''
         this.keywords = asStringList(data.keywords)
         this.finished = asBoolean(data.finished)
         this.progress = data.progress
