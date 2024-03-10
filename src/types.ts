@@ -10,6 +10,7 @@ export interface Feed {
     image_src: string,
     image_alt: string,
     last_updated: string,
+    update_frequency: number,
     link: string,
     categories: string[],
 }

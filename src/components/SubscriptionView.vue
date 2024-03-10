@@ -23,6 +23,12 @@ const {data: feedItems} = useFetch(feedItemsUrl).json()
 
     <div class="mt-4">{{ feed.description }}</div>
 
+    <div class="mt-5">
+      <em>
+        Updates about every {{ feed.update_frequency }} day{{ feed.update_frequency === 1 ? '' : 's' }}
+      </em>
+    </div>
+
     <section class="mt-6">
       <h2 class="title is-2">All Items</h2>
 
