@@ -2,7 +2,6 @@ import type {D1Database, R2Bucket} from "@cloudflare/workers-types";
 import {ServerFeed, ServerFeedFile, ServerFeedItem, ServerFeedSource} from "./models";
 import {ChannelData, ChannelItemData, sha256Encode} from "./utils/files";
 import {SuccessfulFetchResult} from "./types";
-import {asBoolean, asDate, asStringList} from "./utils/conversion";
 
 /******************************************************************************
  * Read-only queries
