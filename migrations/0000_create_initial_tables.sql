@@ -13,11 +13,11 @@ CREATE TABLE IF NOT EXISTS feed (
     description TEXT NOT NULL,
     author TEXT NOT NULL,
     type TEXT NOT NULL,
-    ongoing BOOLEAN,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
+    ongoing INTEGER,
+    active INTEGER NOT NULL DEFAULT TRUE,
     image_src TEXT,
     image_alt TEXT,
-    last_updated DATETIME NOT NULL,
+    last_updated TEXT NOT NULL,
     update_frequency REAL NOT NULL,
     link TEXT NOT NULL,
     categories TEXT NOT NULL
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS feed_item (
      title TEXT NOT NULL,
      description TEXT NOT NULL,
      link TEXT NOT NULL,
-     date DATE,
+     date TEXT,
      enclosure_url TEXT,
      enclosure_length INTEGER,
      enclosure_type TEXT,
@@ -39,23 +39,23 @@ CREATE TABLE IF NOT EXISTS feed_item (
      duration_unit TEXT,
      encoded_content TEXT NOT NULL,
      keywords TEXT NOT NULL,
-     finished BOOLEAN NOT NULL DEFAULT FALSE,
+     finished INTEGER NOT NULL DEFAULT FALSE,
      progress REAL NOT NULL DEFAULT 0.0
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS feed_source (
     feed_url TEXT PRIMARY KEY NOT NULL,
     referenced_feed TEXT NOT NULL REFERENCES feed(guid) ON DELETE CASCADE ON UPDATE CASCADE,
-    actively_updating BOOLEAN NOT NULL DEFAULT TRUE,
-    last_updated DATETIME NOT NULL,
-    last_fetched DATETIME NOT NULL,
-    archive BOOLEAN NOT NULL DEFAULT FALSE,
-    primary_source BOOLEAN NOT NULL
+    actively_updating INTEGER NOT NULL DEFAULT TRUE,
+    last_updated TEXT NOT NULL,
+    last_fetched TEXT NOT NULL,
+    archive INTEGER NOT NULL DEFAULT FALSE,
+    primary_source INTEGER NOT NULL
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS feed_file (
     feed_url TEXT NOT NULL REFERENCES feed_source(feed_url) ON DELETE CASCADE ON UPDATE CASCADE,
-    fetched_at DATETIME NOT NULL,
+    fetched_at TEXT NOT NULL,
     referenced_feed TEXT NOT NULL REFERENCES feed(guid) ON DELETE CASCADE ON UPDATE CASCADE,
     cached_file TEXT NOT NULL,
     sha256_hash TEXT UNIQUE NOT NULL,
