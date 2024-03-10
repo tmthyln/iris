@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import Sidebar from "./components/Sidebar.vue";
 import Navbar from "./components/Navbar.vue";
+import {useFeedStore} from "./stores/feeds.ts";
+import {onMounted} from "vue";
+
+const feedStore = useFeedStore()
+
+onMounted(feedStore.loadFeeds)
 </script>
 
 <template>
