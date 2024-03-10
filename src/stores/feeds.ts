@@ -1,50 +1,49 @@
 import {defineStore} from "pinia";
+import type {Feed} from "../types.ts";
 
-interface Feed {
-    guid: string,
-    title: string,
-    description: string,
-    author: string,
-    type: string,
-    ongoing: boolean | null,
-    active: boolean,
-    image_src: string,
-    image_alt: string,
-    last_updated: string,
-    link: string,
-    categories: string[],
-}
-
-interface FeedItem {
-    guid: string,
-    sourceFeed: string,
-    season: number | null,
-    episode: number | null,
-    title: string,
-    description: string,
-    link: string,
-    date: string | null,
-    enclosure_url: string | null,
-    enclosure_length: number | null,
-    enclosure_type: string | null,
-    duration: number | null,
-    duration_unit: string | null,
-    encoded_content: string,
-    keywords: string[],
-    finished: boolean,
-    progress: number | null,
+interface FeedStoreState {
+    feeds: Feed[]
 }
 
 export const useFeedStore = defineStore('feeds', {
-    state() {
+    state(): FeedStoreState {
         return {
-
+            feeds: [],
         }
     },
     getters: {
+        feedsByCategory: (state: FeedStoreState) => state.feeds.reduce((map, feed) => {
+            feed.categories.forEach(category => {
+                if (map.hasOwnProperty(category)) {
+                    map[category].push(feed)
+                } else {
+                    map[category] = [feed]
+                }
+            })
 
+            if (feed.categories.length === 0) {
+                if (map.hasOwnProperty('Uncategorized')) {
+                    map['Uncategorized'].push(feed)
+                } else {
+                    map['Uncategorized'] = [feed]
+                }
+            }
+
+            return map
+        }, {}),
     },
     actions: {
+        async loadFeeds() {
+            const response = await fetch('/api/feed')
+            if (response.ok) {
+                const data = await response.json();
 
+                this.feeds.length = 0;
+                this.feeds.push(...data);
+            }
+        },
+        getFeedById(guid: string) {
+            return this.feeds.find(feed => feed.guid === guid) ?? null;
+        }
     },
 })
