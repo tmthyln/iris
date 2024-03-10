@@ -6,7 +6,7 @@ interface PathParams {
 }
 
 export async function onRequestGet(context) {
-    const feedItemGuid = context.params.guid;
+    const feedItemGuid = decodeURIComponent(context.params.guid);
 
     const feedItem = await getFeedItem(context.env.DB, feedItemGuid)
 
