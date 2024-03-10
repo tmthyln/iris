@@ -2,6 +2,8 @@
 import SubscriptionPreview from "./SubscriptionPreview.vue";
 import {ref} from "vue";
 import ItemPreview from "./ItemPreview.vue";
+import {useFeedStore} from "../stores/feeds.ts";
+import {useFetch} from "@vueuse/core";
 
 const showFeedAdder = ref(false);
 
@@ -27,6 +29,10 @@ async function submitFeedURL() {
         })
     })
 }
+
+const feedStore = useFeedStore()
+
+const { isFetching, data: allFeedItems } = useFetch('/api/feeditem').json()
 </script>
 
 <template>
@@ -38,12 +44,11 @@ async function submitFeedURL() {
         <button class="button is-small is-primary ml-5" aria-hidden="true" @click="showFeedAdder = true">Add Feed</button>
       </h2>
 
-      <div class="is-flex">
-        <SubscriptionPreview class="mr-4"/>
-        <SubscriptionPreview class="mr-4"/>
-        <SubscriptionPreview class="mr-4"/>
-        <SubscriptionPreview class="mr-4"/>
-        <SubscriptionPreview class="mr-4"/>
+      <div class="is-flex mb-6">
+        <SubscriptionPreview
+            v-for="feed in feedStore.feeds" :key="feed.guid"
+            :feed="feed"
+            class="mr-4"/>
       </div>
     </section>
 
@@ -53,11 +58,10 @@ async function submitFeedURL() {
       </h2>
 
       <div>
-        <ItemPreview class="mb-6"/>
-        <ItemPreview class="mb-6"/>
-        <ItemPreview class="mb-6"/>
-        <ItemPreview class="mb-6"/>
-        <ItemPreview class="mb-6"/>
+        <ItemPreview
+            v-for="feedItem in allFeedItems" :key="feedItem.guid"
+            :feed-item="feedItem"
+            class="mb-6"/>
       </div>
     </section>
 

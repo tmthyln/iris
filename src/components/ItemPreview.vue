@@ -1,19 +1,33 @@
 <script setup lang="ts">
-defineProps<{
-    subscription: any,
+import {FeedItemPreview} from "../types.ts";
+import {useTimeAgo} from "@vueuse/core";
+import {useFeedStore} from "../stores/feeds.ts";
+import {computed} from "vue";
+
+const props = defineProps<{
+    feedItem: FeedItemPreview,
 }>();
+
+const feedStore = useFeedStore()
+const feed = computed(() => feedStore.getFeedById(props.feedItem.source_feed))
+const formattedPubDate = useTimeAgo(props.feedItem.date)
 </script>
 
 <template>
   <div>
-    <small>5 days ago</small>
+    <small>{{ formattedPubDate }}</small>
 
-    <h3 class="title is-3"><router-link :to="{name: 'item', params: {guid: 'fjifjeij0=fut3ijijfeifhc-3jfj'}}">Episode or Post Title</router-link></h3>
+    <h3 class="title is-3">
+      <router-link :to="{name: 'item', params: {guid: feedItem.guid}}">
+        {{ feedItem.title }}
+      </router-link>
+    </h3>
+    <div class="subtitle">
+      From <router-link :to="{name: 'subscription', params: {guid: feed.guid}}"><em>{{ feed.title }}</em></router-link>
+    </div>
 
-    <div>
-      This is the description. This is either the show notes if this item is a podcast episode or a snippet of the content
-      if this is a blog post. If this item is an image (like a comic), then this is probably a description of the image or
-      maybe alt text.
+    <!-- TODO: remove this injection vulnerability -->
+    <div class="content" v-html="feedItem.description">
     </div>
   </div>
 </template>
