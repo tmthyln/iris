@@ -1,17 +1,42 @@
-import {unixEpoch} from "./utils/dates";
 import type {D1Database, R2Bucket} from '@cloudflare/workers-types'
+import {asBoolean, asDate, asStringList} from "./utils/conversion";
+
+type PersistenceState = 'new' | 'dirty' | 'persisted'
+
+interface PersistToOptions {
+    onConflict?: 'update' | 'ignore'
+    updateExcludeFields?: string[]
+}
 
 abstract class ServerEntity {
+    protected state: PersistenceState = 'new'
 
-    protected constructor(protected readonly tableName: string) {}
+    protected constructor(readonly tableName, state: PersistenceState = 'new') {
+        this.state = state;
+    }
 
-    protected async persistTo(db: D1Database, data, on_conflict: string | null = 'DO NOTHING') {
+    protected async persistTo(db: D1Database, data, options: PersistToOptions = {}) {
+        const {
+            onConflict = 'ignore',
+            updateExcludeFields = [],
+        }: PersistToOptions = options
+
         const columnNames = Object.keys(data)
         const placeholders = new Array(columnNames.length).fill('?')
-        const values = Object.values(data)
+        const values = [...Object.values(data)]
+
         let stmt = `INSERT INTO ${this.tableName} (${columnNames.join(', ')}) VALUES (${placeholders.join(', ')})`;
-        if (on_conflict !== null) {
-            stmt += ` ON CONFLICT ${on_conflict}`
+
+        if (onConflict === 'ignore') {
+            stmt += ' ON CONFLICT DO NOTHING'
+        } else if (onConflict === 'update') {
+            const updateData = Object.entries(data)
+                .filter(([key, _]) => !updateExcludeFields.includes(key))
+            const updateAssignments = updateData.map(([key, _]) => `${key} = ?`)
+            const updateValues = updateData.map(([_, value]) => value)
+
+            stmt += ` ON CONFLICT DO UPDATE SET ${updateAssignments.join(', ')}`
+            values.push(...updateValues)
         }
 
         await db.prepare(stmt).bind(...values).run()
@@ -27,11 +52,11 @@ export class ServerFeedFile extends ServerEntity {
 
     readonly #rawText: string;
 
-    constructor(data, rawText = null) {
-        super('feed_file');
+    constructor(data, rawText = null, state: PersistenceState = 'new') {
+        super('feed_file', state);
 
         this.feed_url = data.feed_url;
-        this.fetched_at = data.fetched_at;
+        this.fetched_at = asDate(data.fetched_at);
         this.referenced_feed = data.referenced_feed;
         this.cached_file = data.cached_file;
         this.sha256_hash = data.sha256_hash;
@@ -46,10 +71,12 @@ export class ServerFeedFile extends ServerEntity {
 
         await super.persistTo(db, {
             feed_url: this.feed_url,
-            fetched_at: unixEpoch(this.fetched_at),
+            fetched_at: this.fetched_at.toISOString(),
             referenced_feed: this.referenced_feed,
             cached_file: this.cached_file,
             sha256_hash: this.sha256_hash,
+        }, {
+            onConflict: 'ignore',
         });
     }
 }
@@ -63,16 +90,16 @@ export class ServerFeedSource extends ServerEntity {
     archive: boolean;
     primary_source: boolean;
 
-    constructor(data) {
-        super('feed_source');
+    constructor(data, state: PersistenceState = 'new') {
+        super('feed_source', state);
 
         this.feed_url = data.feed_url
         this.referenced_feed = data.referenced_feed
-        this.actively_updating = Boolean(parseInt(data.actively_updating ?? 1))
-        this.last_updated = data.last_updated
-        this.last_fetched = data.last_fetched
-        this.archive = Boolean(parseInt(data.archive ?? 0))
-        this.primary_source = Boolean(parseInt(data.primary_source))
+        this.actively_updating = asBoolean(data.actively_updating ?? 1)
+        this.last_updated = asDate(data.last_updated)
+        this.last_fetched = asDate(data.last_fetched)
+        this.archive = asBoolean(data.archive ?? 0)
+        this.primary_source = asBoolean(data.primary_source)
     }
 
     async persistTo(db) {
@@ -80,10 +107,13 @@ export class ServerFeedSource extends ServerEntity {
             feed_url: this.feed_url,
             referenced_feed: this.referenced_feed,
             actively_updating: this.actively_updating,
-            last_updated: unixEpoch(this.last_updated),
-            last_fetched: unixEpoch(this.last_fetched),
+            last_updated: this.last_updated.toISOString(),
+            last_fetched: this.last_fetched.toISOString(),
             archive: this.archive,
             primary_source: this.primary_source,
+        }, {
+            onConflict: 'update',
+            updateExcludeFields: ['feed_url'],
         })
     }
 }
@@ -106,8 +136,8 @@ export class ServerFeed extends ServerEntity {
     link: string;
     categories: string[];
 
-    constructor(data) {
-        super('feed');
+    constructor(data, state: PersistenceState = 'new') {
+        super('feed', state);
 
         this.guid = data.guid;
         this.input_url = data.input_url;
@@ -117,14 +147,14 @@ export class ServerFeed extends ServerEntity {
         this.description = data.description
         this.author = data.author
         this.type = data.type
-        this.ongoing = data.ongoing !== null ? Boolean(parseInt(data.ongoing)) : null
-        this.active = Boolean(parseInt(data.active))
+        this.ongoing = asBoolean(data.ongoing)
+        this.active = asBoolean(data.active)
         this.image_src = data.image_src
         this.image_alt = data.image_alt
-        this.last_updated = data.last_updated
+        this.last_updated = asDate(data.last_updated)
         this.update_frequency = data.update_frequency
         this.link = data.link
-        this.categories = data.categories.split(',').filter(seg => seg.trim().length > 0)
+        this.categories = asStringList(data.categories)
     }
 
     async persistTo(db) {
@@ -141,10 +171,13 @@ export class ServerFeed extends ServerEntity {
             active: this.active,
             image_src: this.image_src,
             image_alt: this.image_alt,
-            last_updated: unixEpoch(this.last_updated),
+            last_updated: this.last_updated.toISOString(),
             update_frequency: this.update_frequency,
             link: this.link,
             categories: this.categories.join(','),
+        }, {
+            onConflict: 'update',
+            updateExcludeFields: ['guid', 'input_url', 'alias', 'active', 'categories'],
         })
     }
 }
@@ -204,8 +237,8 @@ export class ServerFeedItem extends ServerEntity {
     finished: boolean;
     progress: number;
 
-    constructor(data) {
-        super('feed_item');
+    constructor(data, state: PersistenceState = 'new') {
+        super('feed_item', state);
 
         this.guid = data.guid
         this.source_feed = data.source_feed
@@ -214,15 +247,15 @@ export class ServerFeedItem extends ServerEntity {
         this.title = data.title
         this.description = data.description
         this.link = data.link
-        this.date = data.date
+        this.date = asDate(data.date)
         this.enclosure_url = data.enclosure_url
         this.enclosure_length = data.enclosure_length
         this.enclosure_type = data.enclosure_type
         this.duration = data.duration
         this.duration_unit = data.duration_unit
         this.encoded_content = data.encoded_content
-        this.keywords = data.keywords
-        this.finished = data.finished
+        this.keywords = asStringList(data.keywords)
+        this.finished = asBoolean(data.finished)
         this.progress = data.progress
     }
 
@@ -235,7 +268,7 @@ export class ServerFeedItem extends ServerEntity {
             title: this.title,
             description: this.description,
             link: this.link,
-            date: unixEpoch(this.date),
+            date: this.date.toISOString(),
             enclosure_url: this.enclosure_url,
             enclosure_length: this.enclosure_length,
             enclosure_type: this.enclosure_type,
@@ -245,6 +278,9 @@ export class ServerFeedItem extends ServerEntity {
             keywords: this.keywords.join(','),
             finished: this.finished,
             progress: this.progress,
+        }, {
+            onConflict: 'update',
+            updateExcludeFields: ['guid', 'source_feed', 'finished', 'progress'],
         })
     }
 }

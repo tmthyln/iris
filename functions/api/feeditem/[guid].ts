@@ -1,4 +1,5 @@
-import {ClientFeedItem, ServerFeedItem} from "../../models";
+import {ClientFeedItem} from "../../models";
+import {getFeedItem} from "../../manage";
 
 interface PathParams {
     guid: string
@@ -7,12 +8,9 @@ interface PathParams {
 export async function onRequestGet(context) {
     const feedItemGuid = context.params.guid;
 
-    const feedItem = await context.env.DB
-        .prepare(`SELECT * FROM feed_item WHERE guid = ?`)
-        .bind(feedItemGuid)
-        .first()
+    const feedItem = await getFeedItem(context.env.DB, feedItemGuid)
 
     // TODO check if no feed item exists
 
-    return Response.json(new ClientFeedItem(new ServerFeedItem(feedItem)))
+    return Response.json(new ClientFeedItem(feedItem))
 }

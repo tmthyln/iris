@@ -1,13 +1,8 @@
-import {ClientFeedItem, ServerFeedItem} from "../../models";
+import {ClientFeedItem} from "../../models";
+import {getFeedItems} from "../../manage";
 
 export async function onRequestGet(context) {
-    const {results} = await context.env.DB
-        .prepare(`
-            SELECT feed_item.* FROM feed_item
-            JOIN feed ON feed_item.source_feed = feed.guid
-            WHERE feed.active = TRUE
-            ORDER BY feed_item.date DESC`)
-        .all()
+    const feedItems = await getFeedItems(context.env.DB)
 
-    return Response.json(results.map(item => new ClientFeedItem(new ServerFeedItem(item))))
+    return Response.json(feedItems.map(item => new ClientFeedItem(item)))
 }

@@ -1,14 +1,12 @@
-import {ClientFeed, ServerFeed} from "../../../models";
+import {ClientFeed} from "../../../models";
+import {getFeed} from "../../../manage";
 
 export async function onRequestGet(context) {
     const feedGuid = context.params.guid;
 
-    const feedItem = await context.env.DB
-        .prepare(`SELECT * FROM feed WHERE guid = ?`)
-        .bind(feedGuid)
-        .first()
+    const feedItem = await getFeed(context.env.DB, feedGuid)
 
     // TODO check if no feed exists
 
-    return Response.json(new ClientFeed(new ServerFeed(feedItem)))
+    return Response.json(new ClientFeed(feedItem))
 }
