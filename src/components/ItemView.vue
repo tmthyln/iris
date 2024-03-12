@@ -51,6 +51,7 @@ const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(fee
       </audio>
     </div>
 
+    <div v-if="!feedItem.encoded_content" class="content" v-html="feedItem.description"></div>
     <div class="content" v-html="feedItem.encoded_content"></div>
 
     <hr class="my-6">
