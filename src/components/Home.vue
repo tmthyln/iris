@@ -32,7 +32,7 @@ async function submitFeedURL() {
 
 const feedStore = useFeedStore()
 
-const { isFetching, data: allFeedItems } = useFetch('/api/feeditem').json()
+const { isFetching, data: allFeedItems } = useFetch('/api/feeditem?limit=20').json()
 </script>
 
 <template>
@@ -54,7 +54,7 @@ const { isFetching, data: allFeedItems } = useFetch('/api/feeditem').json()
 
     <section class="section">
       <h2 class="title is-2">
-        Everything
+        Recent Unread
       </h2>
 
       <div>

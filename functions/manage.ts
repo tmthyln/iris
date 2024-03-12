@@ -66,14 +66,27 @@ export async function getFeeds(db: D1Database) {
     return results.map(item => new ServerFeed(item, 'persisted'))
 }
 
-export async function getFeedItems(db: D1Database) {
+interface GetFeedItemsOptions {
+    sortOrder?: 'asc' | 'desc'
+    limit?: number
+    offset?: number
+}
+
+export async function getFeedItems(db: D1Database, options: GetFeedItemsOptions = {}) {
+    const {
+        sortOrder = 'desc',
+        limit = 20,
+        offset = 0,
+    } = options
+
     const {results} = await db
         .prepare(`
             SELECT feed_item.* FROM feed_item
             JOIN feed ON feed_item.source_feed = feed.guid
-            WHERE feed.active = TRUE
-            ORDER BY feed_item.date DESC
-            LIMIT 20`)
+            WHERE feed.active = TRUE AND feed_item.finished = FALSE
+            ORDER BY feed_item.date ${sortOrder.toUpperCase()}
+            LIMIT ? OFFSET ?`)
+        .bind(limit, offset)
         .all()
 
     return results.map(item => new ServerFeedItem(item, 'persisted'))
