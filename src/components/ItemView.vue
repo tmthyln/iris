@@ -30,6 +30,13 @@ const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(fee
         <li class="is-active" v-if="feedItem.episode"><a disabled>Episode {{ feedItem.episode }}</a></li>
       </ul>
     </div>
+    <div class="mb-4">
+      <span
+          v-for="keyword in feedItem.keywords" :key="keyword"
+          class="tag is-info is-light mr-2">
+        {{ keyword }}
+      </span>
+    </div>
 
     <div class="mb-5">Published {{ useTimeAgo(feedItem.date).value }}</div>
 
