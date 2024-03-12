@@ -18,7 +18,11 @@ const {data: feedItems} = useFetch(feedItemsUrl).json()
 <template>
   <div class="section">
 
-    <h1 class="title is-1">{{ feed.title }}</h1>
+    <h1 class="title is-1">
+      <component :is="feed.link ? 'a' : 'span'" :href="feed.link">
+        {{ feed.title }}
+      </component>
+    </h1>
     <small class="subtitle">{{ feed.author }}</small>
 
     <div class="mt-4">{{ feed.description }}</div>

@@ -20,7 +20,11 @@ const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(fee
 <template>
   <div class="section">
 
-    <h1 class="title is-1">{{ feedItem.title }}</h1>
+    <h1 class="title is-1">
+      <component :is="feedItem.link ? 'a' : 'span'" :href="feedItem.link">
+        {{ feedItem.title }}
+      </component>
+    </h1>
     <div v-if="feed" class="subtitle">{{ feed.title }} by {{ feed.author }}</div>
 
     <div class="mb-5">Published {{ pubDate }}</div>
