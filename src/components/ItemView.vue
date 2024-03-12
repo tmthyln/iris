@@ -9,9 +9,7 @@ const props = defineProps<{
 }>()
 
 const itemDataUrl = computed(() => `/api/feeditem/${encodeURIComponent(props.guid)}`)
-const {isFetching, data: feedItem} = useFetch<FeedItem>(itemDataUrl, {initialData: {title: 'Loading title...'}}).json()
-
-const pubDate = useTimeAgo(feedItem.date)
+const {isFetching, data: feedItem} = useFetch<FeedItem>(itemDataUrl, {initialData: {title: 'Loading title...'}, refetch: true}).json()
 
 const feedStore = useFeedStore()
 const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(feedItem.source_feed) ?? {}) : {})
@@ -34,7 +32,7 @@ const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(fee
       </ul>
     </div>
 
-    <div class="mb-5">Published {{ pubDate }}</div>
+    <div class="mb-5">Published {{ useTimeAgo(feedItem.date).value }}</div>
 
     <div v-if="feedItem.enclosure_url" class="mb-5">
       <audio controls>
