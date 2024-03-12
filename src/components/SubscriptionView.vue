@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
-import {computed} from "vue";
+import {computed, ref} from "vue";
 import {useFetch} from "@vueuse/core";
 
 const props = defineProps<{
