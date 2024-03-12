@@ -15,15 +15,23 @@ const formattedPubDate = useTimeAgo(props.feedItem.date)
 
 <template>
   <div>
-    <small>{{ formattedPubDate }}</small>
+    <div class="is-flex is-align-items-center mb-4">
+      <figure class="image is-64x64 ml-3 mr-4">
+        <img v-if="feed.image_src" :src="feed.image_src" :alt="feed.image_alt">
+      </figure>
+      <div class="is-inline-block">
+        <small>{{ formattedPubDate }}</small>
 
-    <h3 class="title is-3">
-      <router-link :to="{name: 'item', params: {guid: feedItem.guid}}">
-        {{ feedItem.title }}
-      </router-link>
-    </h3>
-    <div class="subtitle">
-      From <router-link :to="{name: 'subscription', params: {guid: feed.guid}}"><em>{{ feed.title }}</em></router-link>
+        <h3 class="title is-3">
+          <router-link :to="{name: 'item', params: {guid: feedItem.guid}}">
+            {{ feedItem.title }}
+          </router-link>
+        </h3>
+        <div class="subtitle">
+          From <router-link :to="{name: 'subscription', params: {guid: feed.guid}}"><em>{{ feed.title }}</em></router-link>
+        </div>
+      </div>
+
     </div>
 
     <!-- TODO: remove this injection vulnerability -->
