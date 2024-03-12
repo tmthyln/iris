@@ -25,7 +25,14 @@ const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(fee
         {{ feedItem.title }}
       </component>
     </h1>
-    <div v-if="feed" class="subtitle">{{ feed.title }} by {{ feed.author }}</div>
+    <div v-if="feed" class="subtitle">{{ feed.title }}</div>
+    <div class="breadcrumb has-dot-separator" aria-label="breadcrumbs">
+      <ul>
+        <li v-if="feed?.title"><router-link :to="{name: 'subscription', params: {guid: feed.guid}}">{{ feed.title }}</router-link></li>
+        <li class="is-active" v-if="feedItem.season"><a disabled>Season {{ feedItem.season }}</a></li>
+        <li class="is-active" v-if="feedItem.episode"><a disabled>Episode {{ feedItem.episode }}</a></li>
+      </ul>
+    </div>
 
     <div class="mb-5">Published {{ pubDate }}</div>
 
