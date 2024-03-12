@@ -23,8 +23,7 @@ const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(fee
         {{ feedItem.title }}
       </component>
     </h1>
-    <div v-if="feed" class="subtitle">{{ feed.title }}</div>
-    <div class="breadcrumb has-dot-separator" aria-label="breadcrumbs">
+    <div class="breadcrumb has-dot-separator subtitle" aria-label="breadcrumbs">
       <ul>
         <li v-if="feed?.title"><router-link :to="{name: 'subscription', params: {guid: feed.guid}}">{{ feed.title }}</router-link></li>
         <li class="is-active" v-if="feedItem.season"><a disabled>Season {{ feedItem.season }}</a></li>
@@ -33,6 +32,8 @@ const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(fee
     </div>
 
     <div class="mb-5">Published {{ useTimeAgo(feedItem.date).value }}</div>
+
+    <hr>
 
     <div v-if="feedItem.enclosure_url" class="mb-5">
       <audio controls>
@@ -45,7 +46,9 @@ const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(fee
 
     <div class="content" v-html="feedItem.encoded_content"></div>
 
-    <div class="level px-4 mt-6">
+    <hr class="my-6">
+
+    <div class="level px-4">
       <div class="level-left">
         <button class="button">Previous</button>
       </div>
