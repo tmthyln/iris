@@ -31,7 +31,7 @@ const {isFetching, data: feedItems} = useFetch(feedItemsUrl, {refetch: true}).js
 
     <div class="mt-5">
       <em>
-        Updates about every {{ feed.update_frequency }} day{{ feed.update_frequency === 1 ? '' : 's' }}
+        Updates about once every {{ feed.update_frequency }} day{{ feed.update_frequency === 1 ? '' : 's' }}
       </em>
     </div>
 

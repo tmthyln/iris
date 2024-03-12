@@ -20,7 +20,7 @@ const formattedPubDate = useTimeAgo(props.feedItem.date)
         <img v-if="feed.image_src" :src="feed.image_src" :alt="feed.image_alt">
       </figure>
       <div class="is-inline-block">
-        <small>{{ formattedPubDate }}</small>
+        <small>Posted {{ formattedPubDate }}</small>
 
         <h3 class="title is-3">
           <router-link :to="{name: 'item', params: {guid: feedItem.guid}}">
