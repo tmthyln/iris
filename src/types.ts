@@ -34,6 +34,7 @@ export interface FeedItemPreview {
     keywords: string[]
     finished: boolean
     progress: number
+    bookmarked: boolean
 }
 
 export interface FeedItem extends FeedItemPreview {

@@ -236,6 +236,7 @@ export class ServerFeedItem extends ServerEntity {
     keywords: string[];
     finished: boolean;
     progress: number;
+    bookmarked: boolean;
 
     constructor(data, state: PersistenceState = 'new') {
         super('feed_item', state);
@@ -257,6 +258,7 @@ export class ServerFeedItem extends ServerEntity {
         this.keywords = asStringList(data.keywords)
         this.finished = asBoolean(data.finished)
         this.progress = data.progress
+        this.bookmarked = data.bookmarked ?? false
     }
 
     async persistTo(db) {
@@ -278,6 +280,7 @@ export class ServerFeedItem extends ServerEntity {
             keywords: this.keywords.join(','),
             finished: this.finished,
             progress: this.progress,
+            bookmarked: this.bookmarked,
         }, {
             onConflict: 'update',
             updateExcludeFields: ['guid', 'source_feed', 'finished', 'progress'],
@@ -302,6 +305,7 @@ export class ClientFeedItemPreview {
     keywords: string[];
     finished: boolean;
     progress: number;
+    bookmarked: boolean;
 
     constructor(data: ServerFeedItem) {
         this.guid = data.guid
@@ -320,6 +324,7 @@ export class ClientFeedItemPreview {
         this.keywords = data.keywords
         this.finished = data.finished
         this.progress = data.progress
+        this.bookmarked = data.bookmarked
     }
 }
 
