@@ -49,6 +49,9 @@ const { isFetching, data: allFeedItems } = useFetch('/api/feeditem?limit=20').js
             v-for="feed in feedStore.feeds" :key="feed.guid"
             :feed="feed"
             class="mr-4"/>
+        <div v-if="feedStore.feeds.length === 0">
+          You aren't subscribed to any feeds! Add a feed to see them here.
+        </div>
       </div>
     </section>
 
@@ -62,6 +65,9 @@ const { isFetching, data: allFeedItems } = useFetch('/api/feeditem?limit=20').js
             v-for="feedItem in allFeedItems" :key="feedItem.guid"
             :feed-item="feedItem"
             class="mb-6"/>
+        <div v-if="feedStore.feeds.length === 0">
+          You don't have any unread items from any feeds. Wooh, inbox zero!
+        </div>
       </div>
     </section>
 

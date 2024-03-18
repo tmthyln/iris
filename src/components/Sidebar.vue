@@ -6,6 +6,10 @@ const feedStore = useFeedStore()
 
 <template>
   <aside>
+    <div v-if="feedStore.feeds.length === 0">
+      No feeds! Add a feed to get started.
+    </div>
+
     <template v-for="(catFeeds, category) in feedStore.feedsByCategory">
       <p class="menu-label">{{ category }}</p>
 
