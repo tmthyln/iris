@@ -41,7 +41,7 @@ export const generatedSvg = `
 </svg>
 `.trim()
 
-fs.writeFile('src/assets/icon.svg', generatedSvg, err => {
+fs.writeFile('src/assets/logo.svg', generatedSvg, err => {
     if (err) {
         console.error(err)
     }

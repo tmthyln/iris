@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import {ref} from "vue";
 
-const logoSrc = new URL('../assets/icon.svg', import.meta.url).href;
-
 const showSearch = ref(false)
 </script>
 
@@ -10,7 +8,7 @@ const showSearch = ref(false)
   <nav class="navbar" role="navigation" aria-label="main navigation">
     <div class="navbar-brand">
       <router-link class="navbar-item" :to="{name: 'home'}">
-        <img class="mr-2" :src="logoSrc" height="28" alt="logo">
+        <img class="mr-2" src="/logo.svg" height="28" alt="logo">
         <span class="title is-4">Iris Aggregator</span>
       </router-link>
     </div>

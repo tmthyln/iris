@@ -3,7 +3,9 @@ import App from './App.vue'
 import router from './router'
 import {createPinia} from "pinia";
 
-import "../node_modules/bulma/bulma.sass"
+import './assets/styles.sass'
+
+import 'virtual:pwa-register'
 
 createApp(App)
     .use(createPinia())
