@@ -41,7 +41,7 @@ const {isFetching, data: feedItems} = useFetch(feedItemsUrl, {refetch: true}).js
 
         <span
             class="button icon py-4 mr-2 is-outlined"
-            :class="{'is-primary': showFinished, 'is-info': !showFinished, 'is-loading': isFetching}"
+            :class="{'is-primary': sortAscending, 'is-info': !sortAscending, 'is-loading': isFetching}"
             :title="sortAscending? 'Sort by latest items first' : 'Sort by earliest items first'"
             @click="sortAscending = !sortAscending">
           <span class="material-symbols-outlined">swap_vert</span>
