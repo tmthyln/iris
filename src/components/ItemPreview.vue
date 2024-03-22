@@ -17,8 +17,8 @@ const formattedPubDate = useTimeAgo(props.feedItem.date)
 <template>
   <div>
     <div class="is-flex is-align-items-center mb-4">
-      <figure class="image is-64x64 ml-3 mr-4">
-        <img v-if="feed.image_src" :src="feed.image_src" :alt="feed.image_alt">
+      <figure v-if="feed.image_src" class="image is-64x64 ml-3 mr-4">
+        <img :src="feed.image_src" :alt="feed.image_alt">
       </figure>
       <div class="is-inline-block">
         <small>Posted {{ formattedPubDate }}</small>
