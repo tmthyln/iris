@@ -5,7 +5,7 @@ const feedStore = useFeedStore()
 </script>
 
 <template>
-  <aside>
+  <aside class="menu">
     <div v-if="feedStore.feeds.length === 0">
       No feeds! Add a feed to get started.
     </div>

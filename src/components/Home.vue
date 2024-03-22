@@ -26,7 +26,7 @@ async function submitFeedURL() {
         method: 'POST',
         body: JSON.stringify({
             url: feedUrl.value,
-        })
+        }),
     })
 }
 

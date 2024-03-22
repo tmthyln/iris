@@ -3,7 +3,7 @@ import App from './App.vue'
 import router from './router'
 import {createPinia} from "pinia";
 
-import './assets/styles.sass'
+import './assets/styles.scss'
 
 import 'virtual:pwa-register'
 

@@ -1,0 +1,12 @@
+@use "sass:color";
+
+$red: #e6274d;
+$orange: #ed7032;
+$blue: #4c6ffc;
+
+@use "bulma/sass" with (
+    $primary: #35e871,
+    $info: #aced32,
+    $warning: $orange,
+    $danger: $red,
+);
