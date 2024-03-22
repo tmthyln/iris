@@ -3,6 +3,7 @@ import {computed} from "vue";
 import {useFetch, useTimeAgo} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
 import {FeedItem} from "../types.ts";
+import {useUnescapedHTML} from "../htmlproc.ts";
 
 const props = defineProps<{
     guid: string,
@@ -20,7 +21,7 @@ const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(fee
 
     <h1 class="title is-1">
       <component :is="feedItem.link ? 'a' : 'span'" :href="feedItem.link">
-        {{ feedItem.title }}
+        {{ useUnescapedHTML(feedItem.title).value }}
       </component>
     </h1>
     <div class="breadcrumb has-dot-separator subtitle" aria-label="breadcrumbs">

@@ -3,6 +3,7 @@ import {FeedItemPreview} from "../types.ts";
 import {useTimeAgo} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
 import {computed} from "vue";
+import {useUnescapedHTML} from "../htmlproc.ts";
 
 const props = defineProps<{
     feedItem: FeedItemPreview,
@@ -24,7 +25,7 @@ const formattedPubDate = useTimeAgo(props.feedItem.date)
 
         <h3 class="title is-3">
           <router-link :to="{name: 'item', params: {guid: feedItem.guid}}">
-            {{ feedItem.title }}
+            {{ useUnescapedHTML(feedItem.title).value }}
           </router-link>
         </h3>
         <div class="subtitle">
