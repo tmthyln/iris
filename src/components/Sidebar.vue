@@ -11,7 +11,7 @@ const feedStore = useFeedStore()
     </div>
 
     <template v-for="(catFeeds, category) in feedStore.feedsByCategory">
-      <p class="menu-label">{{ category }}</p>
+      <p class="menu-label has-text-info">{{ category }}</p>
 
       <ul class="menu-list">
         <li v-for="feed in catFeeds" :key="feed.guid">

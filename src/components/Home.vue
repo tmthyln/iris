@@ -44,7 +44,7 @@ const { isFetching, data: allFeedItems } = useFetch('/api/feeditem?limit=20').js
         <button class="button is-small is-primary ml-5" aria-hidden="true" @click="showFeedAdder = true">Add Feed</button>
       </h2>
 
-      <div class="is-flex mb-6">
+      <div class="is-flex">
         <SubscriptionPreview
             v-for="feed in feedStore.feeds" :key="feed.guid"
             :feed="feed"
@@ -66,7 +66,7 @@ const { isFetching, data: allFeedItems } = useFetch('/api/feeditem?limit=20').js
             :feed-item="feedItem"
             class="mb-6"/>
         <div v-if="feedStore.feeds.length === 0">
-          You don't have any unread items from any feeds. Wooh, inbox zero!
+          You don't have any unread items from any feeds. Yay, inbox zero!
         </div>
       </div>
     </section>
