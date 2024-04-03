@@ -41,6 +41,72 @@ abstract class ServerEntity {
 
         await db.prepare(stmt).bind(...values).run()
     }
+
+    async includeForTextSearch(db: D1Database, input: IncludeForTextSearchInput) {
+        const {
+            title,
+            alias= '',
+            description,
+            author = '',
+            content = '',
+            categories = [],
+            keywords = [],
+            guid,
+        } = input
+        const existingItem = await db
+            .prepare(`SELECT guid FROM text_search WHERE guid = ? AND table_name = ?`)
+            .bind(guid, this.tableName)
+            .first()
+        const alreadyExists = existingItem !== null
+
+        if (alreadyExists) {
+            await db
+                .prepare(`
+                    UPDATE text_search SET
+                        title = ?,
+                        alias = ?,
+                        description = ?,
+                        author = ?,
+                        content = ?,
+                        categories = ?,
+                        keywords = ?
+                    WHERE guid = ? AND table_name = ?
+                `)
+                .bind(
+                    title, alias, description, author, content, categories.join(','), keywords.join(','),
+                    guid, this.tableName,
+                )
+                .run()
+        } else {
+            await db
+                .prepare(`
+                    INSERT INTO text_search (
+                        title, alias, description, author, content, categories, keywords,
+                        guid, table_name                     
+                    ) VALUES (
+                        ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?
+                    )
+                `)
+                .bind(
+                    title, alias, description, author, content, categories.join(','), keywords.join(','),
+                    guid, this.tableName,
+                )
+                .run()
+        }
+    }
+
+}
+
+interface IncludeForTextSearchInput {
+    title: string
+    alias?: string
+    description: string
+    author?: string
+    content?: string
+    categories?: string[]
+    keywords?: string[]
+    guid: string
 }
 
 export class ServerFeedFile extends ServerEntity {
@@ -180,6 +246,10 @@ export class ServerFeed extends ServerEntity {
             updateExcludeFields: ['guid', 'input_url', 'alias', 'active', 'categories'],
         })
     }
+
+    async includeForTextSearch(db: D1Database) {
+        await super.includeForTextSearch(db, this)
+    }
 }
 
 export class ClientFeed {
@@ -285,6 +355,10 @@ export class ServerFeedItem extends ServerEntity {
             onConflict: 'update',
             updateExcludeFields: ['guid', 'source_feed', 'finished', 'progress'],
         })
+    }
+
+    async includeForTextSearch(db: D1Database) {
+        await super.includeForTextSearch(db, this)
     }
 }
 

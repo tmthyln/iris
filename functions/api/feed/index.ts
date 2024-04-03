@@ -40,6 +40,7 @@ export async function onRequestPost(context: EventContext<Env, any, any>) {
     // identify feed (if already exists, or create a new feed)
     const feed = await getFeed(db, channel.guid)
         ?? await createFeed(db, channel, fetchResult)
+    await feed.includeForTextSearch(db)
 
     // identify feed source (if already exists, or create a new feed source)
     const feedSources = await getFeedSources(db, feed)
@@ -64,6 +65,7 @@ export async function onRequestPost(context: EventContext<Env, any, any>) {
     await Promise.all(items.map(async item => {
         const feedItem = await createFeedItem(db, feed, item)
         await feedItem.persistTo(db)
+        await feedItem.includeForTextSearch(db)
     }))
 
     // if new feed, generate tasks to pull archived files
