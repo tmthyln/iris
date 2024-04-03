@@ -13,7 +13,7 @@ onMounted(feedStore.loadFeeds)
   <Navbar/>
   <div class="columns">
     <Sidebar class="column is-one-quarter is-narrow ml-4 mt-5"/>
-    <RouterView class="column container"/>
+    <RouterView class="column is-three-quarters container"/>
   </div>
 </template>
 
