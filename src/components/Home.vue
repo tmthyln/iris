@@ -44,7 +44,7 @@ const { isFetching, data: allFeedItems } = useFetch('/api/feeditem?limit=20').js
         <button class="button is-small is-primary ml-5" aria-hidden="true" @click="showFeedAdder = true">Add Feed</button>
       </h2>
 
-      <div class="is-flex">
+      <div class="is-flex" style="overflow-x: scroll">
         <SubscriptionPreview
             v-for="feed in feedStore.feeds" :key="feed.guid"
             :feed="feed"
