@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {Feed} from "../types.ts";
+import {useUnescapedHTML} from "../htmlproc.ts";
 
 defineProps<{
     feed: Feed,
@@ -15,12 +16,12 @@ defineProps<{
           <source :srcset="feed.image_src"/>
           <img
               src="https://bulma.io/images/placeholders/128x128.png"
-              :alt="feed.image_alt ?? 'No podcast image'">
+              :alt="feed.image_alt ?? 'No feed image'">
         </picture>
 
-        <figcaption class="mt-1">
-          <div>{{ feed.title }}</div>
-          <small>{{ feed.author }}</small>
+        <figcaption class="mt-2">
+          <div>{{ useUnescapedHTML(feed.title).value }}</div>
+          <small>{{ useUnescapedHTML(feed.author).value }}</small>
         </figcaption>
 
       </figure>

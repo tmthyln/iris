@@ -3,6 +3,7 @@ import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
 import {computed, ref} from "vue";
 import {useFetch} from "@vueuse/core";
+import {useUnescapedHTML} from "../htmlproc.ts";
 
 const props = defineProps<{
     guid: string,
@@ -25,13 +26,13 @@ const {isFetching, data: feedItems} = useFetch(feedItemsUrl, {refetch: true}).js
         {{ feed.title }}
       </component>
     </h1>
-    <small class="subtitle">{{ feed.author }}</small>
+    <small class="subtitle">{{ useUnescapedHTML(feed.author).value }}</small>
 
     <div class="mt-4">{{ feed.description }}</div>
 
     <div class="mt-5">
       <em>
-        Updates about once every {{ feed.update_frequency }} day{{ feed.update_frequency === 1 ? '' : 's' }}
+        Updates about once every {{ feed.update_frequency }} day{{ feed.update_frequency === 1 ? '' : 's' }}.
       </em>
     </div>
 
