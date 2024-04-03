@@ -1,4 +1,6 @@
 
+export type LoadingState = 'unloaded' | 'loading' | 'loaded'
+
 export interface Feed {
     guid: string
     source_url: string
