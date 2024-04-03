@@ -4,6 +4,7 @@ import {useFetch, useTimeAgo} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
 import {FeedItem} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
+import Controls from "./Controls.vue";
 
 const props = defineProps<{
     guid: string,
@@ -39,21 +40,14 @@ const feed = computed(() => !isFetching && feedItem ? (feedStore.getFeedById(fee
       </span>
     </div>
 
-    <div class="mb-5">Published {{ useTimeAgo(feedItem.date).value }}</div>
+    <div class="mb-5">Published {{ useTimeAgo(feedItem?.date).value }}</div>
+
+    <Controls v-if="feedItem" :feed-item="feedItem"/>
 
     <hr>
 
-    <div v-if="feedItem.enclosure_url" class="mb-5">
-      <audio controls>
-        <source :src="feedItem.enclosure_url" :type="feedItem.enclosure_type">
-        Your browser does not support the audio element.
-        Download the <a :href="feedItem.enclosure_url" download>audio file</a>
-        to listen to this episode on your computer.
-      </audio>
-    </div>
-
-    <div v-if="!feedItem.encoded_content" class="content" v-html="feedItem.description"></div>
-    <div class="content" v-html="feedItem.encoded_content"></div>
+    <div v-if="!feedItem?.encoded_content" class="content" v-html="feedItem?.description"></div>
+    <div class="content" v-html="feedItem?.encoded_content"></div>
 
     <hr class="my-6">
 

@@ -4,6 +4,7 @@ import {useTimeAgo} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
 import {computed} from "vue";
 import {useUnescapedHTML} from "../htmlproc.ts";
+import Controls from "./Controls.vue";
 
 const props = defineProps<{
     feedItem: FeedItemPreview,
@@ -32,8 +33,9 @@ const formattedPubDate = useTimeAgo(props.feedItem.date)
           From <router-link :to="{name: 'subscription', params: {guid: feed.guid}}"><em>{{ feed.title }}</em></router-link>
         </div>
       </div>
-
     </div>
+
+    <Controls :feed-item="feedItem"/>
 
     <!-- TODO: remove this injection vulnerability -->
     <div class="content" v-html="feedItem.description">
