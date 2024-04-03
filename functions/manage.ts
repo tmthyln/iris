@@ -92,6 +92,17 @@ export async function getFeedItems(db: D1Database, options: GetFeedItemsOptions 
     return results.map(item => new ServerFeedItem(item, 'persisted'))
 }
 
+export async function getBookmarkedFeedItems(db: D1Database) {
+    const {results} = await db
+        .prepare(`
+            SELECT feed_item.* FROM feed_item
+            WHERE feed_item.bookmarked = TRUE
+        `)
+        .all()
+
+    return results.map(item => new ServerFeedItem(item, 'persisted'))
+}
+
 /******************************************************************************
  * CUD (modifying queries)
  *****************************************************************************/
