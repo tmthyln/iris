@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import SubscriptionPreview from "./SubscriptionPreview.vue";
-import {ref} from "vue";
+import {computed, onMounted, ref} from "vue";
 import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
 import {useFetch} from "@vueuse/core";
+import {useFeedItemStore} from "../stores/feeditems.ts";
 
 const showFeedAdder = ref(false);
 
@@ -31,8 +32,10 @@ async function submitFeedURL() {
 }
 
 const feedStore = useFeedStore()
+const feedItemStore = useFeedItemStore()
+onMounted(feedItemStore.loadRecentUnreadItems)
 
-const { isFetching, data: allFeedItems } = useFetch('/api/feeditem?limit=20').json()
+const allFeedItems = computed(() => feedItemStore.recent)
 </script>
 
 <template>
