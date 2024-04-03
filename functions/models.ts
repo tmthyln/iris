@@ -328,7 +328,7 @@ export class ServerFeedItem extends ServerEntity {
         this.keywords = asStringList(data.keywords)
         this.finished = asBoolean(data.finished)
         this.progress = data.progress
-        this.bookmarked = data.bookmarked ?? false
+        this.bookmarked = asBoolean(data.bookmarked ?? false)
     }
 
     async persistTo(db) {
@@ -396,9 +396,9 @@ export class ClientFeedItemPreview {
         this.duration = data.duration
         this.duration_unit = data.duration_unit
         this.keywords = data.keywords
-        this.finished = data.finished
+        this.finished = asBoolean(data.finished)
         this.progress = data.progress
-        this.bookmarked = data.bookmarked
+        this.bookmarked = asBoolean(data.bookmarked)
     }
 }
 
