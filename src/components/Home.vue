@@ -38,9 +38,9 @@ const { isFetching, data: allFeedItems } = useFetch('/api/feeditem?limit=20').js
 <template>
   <div>
 
-    <section class="section">
+    <section class="section pb-4">
       <h2 class="is-flex is-align-items-center title is-2">
-        Subscriptions
+        Subscribed Feeds
         <button class="button is-small is-primary ml-5" aria-hidden="true" @click="showFeedAdder = true">Add Feed</button>
       </h2>
 
@@ -57,7 +57,7 @@ const { isFetching, data: allFeedItems } = useFetch('/api/feeditem?limit=20').js
 
     <section class="section">
       <h2 class="title is-2">
-        Recent Unread
+        Recent Unread Items
       </h2>
 
       <div>
