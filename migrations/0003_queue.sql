@@ -1,0 +1,6 @@
+-- Migration number: 0003 	 2024-03-18T00:51:37.980Z
+
+CREATE TABLE IF NOT EXISTS queue_item (
+    queue_order INTEGER PRIMARY KEY NOT NULL,
+    feed_item_guid TEXT UNIQUE NOT NULL REFERENCES feed_item(guid) ON DELETE CASCADE ON UPDATE CASCADE
+) STRICT;
