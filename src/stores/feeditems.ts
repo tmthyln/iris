@@ -14,20 +14,32 @@ export const useFeedItemStore = defineStore('feeditems', {
     },
     actions: {
         async bookmarkItem(feedItem: FeedItemPreview) {
-            feedItem.bookmarked = true;
             // TODO actually implement
+            const index = this.bookmarked.findIndex(item => item.guid === feedItem.guid)
+            if (index < 0) {
+                this.bookmarked.push(feedItem)
+            }
+            feedItem.bookmarked = true;
         },
         async unbookmarkItem(feedItem: FeedItemPreview) {
-            feedItem.bookmarked = false;
             // TODO actually implement
+            const index = this.bookmarked.findIndex(item => item.guid === feedItem.guid)
+            if (index >= 0) {
+                this.bookmarked.splice(index, 1)
+            }
+            feedItem.bookmarked = false;
         },
         async markItemAsComplete(feedItem: FeedItemPreview) {
-            feedItem.finished = true;
             // TODO actually implement
+            const index = this.recent.findIndex(item => item.guid === feedItem.guid)
+            if (index >= 0) {
+                this.recent.splice(index, 1)
+            }
+            feedItem.finished = true;
         },
         async markItemAsIncomplete(feedItem: FeedItemPreview) {
-            feedItem.finished = false;
             // TODO actually implement
+            feedItem.finished = false;
         },
         async updateItemProgress(feedItem: FeedItemPreview, progress: number) {
             feedItem.progress = Math.min(1, progress)

@@ -39,10 +39,19 @@ const bookmarkedItems = computed(() => feedItemStore.bookmarked)
       No bookmarks! Bookmark an item to access them quickly here.
     </div>
     <ul class="menu-list">
-      <li v-for="feedItem in bookmarkedItems" :key="feedItem.guid">
+      <li
+          v-for="feedItem in bookmarkedItems" :key="feedItem.guid"
+          class="is-inline-flex">
         <router-link :to="{name: 'item', params: {guid: feedItem.guid}}">
           {{ feedItem.title }}
         </router-link>
+        <span
+            class="button material-symbols-outlined has-text-warning"
+            style="border: none;"
+            title="Unbookmark this item"
+            @click="feedItemStore.unbookmarkItem(feedItem)">
+          bookmark_remove
+        </span>
       </li>
     </ul>
   </aside>
