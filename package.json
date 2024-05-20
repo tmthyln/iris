@@ -22,7 +22,7 @@
     "@cloudflare/workers-types": "^4.20240403.0",
     "@vite-pwa/assets-generator": "^0.2.4",
     "@vitejs/plugin-vue": "^5.0.4",
-    "fast-xml-parser": "^4.3.5",
+    "fast-xml-parser": "^4.4.0",
     "sass": "^1.72.0",
     "typescript": "^5.4.3",
     "vite": "^5.1.7",
