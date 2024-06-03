@@ -23,7 +23,7 @@
     "@vite-pwa/assets-generator": "^0.2.4",
     "@vitejs/plugin-vue": "^5.0.4",
     "fast-xml-parser": "^4.3.5",
-    "sass": "^1.72.0",
+    "sass": "^1.77.4",
     "typescript": "^5.4.3",
     "vite": "^5.1.7",
     "vite-plugin-compression": "^0.5.1",
