@@ -1,5 +1,51 @@
-[[ d1_databases ]]
-binding = "DB"
-database_name = "iris"
-database_id = "962886b7-e979-475d-9b74-c22f56a24eb6"
-preview_database_id = "6dc72db6-7c48-4049-ba75-ac83ae139b6f"
+name = "iris"
+route = { pattern = "iris.timothylin.me", custom_domain = true }
+main = "src/service.ts"
+compatibility_date = "2025-01-09"
+assets = { directory = "./dist" }
+
+[observability]
+enabled = true
+
+[dev]
+port = 8345
+
+
+[env.staging]
+d1_databases = [
+    { binding = "DB", database_name = "iris-db-staging", database_id = "6dc72db6-7c48-4049-ba75-ac83ae139b6f" }
+]
+r2_buckets = [
+    { binding = "RSS_CACHE_BUCKET", bucket_name = "iris-rss-cache-staging" }
+]
+
+[env.staging.queues]
+producers = [
+    { binding = "FEED_PROCESSING_QUEUE", queue = "iris-feed-proc-staging" }
+]
+consumers = [
+    { queue = "iris-feed-proc-staging" }
+]
+
+[env.staging.triggers]
+crons = ["7 * * * *"]  # run every hour, 7 minutes past the hour
+
+
+[env.prod]
+d1_databases = [
+    { binding = "DB", database_name = "iris-db-prod", database_id = "962886b7-e979-475d-9b74-c22f56a24eb6" }
+]
+r2_buckets = [
+    { binding = "RSS_CACHE_BUCKET", bucket_name = "iris-rss-cache-prod" }
+]
+
+[env.prod.queues]
+producers = [
+    { binding = "FEED_PROCESSING_QUEUE", queue = "iris-feed-proc-prod" }
+]
+consumers = [
+    { queue = "iris-feed-proc-prod" }
+]
+
+[env.prod.triggers]
+crons = ["17 * * * *"]  # run every hour, 17 minutes past the hour

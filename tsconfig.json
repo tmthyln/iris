@@ -8,7 +8,7 @@
       "path": "./tsconfig.app.json"
     },
     {
-      "path": "./tsconfig.functions.json"
+      "path": "./tsconfig.cf.json"
     }
   ],
   "compilerOptions": {

@@ -1,10 +1,108 @@
 import {XMLParser} from "fast-xml-parser";
+import {FetchFileResult} from "../types";
 
 export async function sha256Encode(text: string) {
     const rawText = new TextEncoder().encode(text)
     return [...new Uint8Array(await crypto.subtle.digest('SHA-256', rawText))]
         .map(x => parseInt(x).toString(16).padStart(2, '0'))
         .join('')
+}
+
+/******************************************************************************
+ * File retrieval
+ *****************************************************************************/
+
+const RSS_ACCEPT_MIMES = [
+    'application/rss+xml',
+    'application/rdf+xml;q=0.8',
+    'application/atom+xml;q=0.6',
+    'application/xml;q=0.4',
+    'text/xml;q=0.4',
+].join(', ')
+
+export async function fetchRssFile(url: string): Promise<FetchFileResult> {
+    const response = await fetch(url, {
+        headers: new Headers({
+            'Accept': RSS_ACCEPT_MIMES,
+        }),
+    })
+
+    if (response.ok) {
+        const text = await response.text()
+        if (text.substring(0, 2000).toLowerCase().indexOf('<!doctype html>') < 0) {
+            return {
+                status: 'success',
+                content: text,
+                metadata: {
+                    timestamp: response.headers.get('date') ?? Date(),
+                    inputUrl: url,
+                    requestUrl: url,
+                    sha256Hash: await sha256Encode(text),
+                },
+            }
+        } else {
+            console.log('Content appears to be HTML')
+        }
+    } else {
+        console.log(`Received non-ok response from upstream: ${response.status} ${response.statusText}`)
+    }
+
+    const htmlResponse = await fetch(url, {
+        headers: {
+            'Accept': 'text/html',
+        },
+    })
+
+    if (htmlResponse.ok) {
+        // TODO try to extract the actual rss url from head info
+    }
+
+    return {
+        status: 'error',
+        content: null,
+        metadata: {
+            inputUrl: url,
+        },
+    }
+}
+
+/**
+ * Fetch a list of archived snapshots for a URL from the wayback machine.
+ * Docs: https://github.com/internetarchive/wayback/tree/master/wayback-cdx-server
+ *
+ * @param url
+ */
+export async function fetchArchiveList(url: string) {
+    const currentYear = new Date().getFullYear()
+    const queryParams = [
+        `url=${encodeURIComponent(url)}`,
+        `matchType=prefix`,
+        `output=json`,
+        `fl=timestamp,mimetype,statuscode,digest,length`,
+        `from=${currentYear - 15}`,
+        `filter=statuscode:200`,
+        `filter=!mimetype:text/html`,
+        `collapse=timestamp:8`,
+        `collapse=digest`,
+    ].join('&')
+    const response = await fetch(`https://web.archive.org/cdx/search/cdx?${queryParams}`, {
+        headers: {
+            'Accept': 'application/json',
+        },
+    })
+
+    if (response.ok) {
+        const data = await response.json()
+        return data.map(row => ({
+            timestamp: parseInt(row[0]),
+            mimetype: row[1],
+            statuscode: parseInt(row[2]),
+            digest: row[3],
+            length: parseInt(row[4]),
+        }))
+    } else {
+        return []
+    }
 }
 
 /******************************************************************************
@@ -99,7 +197,7 @@ function processChannelItem(item: object) {
     }
 }
 
-function determineChannelType(channelData) {
+function determineChannelType(channelData: Record<string, any>) {
     const hasITunes = ['itunes:summary', 'itunes:type', 'itunes:author']
         .reduce((hasITunes, key) => hasITunes || channelData.hasOwnProperty(key), false)
     const hasPodcast = ['podcast:guid', 'podcast:locked', 'podcast:person', 'podcast:podping']
@@ -116,7 +214,7 @@ function determineChannelType(channelData) {
  * Generic Helpers
  *****************************************************************************/
 
-function parseDuration(rawDuration) {
+function parseDuration(rawDuration: number | string | null) {
     if (rawDuration === null)
         return 0
 
@@ -130,11 +228,11 @@ function parseDuration(rawDuration) {
     return parseInt(rawDuration)
 }
 
-function determineDurationUnit(rawDuration) {
+function determineDurationUnit(rawDuration: any) {
     return 'seconds'
 }
 
-function cleanList(rawListString) {
+function cleanList(rawListString: string | null) {
     if (rawListString === null)
         return ''
 

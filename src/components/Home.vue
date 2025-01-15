@@ -35,7 +35,7 @@ const feedStore = useFeedStore()
 const feedItemStore = useFeedItemStore()
 onMounted(feedItemStore.loadRecentUnreadItems)
 
-const allFeedItems = computed(() => feedItemStore.recent)
+const allFeedItems = computed(() => feedItemStore.recentItems)
 </script>
 
 <template>

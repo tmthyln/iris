@@ -1,64 +1,136 @@
 import {defineStore} from "pinia";
 import type {FeedItemPreview, LoadingState} from "../types.ts";
+import client from '../client'
 
 export const useFeedItemStore = defineStore('feeditems', {
-    state() {
-        return {
-            cache: {} as {[index: string]: FeedItemPreview},
-            bookmarked: [] as FeedItemPreview[],
-            bookmarkedLoadState: 'unloaded' as LoadingState,
+    state: () => ({
+        cache: {} as Record<string, FeedItemPreview>,
 
-            recent: [] as FeedItemPreview[],
-            recentLoadState: 'unloaded' as LoadingState,
-        }
+        bookmarked: [] as string[],
+        bookmarkedLoadState: 'unloaded' as LoadingState,
+
+        recent: [] as string[],
+        recentLoadState: 'unloaded' as LoadingState,
+    }),
+    getters: {
+        bookmarkedItems: (state) =>
+            state.bookmarked
+                .map(guid => state.cache[guid])
+                .filter(item => item !== null),
+        recentItems: (state) =>
+            state.recent
+                .map(guid => state.cache[guid])
+                .filter(item => item !== null),
     },
     actions: {
         async bookmarkItem(feedItem: FeedItemPreview) {
-            // TODO actually implement
-            const index = this.bookmarked.findIndex(item => item.guid === feedItem.guid)
-            if (index < 0) {
-                this.bookmarked.push(feedItem)
+            const success = await client.modifyFeedItem(feedItem.guid, {bookmarked: true})
+            if (success) {
+                const cachedFeedItem = this.cache[feedItem.guid]
+                if (cachedFeedItem) {
+                    cachedFeedItem.bookmarked = true
+                }
+
+                const index = this.bookmarked.indexOf(feedItem.guid)
+                if (index < 0) {
+                    this.bookmarked.push(feedItem.guid)
+                }
+
+                feedItem.bookmarked = true;
             }
-            feedItem.bookmarked = true;
         },
         async unbookmarkItem(feedItem: FeedItemPreview) {
-            // TODO actually implement
-            const index = this.bookmarked.findIndex(item => item.guid === feedItem.guid)
-            if (index >= 0) {
-                this.bookmarked.splice(index, 1)
+            const success = await client.modifyFeedItem(feedItem.guid, {bookmarked: false})
+            if (success) {
+                const cachedFeedItem = this.cache[feedItem.guid]
+                if (cachedFeedItem) {
+                    cachedFeedItem.bookmarked = false
+                }
+
+                const index = this.bookmarked.indexOf(feedItem.guid)
+                if (index >= 0) {
+                    this.bookmarked.splice(index, 1)
+                }
+
+                feedItem.bookmarked = false;
             }
-            feedItem.bookmarked = false;
         },
-        async markItemAsComplete(feedItem: FeedItemPreview) {
-            // TODO actually implement
-            const index = this.recent.findIndex(item => item.guid === feedItem.guid)
-            if (index >= 0) {
-                this.recent.splice(index, 1)
+        async markItemAsComplete(feedItem: FeedItemPreview, progress: number | null = null) {
+            const effectiveProgress = progress ? Math.min(1, progress) : null
+            const success = await client.modifyFeedItem(
+                feedItem.guid,
+                effectiveProgress ? {finished: true, progress: effectiveProgress} : {finished: true})
+
+            if (success) {
+                const cachedFeedItem = this.cache[feedItem.guid]
+                if (cachedFeedItem) {
+                    cachedFeedItem.finished = true
+                    if (effectiveProgress)
+                        cachedFeedItem.progress = effectiveProgress
+                }
+
+                feedItem.finished = true
+                if (effectiveProgress)
+                    feedItem.progress = effectiveProgress
+
+                const index = this.recent.indexOf(feedItem.guid)
+                if (index >= 0) {
+                    this.recent.splice(index, 1)
+                }
             }
-            feedItem.finished = true;
         },
         async markItemAsIncomplete(feedItem: FeedItemPreview) {
-            // TODO actually implement
-            feedItem.finished = false;
+            const success = await client.modifyFeedItem(feedItem.guid, {finished: false})
+            if (success) {
+                const cachedFeedItem = this.cache[feedItem.guid]
+                if (cachedFeedItem) {
+                    cachedFeedItem.finished = false
+                }
+
+                feedItem.finished = false
+            }
         },
         async updateItemProgress(feedItem: FeedItemPreview, progress: number) {
-            feedItem.progress = Math.min(1, progress)
-            if (feedItem.progress > 1) {
-                feedItem.finished = true;
+            const effectiveProgress = Math.min(1, progress)
+            const finished = effectiveProgress >= 1 ? true : null
+
+            const success = await client.modifyFeedItem(
+                feedItem.guid,
+                finished ? {finished: true, progress: effectiveProgress} : {progress: effectiveProgress})
+            if (success) {
+                const cachedFeedItem = this.cache[feedItem.guid]
+                if (cachedFeedItem) {
+                    cachedFeedItem.progress = effectiveProgress
+                    if (finished)
+                        cachedFeedItem.finished = true
+                }
+
+                if (finished) {
+                    const index = this.recent.indexOf(feedItem.guid)
+                    if (index >= 0) {
+                        this.recent.splice(index, 1)
+                    }
+                }
+
+                feedItem.progress = effectiveProgress
+                if (finished)
+                    feedItem.finished = true
             }
-            // TODO actually implement
         },
         async loadBookmarkedItems() {
+            if (this.bookmarkedLoadState !== 'unloaded') {
+                return
+            }
+
             this.bookmarkedLoadState = 'loading'
 
-            const response = await fetch('/api/feeditem?bookmarked=true')
-            if (response.ok) {
-                const data: FeedItemPreview[] = await response.json()
+            const data = await client.getFeedItems({bookmarked: true})
+            if (data) {
                 this.bookmarked.length = 0
                 this.bookmarked.push(...data
                     .map(item => {
                         this.cache[item.guid] = item
-                        return item
+                        return item.guid
                     })
                 )
 
@@ -68,17 +140,21 @@ export const useFeedItemStore = defineStore('feeditems', {
             }
         },
         async loadRecentUnreadItems() {
+            if (this.recentLoadState !== 'unloaded') {
+                return
+            }
+
             this.recentLoadState = 'loading'
 
-            const response = await fetch('/api/feeditem?limit=20')
-            if (response.ok) {
-                const data: FeedItemPreview[] = await response.json()
+            const data = await client.getFeedItems({limit: 20})
+
+            if (data) {
                 this.recent.length = 0
                 this.recent.push(...data
-                    .map(item => {
+                    .map((item=> {
                         this.cache[item.guid] = item
-                        return item
-                    })
+                        return item.guid
+                    }))
                 )
 
                 this.recentLoadState = 'loaded'
