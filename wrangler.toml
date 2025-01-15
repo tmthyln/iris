@@ -12,6 +12,7 @@ port = 8345
 
 
 [env.staging]
+route = { pattern = "staging.iris.timothylin.me", custom_domain = true }
 d1_databases = [
     { binding = "DB", database_name = "iris-db-staging", database_id = "6dc72db6-7c48-4049-ba75-ac83ae139b6f" }
 ]
