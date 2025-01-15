@@ -3,6 +3,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import viteCompression from 'vite-plugin-compression'
 import { VitePWA as vitePWA } from "vite-plugin-pwa";
+import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -11,6 +12,7 @@ export default defineConfig({
     },
     plugins: [
         vue(),
+        vueDevTools(),
         vitePWA({
             registerType: 'autoUpdate',
             workbox: {
@@ -62,5 +64,12 @@ export default defineConfig({
     },
     define: {
         'import.meta.vitest': 'undefined',
+    },
+    server: {
+        proxy: {
+            '/api': {
+                target: 'http://localhost:8345',
+            },
+        },
     },
 })

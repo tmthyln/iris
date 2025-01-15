@@ -22,8 +22,8 @@ const {isFetching, data: feedItems} = useFetch(feedItemsUrl, {refetch: true}).js
   <div class="section">
 
     <h1 class="title is-1">
-      <component :is="feed.link ? 'a' : 'span'" :href="feed.link">
-        {{ feed.title }}
+      <component :is="feed?.link ? 'a' : 'span'" :href="feed?.link">
+        {{ feed?.title ?? 'Loading subscription...' }}
       </component>
     </h1>
     <small class="subtitle">{{ useUnescapedHTML(feed.author).value }}</small>
@@ -38,7 +38,7 @@ const {isFetching, data: feedItems} = useFetch(feedItemsUrl, {refetch: true}).js
 
     <section class="mt-6">
       <div class="is-flex is-align-items-start">
-        <h2 class="title is-2 mr-auto">All {{ feed.type === 'podcast' ? 'Episodes' : 'Posts' }}</h2>
+        <h2 class="title is-2 mr-auto">{{ showFinished ? 'All' : 'Unseen' }} {{ feed?.type === 'podcast' ? 'Episodes' : 'Posts' }}</h2>
 
         <span
             class="button icon py-4 mr-2 is-outlined"

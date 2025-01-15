@@ -118,7 +118,7 @@ function toggleBookmark() {
       </span>
       <span
           v-else
-          class="material-symbols-outlined"
+          class="material-symbols-outlined" :class="{'has-text-success': isHoveredQueuedButton}"
           title="Add this item to the end of the queue">
         playlist_add
       </span>
@@ -141,7 +141,7 @@ function toggleBookmark() {
       </span>
       <span
           v-else
-          class="material-symbols-outlined"
+          class="material-symbols-outlined" :class="{'has-text-success': isHoveredFinishedButton}"
           title="Mark this item as complete">
         done
       </span>
@@ -164,7 +164,7 @@ function toggleBookmark() {
       </span>
       <span
           v-else
-          class="material-symbols-outlined"
+          class="material-symbols-outlined" :class="{'has-text-success': isHoveredBookmarkButton}"
           title="Bookmark this item">
         bookmark_add
       </span>

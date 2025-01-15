@@ -1,33 +1,52 @@
 import type {D1Database, R2Bucket} from '@cloudflare/workers-types'
 import {asBoolean, asDate, asStringList} from "./utils/conversion";
 
-type PersistenceState = 'new' | 'dirty' | 'persisted'
-
-interface PersistToOptions {
+interface PersistOptions {
     onConflict?: 'update' | 'ignore'
     updateExcludeFields?: string[]
 }
 
-abstract class ServerEntity {
-    protected state: PersistenceState = 'new'
+interface IncludeForTextSearchInput {
+    title: string
+    alias?: string
+    description: string
+    author?: string
+    content?: string
+    categories?: string[]
+    keywords?: string[]
+    guid: string
+}
 
-    protected constructor(readonly tableName, state: PersistenceState = 'new') {
-        this.state = state;
+abstract class ServerEntity {
+
+    protected constructor(
+        readonly tableName: string,
+        readonly persistOptions: PersistOptions = {onConflict: 'ignore'},
+        private deferred: boolean = false,
+    ) {}
+
+    defer() {
+        this.deferred = true;
+        return this
+    }
+    focus() {
+        this.deferred = false;
+        return this
     }
 
-    protected async persistTo(db: D1Database, data, options: PersistToOptions = {}) {
+    protected async persistTo(db: D1Database, data: Record<string, any>) {
         const {
             onConflict = 'ignore',
             updateExcludeFields = [],
-        }: PersistToOptions = options
+        }: PersistOptions = this.persistOptions
 
         const columnNames = Object.keys(data)
-        const placeholders = new Array(columnNames.length).fill('?')
+        const placeholders: string[] = new Array(columnNames.length).fill('?')
         const values = [...Object.values(data)]
 
         let stmt = `INSERT INTO ${this.tableName} (${columnNames.join(', ')}) VALUES (${placeholders.join(', ')})`;
 
-        if (onConflict === 'ignore') {
+        if (this.deferred || onConflict === 'ignore') {
             stmt += ' ON CONFLICT DO NOTHING'
         } else if (onConflict === 'update') {
             const updateData = Object.entries(data)
@@ -40,6 +59,8 @@ abstract class ServerEntity {
         }
 
         await db.prepare(stmt).bind(...values).run()
+
+        return this
     }
 
     async includeForTextSearch(db: D1Database, input: IncludeForTextSearchInput) {
@@ -53,13 +74,14 @@ abstract class ServerEntity {
             keywords = [],
             guid,
         } = input
-        const existingItem = await db
-            .prepare(`SELECT guid FROM text_search WHERE guid = ? AND table_name = ?`)
-            .bind(guid, this.tableName)
-            .first()
-        const alreadyExists = existingItem !== null
 
-        if (alreadyExists) {
+        // SQLite doesn't support UPSERT for virtual tables
+
+        const existingRecord = db
+            .prepare('SELECT guid FROM text_search WHERE guid = ? AND table_name = ?')
+            .bind(guid, this.tableName)
+
+        if (existingRecord) {
             await db
                 .prepare(`
                     UPDATE text_search SET
@@ -82,44 +104,42 @@ abstract class ServerEntity {
                 .prepare(`
                     INSERT INTO text_search (
                         title, alias, description, author, content, categories, keywords,
-                        guid, table_name                     
+                        guid, table_name
                     ) VALUES (
-                        ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?
-                    )
-                `)
+                         ?, ?, ?, ?, ?, ?, ?,
+                         ?, ?
+                    )`)
                 .bind(
                     title, alias, description, author, content, categories.join(','), keywords.join(','),
                     guid, this.tableName,
                 )
                 .run()
         }
+
+        return this
     }
 
 }
 
-interface IncludeForTextSearchInput {
-    title: string
-    alias?: string
-    description: string
-    author?: string
-    content?: string
-    categories?: string[]
-    keywords?: string[]
-    guid: string
+export interface RawFeedFile {
+    feed_url: string
+    fetched_at: string | Date
+    referenced_feed: string
+    cached_file: string
+    sha256_hash: string
 }
 
 export class ServerFeedFile extends ServerEntity {
-    feed_url: string;
-    fetched_at: Date;
-    referenced_feed: string;
-    cached_file: string;
-    sha256_hash: string;
+    readonly feed_url: string;
+    readonly fetched_at: Date;
+    readonly referenced_feed: string;
+    readonly cached_file: string;
+    readonly sha256_hash: string;
 
-    readonly #rawText: string;
+    #rawText: string | null;
 
-    constructor(data, rawText = null, state: PersistenceState = 'new') {
-        super('feed_file', state);
+    constructor(data: RawFeedFile, rawText: string | null = null) {
+        super('feed_file');
 
         this.feed_url = data.feed_url;
         this.fetched_at = asDate(data.fetched_at);
@@ -130,21 +150,62 @@ export class ServerFeedFile extends ServerEntity {
         this.#rawText = rawText;
     }
 
-    async persistTo(db, bucket: R2Bucket) {
+    async persistTo(db: D1Database, bucket: R2Bucket) {
         if (this.#rawText) {
             await bucket.put(this.cached_file, this.#rawText)
         }
 
-        await super.persistTo(db, {
+        return await super.persistTo(db, {
             feed_url: this.feed_url,
             fetched_at: this.fetched_at.toISOString(),
             referenced_feed: this.referenced_feed,
             cached_file: this.cached_file,
             sha256_hash: this.sha256_hash,
-        }, {
-            onConflict: 'ignore',
         });
     }
+
+    async text(bucket?: R2Bucket) {
+        if (this.#rawText || !bucket) {
+            return this.#rawText
+        }
+
+        const object = await bucket.get(this.cached_file)
+        if (object) {
+            const text = await object.text()
+            this.#rawText = text
+            return text
+        }
+
+        return null
+    }
+
+    static async get(db: D1Database, feedUrl: string, fetchedAt: Date) {
+        const rawFeedFile = await db
+            .prepare('SELECT * FROM feed_file WHERE feed_url = ? AND datetime(fetched_at) = datetime(?)')
+            .bind(feedUrl, fetchedAt.toISOString())
+            .first<RawFeedFile>()
+
+        return rawFeedFile !== null ? new ServerFeedFile(rawFeedFile, null) : null
+    }
+
+    static async getByContentHash(db: D1Database, contentHash: string) {
+        const rawFeedFile = await db
+            .prepare('SELECT * FROM feed_file WHERE sha256_hash = ?')
+            .bind(contentHash)
+            .first<RawFeedFile>()
+
+        return rawFeedFile !== null ? new ServerFeedFile(rawFeedFile, null) : null
+    }
+}
+
+export interface RawFeedSource {
+    feed_url: string
+    referenced_feed: string
+    actively_updating: number | boolean
+    last_updated: string | Date
+    last_fetched: string | Date
+    archive: number | boolean
+    primary_source: number | boolean
 }
 
 export class ServerFeedSource extends ServerEntity {
@@ -156,8 +217,11 @@ export class ServerFeedSource extends ServerEntity {
     archive: boolean;
     primary_source: boolean;
 
-    constructor(data, state: PersistenceState = 'new') {
-        super('feed_source', state);
+    constructor(data: RawFeedSource) {
+        super('feed_source', {
+            onConflict: 'update',
+            updateExcludeFields: ['feed_url'],
+        });
 
         this.feed_url = data.feed_url
         this.referenced_feed = data.referenced_feed
@@ -168,8 +232,8 @@ export class ServerFeedSource extends ServerEntity {
         this.primary_source = asBoolean(data.primary_source)
     }
 
-    async persistTo(db) {
-        await super.persistTo(db, {
+    async persistTo(db: D1Database) {
+        return await super.persistTo(db, {
             feed_url: this.feed_url,
             referenced_feed: this.referenced_feed,
             actively_updating: this.actively_updating,
@@ -177,11 +241,36 @@ export class ServerFeedSource extends ServerEntity {
             last_fetched: this.last_fetched.toISOString(),
             archive: this.archive,
             primary_source: this.primary_source,
-        }, {
-            onConflict: 'update',
-            updateExcludeFields: ['feed_url'],
         })
     }
+
+    static async get(db: D1Database, url: string) {
+        const rawFeedSource = await db
+            .prepare('SELECT * FROM feed_source WHERE feed_url = ?')
+            .bind(url)
+            .first<RawFeedSource>()
+
+        return rawFeedSource !== null ? new ServerFeedSource(rawFeedSource) : null
+    }
+}
+
+export interface RawFeed {
+    guid: string
+    input_url: string
+    source_url: string
+    title: string
+    alias: string
+    description: string
+    author: string
+    type: "podcast" | "blog"
+    ongoing: number | boolean | null
+    active: number | boolean
+    image_src: string | null
+    image_alt: string | null
+    last_updated: string | Date
+    update_frequency: number
+    link: string
+    categories: string
 }
 
 export class ServerFeed extends ServerEntity {
@@ -202,8 +291,11 @@ export class ServerFeed extends ServerEntity {
     link: string;
     categories: string[];
 
-    constructor(data, state: PersistenceState = 'new') {
-        super('feed', state);
+    constructor(data: RawFeed) {
+        super('feed', {
+            onConflict: 'update',
+            updateExcludeFields: ['guid', 'input_url', 'alias', 'active', 'categories'],
+        });
 
         this.guid = data.guid;
         this.input_url = data.input_url;
@@ -213,7 +305,7 @@ export class ServerFeed extends ServerEntity {
         this.description = data.description
         this.author = data.author
         this.type = data.type
-        this.ongoing = asBoolean(data.ongoing)
+        this.ongoing = data.ongoing ? asBoolean(data.ongoing) : null
         this.active = asBoolean(data.active)
         this.image_src = data.image_src
         this.image_alt = data.image_alt
@@ -223,7 +315,7 @@ export class ServerFeed extends ServerEntity {
         this.categories = asStringList(data.categories)
     }
 
-    async persistTo(db) {
+    async persistTo(db: D1Database) {
         await super.persistTo(db, {
             guid: this.guid,
             input_url: this.input_url,
@@ -241,14 +333,29 @@ export class ServerFeed extends ServerEntity {
             update_frequency: this.update_frequency,
             link: this.link,
             categories: this.categories.join(','),
-        }, {
-            onConflict: 'update',
-            updateExcludeFields: ['guid', 'input_url', 'alias', 'active', 'categories'],
         })
+
+        return await super.includeForTextSearch(db, this)
     }
 
-    async includeForTextSearch(db: D1Database) {
-        await super.includeForTextSearch(db, this)
+    async feedSources(db: D1Database) {
+        const {results} = await db
+            .prepare(`
+                SELECT feed_source.* FROM feed_source 
+                LEFT JOIN feed ON feed_source.referenced_feed = feed.guid
+                WHERE feed.guid = ?`)
+            .bind(this.guid)
+            .all<RawFeedSource>()
+
+        return results.map(item => new ServerFeedSource(item))
+    }
+
+    static async get(db: D1Database, guid: string) {
+        const rawFeed = await db.prepare('SELECT * FROM feed WHERE guid = ?')
+            .bind(guid)
+            .first<RawFeed>()
+
+        return rawFeed !== null ? new ServerFeed(rawFeed) : null
     }
 }
 
@@ -288,6 +395,27 @@ export class ClientFeed {
     }
 }
 
+export interface RawFeedItem {
+    guid: string
+    source_feed: string
+    season: number | null
+    episode: number | null
+    title: string
+    description: string
+    link: string
+    date: string | Date | null
+    enclosure_url: string | null
+    enclosure_length: number | null
+    enclosure_type: string | null
+    duration: number | null
+    duration_unit: string | null
+    encoded_content: string
+    keywords: string
+    finished: number | boolean
+    progress: number
+    bookmarked?: number | boolean
+}
+
 export class ServerFeedItem extends ServerEntity {
     guid: string;
     source_feed: string;
@@ -308,8 +436,11 @@ export class ServerFeedItem extends ServerEntity {
     progress: number;
     bookmarked: boolean;
 
-    constructor(data, state: PersistenceState = 'new') {
-        super('feed_item', state);
+    constructor(data: RawFeedItem) {
+        super('feed_item', {
+            onConflict: 'update',
+            updateExcludeFields: ['guid', 'source_feed', 'finished', 'progress'],
+        });
 
         this.guid = data.guid
         this.source_feed = data.source_feed
@@ -318,7 +449,7 @@ export class ServerFeedItem extends ServerEntity {
         this.title = data.title
         this.description = data.description
         this.link = data.link
-        this.date = asDate(data.date)
+        this.date = data.date ? asDate(data.date) : null
         this.enclosure_url = data.enclosure_url
         this.enclosure_length = data.enclosure_length
         this.enclosure_type = data.enclosure_type
@@ -331,7 +462,7 @@ export class ServerFeedItem extends ServerEntity {
         this.bookmarked = asBoolean(data.bookmarked ?? false)
     }
 
-    async persistTo(db) {
+    async persistTo(db: D1Database) {
         await super.persistTo(db, {
             guid: this.guid,
             source_feed: this.source_feed,
@@ -340,7 +471,7 @@ export class ServerFeedItem extends ServerEntity {
             title: this.title,
             description: this.description,
             link: this.link,
-            date: this.date.toISOString(),
+            date: this.date ? this.date.toISOString() : null,
             enclosure_url: this.enclosure_url,
             enclosure_length: this.enclosure_length,
             enclosure_type: this.enclosure_type,
@@ -351,14 +482,18 @@ export class ServerFeedItem extends ServerEntity {
             finished: this.finished,
             progress: this.progress,
             bookmarked: this.bookmarked,
-        }, {
-            onConflict: 'update',
-            updateExcludeFields: ['guid', 'source_feed', 'finished', 'progress'],
         })
+
+        return await super.includeForTextSearch(db, this)
     }
 
-    async includeForTextSearch(db: D1Database) {
-        await super.includeForTextSearch(db, this)
+    static async get(db: D1Database, guid: string) {
+        const rawFeedItem = await db
+            .prepare('SELECT * FROM feed_item WHERE guid = ?')
+            .bind(guid)
+            .first<RawFeedItem>()
+
+        return rawFeedItem !== null ? new ServerFeedItem(rawFeedItem) : null
     }
 }
 

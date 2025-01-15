@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import {useFeedStore} from "../stores/feeds.ts";
-import {computed, onMounted} from "vue";
+import {onMounted} from "vue";
 import {useFeedItemStore} from "../stores/feeditems.ts";
 
 const feedStore = useFeedStore()
 const feedItemStore = useFeedItemStore()
 onMounted(feedItemStore.loadBookmarkedItems)
-
-const bookmarkedItems = computed(() => feedItemStore.bookmarked)
 </script>
 
 <template>
@@ -35,19 +33,19 @@ const bookmarkedItems = computed(() => feedItemStore.bookmarked)
 
     <p class="menu-label has-text-primary">Bookmarked Items</p>
 
-    <div v-if="feedItemStore.bookmarked.length === 0">
+    <div v-if="feedItemStore.bookmarkedItems.length === 0">
       No bookmarks! Bookmark an item to access them quickly here.
     </div>
     <ul class="menu-list">
       <li
-          v-for="feedItem in bookmarkedItems" :key="feedItem.guid"
-          class="is-inline-flex">
+          v-for="feedItem in feedItemStore.bookmarkedItems" :key="feedItem.guid"
+          class="is-inline-flex" style="width: 100%">
         <router-link :to="{name: 'item', params: {guid: feedItem.guid}}">
           {{ feedItem.title }}
         </router-link>
         <span
             class="button material-symbols-outlined has-text-warning"
-            style="border: none;"
+            style="border: none; margin-left: auto;"
             title="Unbookmark this item"
             @click="feedItemStore.unbookmarkItem(feedItem)">
           bookmark_remove

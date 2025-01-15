@@ -3,22 +3,14 @@ import type {Feed, LoadingState} from "../types.ts";
 
 type FeedLoadedCallback = () => any
 
-interface FeedStoreState {
-    feeds: Feed[]
-    feedsLoadState: LoadingState
-    feedLoadedCallbacks: FeedLoadedCallback[]
-}
-
 export const useFeedStore = defineStore('feeds', {
-    state(): FeedStoreState {
-        return {
-            feeds: [] as Feed[],
-            feedsLoadState: 'unloaded',
-            feedLoadedCallbacks: [] as FeedLoadedCallback[],
-        }
-    },
+    state: () => ({
+        feeds: [] as Feed[],
+        feedsLoadState: 'unloaded' as LoadingState,
+        feedLoadedCallbacks: [] as FeedLoadedCallback[],
+    }),
     getters: {
-        feedsByCategory: (state: FeedStoreState) => state.feeds.reduce((map, feed) => {
+        feedsByCategory: (state) => state.feeds.reduce((map, feed) => {
             feed.categories.forEach(category => {
                 if (map.hasOwnProperty(category)) {
                     map[category].push(feed)
@@ -60,7 +52,7 @@ export const useFeedStore = defineStore('feeds', {
                 this.feedsLoadState = 'unloaded'
             }
         },
-        async afterFeedsLoaded(func) {
+        async afterFeedsLoaded(func: FeedLoadedCallback) {
             if (this.feedsLoadState === 'loaded') {
                 func()
             } else if (this.feedsLoadState === 'loading') {
