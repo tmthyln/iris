@@ -28,7 +28,7 @@ export const useFeedStore = defineStore('feeds', {
             }
 
             return map
-        }, {}),
+        }, {} as {[category: string]: Feed[]}),
     },
     actions: {
         async loadFeeds() {
