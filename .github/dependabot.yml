@@ -11,3 +11,21 @@ updates:
       interval: "weekly"
     assignees:
       - "tmthyln"
+    groups:
+      vite:
+        patterns:
+          - "vite"
+          - "vitest"
+          - "vite-plugin-*"
+      vue:
+        patterns:
+          - "vue"
+          - "vue-router"
+          - "pinia"
+          - "vue-tsc"
+      linting:
+        patterns:
+          - "@eslint/*"
+          - "eslint"
+          - "eslint-plugin-*"
+          - "typescript-eslint"
