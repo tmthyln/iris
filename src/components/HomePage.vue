@@ -3,7 +3,6 @@ import SubscriptionPreview from "./SubscriptionPreview.vue";
 import {computed, onMounted, ref} from "vue";
 import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
-import {useFetch} from "@vueuse/core";
 import {useFeedItemStore} from "../stores/feeditems.ts";
 
 const showFeedAdder = ref(false);

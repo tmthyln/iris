@@ -17,7 +17,7 @@ onMounted(feedItemStore.loadBookmarkedItems)
       No categories! Add a category on a feed to see them here.
     </div>
 
-    <template v-for="(catFeeds, category) in feedStore.feedsByCategory">
+    <template v-for="(catFeeds, category) in feedStore.feedsByCategory" :key="category">
       <p class="menu-label has-text-info">{{ category }}</p>
 
       <ul class="menu-list">

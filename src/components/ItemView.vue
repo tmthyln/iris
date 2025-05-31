@@ -4,7 +4,7 @@ import {useTimeAgo} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
 import {Feed, FeedItem} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
-import Controls from "./Controls.vue";
+import AudioControls from "./AudioControls.vue";
 import client from '../client'
 
 const props = defineProps<{
@@ -57,7 +57,7 @@ onMounted(fetchFeedItem)
 
     <div class="mb-5">Published {{ useTimeAgo(feedItem?.date).value }}</div>
 
-    <Controls v-if="feedItem" :feed-item="feedItem"/>
+    <AudioControls v-if="feedItem" :feed-item="feedItem"/>
 
     <hr>
 

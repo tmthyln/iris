@@ -153,7 +153,7 @@ export function parseRssText(rawText: string): ParsedFeedData {
         ignorePiTags: true,
     })
     let rssData = parser.parse(rawText)
-    if (rssData.hasOwnProperty('rss'))
+    if (Object.prototype.hasOwnProperty.call(rssData, 'rss'))
         rssData = rssData.rss
     const channelData = rssData.channel
     const itemData = Array.isArray(channelData.item) ? channelData.item : [channelData.item]
@@ -197,11 +197,11 @@ function processChannelItem(item: object) {
     }
 }
 
-function determineChannelType(channelData: Record<string, any>) {
+function determineChannelType(channelData: Record<string, unknown>) {
     const hasITunes = ['itunes:summary', 'itunes:type', 'itunes:author']
-        .reduce((hasITunes, key) => hasITunes || channelData.hasOwnProperty(key), false)
+        .reduce((hasITunes, key) => hasITunes || Object.prototype.hasOwnProperty.call(channelData, key), false)
     const hasPodcast = ['podcast:guid', 'podcast:locked', 'podcast:person', 'podcast:podping']
-        .reduce((hasPodcast, key) => hasPodcast || channelData.hasOwnProperty(key), false)
+        .reduce((hasPodcast, key) => hasPodcast || Object.prototype.hasOwnProperty.call(channelData, key), false)
 
     if (hasITunes || hasPodcast) {
         return 'podcast'
@@ -225,10 +225,10 @@ function parseDuration(rawDuration: number | string | null) {
         return 60*parseInt(colonParts[0]) + parseInt(colonParts[1])
     }
 
-    return parseInt(rawDuration)
+    return typeof rawDuration === 'string' ? parseInt(rawDuration) : rawDuration
 }
 
-function determineDurationUnit(rawDuration: any) {
+function determineDurationUnit(rawDuration: unknown) {
     return 'seconds'
 }
 
@@ -239,7 +239,11 @@ function cleanList(rawListString: string | null) {
     return rawListString.split(',').map(raw => raw.trim()).join(',')
 }
 
-function coalesce(mapping, ...keys) {
+interface RecursiveMapping {
+    [key: string]: RecursiveMapping | RecursiveMapping[] | string | number
+}
+
+function coalesce(mapping: RecursiveMapping, ...keys: string[]) {
     for (const key of keys) {
         const value = getMultikey(mapping, key)
         if (value !== null) {
@@ -250,18 +254,19 @@ function coalesce(mapping, ...keys) {
     return null
 }
 
-function getMultikey(mapping, keyString) {
+function getMultikey(mapping: RecursiveMapping, keyString: string) {
     const keyParts = keyString.split('.');
     let currentObjs = [mapping];
 
     for (const key of keyParts) {
-        const newObjs = [];
+        const newObjs = [] as RecursiveMapping[];
         for (const currentObj of currentObjs) {
-            if (currentObj.hasOwnProperty(key)) {
-                if (Array.isArray(currentObj[key])) {
-                    newObjs.push(...currentObj[key])
-                } else {
-                    newObjs.push(currentObj[key])
+            const currVal = currentObj[key]
+            if (currVal) {
+                if (Array.isArray(currVal)) {
+                    newObjs.push(...currVal)
+                } else if (typeof currVal === 'object') {
+                    newObjs.push(currVal)
                 }
             }
         }
@@ -274,7 +279,7 @@ function getMultikey(mapping, keyString) {
     }
 
     for (const obj of currentObjs) {
-        if (obj.hasOwnProperty('#text') && obj['#text']) {
+        if (obj['#text']) {
             return obj['#text']
         } else if (obj) {
             return obj

@@ -1,10 +1,10 @@
-import Home from "../components/Home.vue";
+import HomePage from "../components/HomePage.vue";
 
 export default [
     {
         name: 'home',
         path: '/',
-        component: Home,
+        component: HomePage,
     }, {
         name: 'subscription',
         path: '/subscriptions/:guid',

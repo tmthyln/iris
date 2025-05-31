@@ -35,6 +35,7 @@ const playingStatusString = computed(() => {
         case 'queued': return 'In the Queue'
         case 'playable': return 'Play'
         case 'replayable': return 'Play Again'
+        default: return 'Unknown'
     }
 })
 

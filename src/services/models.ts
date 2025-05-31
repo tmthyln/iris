@@ -34,7 +34,7 @@ abstract class ServerEntity {
         return this
     }
 
-    protected async persistTo(db: D1Database, data: Record<string, any>) {
+    protected async persistTo(db: D1Database, data: Record<string, unknown>) {
         const {
             onConflict = 'ignore',
             updateExcludeFields = [],

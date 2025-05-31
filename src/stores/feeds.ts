@@ -1,7 +1,7 @@
 import {defineStore} from "pinia";
 import type {Feed, LoadingState} from "../types.ts";
 
-type FeedLoadedCallback = () => any
+type FeedLoadedCallback = () => unknown
 
 export const useFeedStore = defineStore('feeds', {
     state: () => ({
@@ -12,7 +12,7 @@ export const useFeedStore = defineStore('feeds', {
     getters: {
         feedsByCategory: (state) => state.feeds.reduce((map, feed) => {
             feed.categories.forEach(category => {
-                if (map.hasOwnProperty(category)) {
+                if (Object.prototype.hasOwnProperty.call(map, category)) {
                     map[category].push(feed)
                 } else {
                     map[category] = [feed]
@@ -20,7 +20,7 @@ export const useFeedStore = defineStore('feeds', {
             })
 
             if (feed.categories.length === 0) {
-                if (map.hasOwnProperty('Uncategorized')) {
+                if (Object.prototype.hasOwnProperty.call(map, 'Uncategorized')) {
                     map['Uncategorized'].push(feed)
                 } else {
                     map['Uncategorized'] = [feed]

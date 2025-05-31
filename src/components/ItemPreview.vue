@@ -4,7 +4,7 @@ import {useTimeAgo} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
 import {computed} from "vue";
 import {useUnescapedHTML} from "../htmlproc.ts";
-import Controls from "./Controls.vue";
+import AudioControls from "./AudioControls.vue";
 
 const props = defineProps<{
     feedItem: FeedItemPreview,
@@ -35,7 +35,7 @@ const formattedPubDate = useTimeAgo(props.feedItem.date)
       </div>
     </div>
 
-    <Controls :feed-item="feedItem"/>
+    <AudioControls :feed-item="feedItem"/>
 
     <!-- TODO: remove this injection vulnerability -->
     <div class="content" v-html="feedItem.description">
