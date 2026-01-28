@@ -14,8 +14,9 @@ const {
     src: 'https://media.transistor.fm/97a0251c/e2001ce8.mp3',
 })
 
-function setPlaybackPosition(event: InputEvent) {
-    currentTime.value = event.currentTarget.value
+function setPlaybackPosition(event: Event) {
+    const target = event.currentTarget as HTMLInputElement
+    currentTime.value = Number(target.value)
 }
 function fastRewind() {
     currentTime.value = Math.max(0, currentTime.value - 15)
@@ -24,43 +25,21 @@ function fastForward() {
     currentTime.value = Math.min(duration.value, currentTime.value + 30)
 }
 
+const playbackRates = [1, 1.25, 1.5, 1.75, 2, 0.25, 0.5]
 function cyclePlaybackRate() {
-    switch (rate.value) {
-        case 1:
-            rate.value = 1.25
-            break
-        case 1.25:
-            rate.value = 1.5
-            break
-        case 1.5:
-            rate.value = 1.75
-            break
-        case 1.75:
-            rate.value = 2
-            break
-        case 2:
-            rate.value = 0.25
-            break
-        case 0.25:
-            rate.value = 0.5
-            break
-        case 0.5:
-            rate.value = 1
-            break
-    }
+    const currentIndex = playbackRates.indexOf(rate.value)
+    const nextIndex = (currentIndex + 1) % playbackRates.length
+    rate.value = playbackRates[nextIndex]
 }
 
-const {pause, resume} = useIntervalFn(() => {
-    console.log('tick')
+const {pause: pauseUpdates, resume: resumeUpdates} = useIntervalFn(() => {
+    // TODO: update progress with latest position
 }, 5000)
-watch(
-    ended,
-    () => {
-        if (ended.value) {
-            console.log('ended')
-        }
+watch(ended, () => {
+    if (ended.value) {
+        // TODO: handle playback ended
     }
-)
+})
 </script>
 
 <template>
@@ -80,50 +59,25 @@ watch(
       </div>
       <div class="level-item is-gap-1">
 
-        <button
-            class="button is-rounded px-2"
-            style="border: none;">
-          <span class="material-symbols-outlined">
-            skip_previous
-          </span>
+        <button class="button is-rounded px-2 control-button">
+          <span class="material-symbols-outlined">skip_previous</span>
         </button>
 
-        <button
-            class="button is-rounded px-2"
-            style="border: none;"
-            @click="fastRewind">
-          <span class="material-symbols-outlined">
-            fast_rewind
-          </span>
+        <button class="button is-rounded px-2 control-button" @click="fastRewind">
+          <span class="material-symbols-outlined">fast_rewind</span>
         </button>
 
-        <button
-            class="button is-rounded px-3 is-large"
-            style="border: none;"
-            @click="playing = !playing">
-          <span v-if="!playing" class="material-symbols-outlined">
-            play_arrow
-          </span>
-          <span v-else class="material-symbols-outlined">
-            pause
-          </span>
+        <button class="button is-rounded px-3 is-large control-button" @click="playing = !playing">
+          <span v-if="!playing" class="material-symbols-outlined">play_arrow</span>
+          <span v-else class="material-symbols-outlined">pause</span>
         </button>
 
-        <button
-            class="button is-rounded px-2"
-            style="border: none;"
-            @click="fastForward">
-          <span class="material-symbols-outlined">
-            fast_forward
-          </span>
+        <button class="button is-rounded px-2 control-button" @click="fastForward">
+          <span class="material-symbols-outlined">fast_forward</span>
         </button>
 
-        <button
-            class="button is-rounded px-2"
-            style="border: none;">
-          <span class="material-symbols-outlined">
-            skip_next
-          </span>
+        <button class="button is-rounded px-2 control-button">
+          <span class="material-symbols-outlined">skip_next</span>
         </button>
 
         <button class="tag button" @click="cyclePlaybackRate">
@@ -133,13 +87,8 @@ watch(
       </div>
       <div class="level-right">
         <span>{{ useDurationFormat(currentTime).value }} / {{ useDurationFormat(duration).value }}</span>
-        <button
-            class="button is-rounded px-2"
-            style="border: none;"
-            title="Show queue and what's up next">
-          <span class="material-symbols-outlined">
-            playlist_play
-          </span>
+        <button class="button is-rounded px-2 control-button" title="Show queue and what's up next">
+          <span class="material-symbols-outlined">playlist_play</span>
         </button>
       </div>
     </div>
@@ -157,6 +106,9 @@ watch(
 }
 .footer-placeholder {
     height: 100px;
+}
+.control-button {
+    border: none;
 }
 
 input[type="range"].playback-progress {
