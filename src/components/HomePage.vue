@@ -46,7 +46,7 @@ const allFeedItems = computed(() => feedItemStore.recentItems)
         <button class="button is-small is-primary ml-5" aria-hidden="true" @click="showFeedAdder = true">Add Feed</button>
       </h2>
 
-      <div class="is-flex" style="overflow-x: scroll">
+      <div class="is-flex subscriptions-list">
         <SubscriptionPreview
             v-for="feed in feedStore.feeds" :key="feed.guid"
             :feed="feed"
@@ -101,5 +101,26 @@ const allFeedItems = computed(() => feedItemStore.recentItems)
 </template>
 
 <style scoped>
+.subscriptions-list {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bulma-border) transparent;
+}
 
+.subscriptions-list::-webkit-scrollbar {
+  height: 6px;
+}
+
+.subscriptions-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.subscriptions-list::-webkit-scrollbar-thumb {
+  background: var(--bulma-border);
+  border-radius: 3px;
+}
+
+.subscriptions-list::-webkit-scrollbar-thumb:hover {
+  background: var(--bulma-border-hover);
+}
 </style>
