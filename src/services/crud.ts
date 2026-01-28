@@ -138,7 +138,7 @@ export async function addItemToQueue(
         await db
             .prepare(`
                 INSERT INTO queue_item(feed_item_guid, queue_order)
-                SELECT ?, MAX(queue_order)
+                SELECT ?, COALESCE(MAX(queue_order), -1) + 1
                 FROM queue_item`)
             .bind(feedItemId)
             .run()
