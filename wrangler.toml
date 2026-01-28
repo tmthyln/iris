@@ -16,6 +16,12 @@ d1_databases = [
 r2_buckets = [
     { binding = "RSS_CACHE_BUCKET", bucket_name = "iris-rss-cache-staging" }
 ]
+durable_objects.bindings = [
+    { name = "ITEM_QUEUE", class_name = "ItemQueue" }
+]
+migrations = [
+    { tag = "v1", new_sqlite_classes = ["ItemQueue"] }
+]
 
 [env.staging.queues]
 producers = [
@@ -35,6 +41,12 @@ d1_databases = [
 ]
 r2_buckets = [
     { binding = "RSS_CACHE_BUCKET", bucket_name = "iris-rss-cache-prod" }
+]
+durable_objects.bindings = [
+    { name = "ITEM_QUEUE", class_name = "ItemQueue" }
+]
+migrations = [
+    { tag = "v1", new_sqlite_classes = ["ItemQueue"] }
 ]
 
 [env.prod.queues]

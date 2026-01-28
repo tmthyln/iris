@@ -19,6 +19,7 @@ import {
 } from './crud'
 import type { RefreshFeedTask, LoadFeedSourceArchivesTask } from "./types";
 import {fetchRssFile, parseRssText} from "./utils/files";
+import {getQueue} from "./queue";
 
 export const app = new Hono<{Bindings: Env}>().basePath('/api');
 
@@ -170,4 +171,43 @@ app.patch('/feeditem/:guid', async (c) => {
         .run()
 
     return new Response()
+})
+
+/******************************************************************************
+ * Feed item endpoints
+ *****************************************************************************/
+
+app.get('/queue', async (c) => {
+    const queue = getQueue(c.env)
+    return Response.json({items: await queue.getItems()})
+})
+
+app.post('/queue', async (c) => {
+    const db = c.env.DB
+    const data = await c.req.json()
+    const {feedItemId, position} = data
+
+    if (!feedItemId) {
+        return new Response(null, {status: 400, statusText: 'feedItemId is required'})
+    }
+
+    const feedItem = await ServerFeedItem.get(db, feedItemId)
+    if (!feedItem) {
+        return new Response(null, {status: 404, statusText: `No feed item found with id: ${feedItemId}`})
+    }
+
+    const feed = await ServerFeed.get(db, feedItem.source_feed)
+    if (feed?.type !== 'podcast') {
+        return new Response(null, {status: 400, statusText: 'Only podcast feed items can be queued'})
+    }
+
+    const queue = getQueue(c.env)
+    let items
+    if (typeof position === 'number') {
+        items = await queue.insertItem(feedItemId, position)
+    } else {
+        items = await queue.enqueueItem(feedItemId)
+    }
+
+    return Response.json({items}, {status: 201})
 })
