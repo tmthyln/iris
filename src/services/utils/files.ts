@@ -220,7 +220,7 @@ function parseDuration(rawDuration: number | string | null) {
 
     const colonParts = String(rawDuration).split(':');
     if (colonParts.length === 3) {
-        return 60*60*parseInt(colonParts[0]) + 60*parseInt(colonParts[1] + parseInt(colonParts[2]))
+        return 60*60*parseInt(colonParts[0]) + 60*parseInt(colonParts[1]) + parseInt(colonParts[2])
     } else if (colonParts.length === 2) {
         return 60*parseInt(colonParts[0]) + parseInt(colonParts[1])
     }
