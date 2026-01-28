@@ -23,8 +23,13 @@ async function fetchFeedItem() {
 
         isFetchingItem.value = false
 
-        await feedStore.afterFeedsLoaded(() => {
+        await feedStore.afterFeedsLoaded(async () => {
             feed.value = feedStore.getFeedById(data.source_feed)
+
+            if (feed.value?.type === 'blog' && !data.finished && feedItem.value) {
+                await client.modifyFeedItem(data.guid, { finished: true })
+                feedItem.value.finished = true
+            }
         })
     }
 }
