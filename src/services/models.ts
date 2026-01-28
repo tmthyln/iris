@@ -77,9 +77,10 @@ abstract class ServerEntity {
 
         // SQLite doesn't support UPSERT for virtual tables
 
-        const existingRecord = db
+        const existingRecord = await db
             .prepare('SELECT guid FROM text_search WHERE guid = ? AND table_name = ?')
             .bind(guid, this.tableName)
+            .first()
 
         if (existingRecord) {
             await db
