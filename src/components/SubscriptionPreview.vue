@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {computed, toRef} from 'vue';
+import {toRef} from 'vue';
 import {Feed} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
 import {usePlaceholderImage} from "../placeholderImage.ts";
