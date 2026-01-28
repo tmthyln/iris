@@ -341,10 +341,7 @@ export class ServerFeed extends ServerEntity {
 
     async feedSources(db: D1Database) {
         const {results} = await db
-            .prepare(`
-                SELECT feed_source.* FROM feed_source 
-                LEFT JOIN feed ON feed_source.referenced_feed = feed.guid
-                WHERE feed.guid = ?`)
+            .prepare('SELECT * FROM feed_source WHERE referenced_feed = ?')
             .bind(this.guid)
             .all<RawFeedSource>()
 
