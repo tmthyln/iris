@@ -529,9 +529,9 @@ export class ClientFeedItemPreview {
         this.duration = data.duration
         this.duration_unit = data.duration_unit
         this.keywords = data.keywords
-        this.finished = asBoolean(data.finished)
+        this.finished = data.finished
         this.progress = data.progress
-        this.bookmarked = asBoolean(data.bookmarked)
+        this.bookmarked = data.bookmarked
     }
 }
 
