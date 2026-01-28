@@ -47,6 +47,7 @@
   "include": [
     "worker-configuration.d.ts",
     "src/service.ts",
-    "src/services/*"
+    "src/services/*",
+    "src/lib/*"
   ]
 }

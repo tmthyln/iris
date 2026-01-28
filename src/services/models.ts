@@ -1,5 +1,5 @@
 import type {D1Database, R2Bucket} from '@cloudflare/workers-types'
-import {asBoolean, asDate, asStringList} from "./utils/conversion";
+import {asBoolean, asDate, asStringList} from "../lib/conversion";
 
 interface PersistOptions {
     onConflict?: 'update' | 'ignore'
