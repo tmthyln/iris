@@ -211,3 +211,18 @@ app.post('/queue', async (c) => {
 
     return Response.json({items}, {status: 201})
 })
+
+/******************************************************************************
+ * Command endpoints
+ *****************************************************************************/
+
+app.post('/command/refresh-all-feeds', async (c) => {
+    const feeds = await getFeeds(c.env.DB)
+
+    for (const feed of feeds) {
+        await refreshFeed(feed.guid, c.env)
+    }
+    //await Promise.all(feeds.map(feed => refreshFeed(feed.guid, c.env)))
+
+    return Response.json({refreshedCount: feeds.length})
+})

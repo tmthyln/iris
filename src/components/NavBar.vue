@@ -1,7 +1,55 @@
 <script setup lang="ts">
-import {ref} from "vue";
+import {ref, computed} from "vue";
 
 const showSearch = ref(false)
+const searchInput = ref('')
+const commandStatus = ref<'idle' | 'running' | 'success' | 'error'>('idle')
+
+const isCommand = computed(() => searchInput.value.startsWith('/'))
+const placeholder = computed(() => isCommand.value ? 'Enter command...' : 'Search posts and podcasts...')
+
+async function handleSubmit() {
+    if (isCommand.value) {
+        await executeCommand(searchInput.value.slice(1).trim())
+    } else {
+        // TODO: handle search
+        console.log('Search:', searchInput.value)
+    }
+}
+
+async function executeCommand(command: string) {
+    const [cmd, ...args] = command.toLowerCase().split(/\s+/)
+
+    if (cmd === 'refresh' && args[0] === 'all') {
+        commandStatus.value = 'running'
+        try {
+            const response = await fetch('/api/command/refresh-all-feeds', {method: 'POST'})
+            if (response.ok) {
+                const data = await response.json()
+                commandStatus.value = 'success'
+                console.log(`Refreshed ${data.refreshedCount} feeds`)
+            } else {
+                commandStatus.value = 'error'
+            }
+        } catch {
+            commandStatus.value = 'error'
+        }
+        closeSearch()
+    } else {
+        console.log('Unknown command:', command)
+    }
+}
+
+function openSearch() {
+    showSearch.value = true
+    searchInput.value = ''
+    commandStatus.value = 'idle'
+}
+
+function closeSearch() {
+    showSearch.value = false
+    searchInput.value = ''
+}
 </script>
 
 <template>
@@ -16,20 +64,27 @@ const showSearch = ref(false)
     <div class="navbar-menu">
       <div class="navbar-end">
         <div class="navbar-item">
-          <input class="input" type="search" placeholder="Search posts and podcasts" readonly @click="showSearch = true">
+          <input class="input" type="search" placeholder="Search posts and podcasts" readonly @click="openSearch">
         </div>
       </div>
     </div>
 
     <div class="modal" :class="{'is-active': showSearch}">
-      <div class="modal-background is-transparent" @click="showSearch = false"/>
+      <div class="modal-background is-transparent" @click="closeSearch"/>
       <div class="modal-card">
-        <header class="modal-card-head">
-          <p class="modal-card-title">Search blog posts and podcasts</p>
-          <button class="delete" aria-label="close" @click="showSearch = false"/>
-        </header>
         <section class="modal-card-body">
-          <!-- Content ... -->
+          <div class="field">
+            <div class="control">
+              <input
+                  class="input is-large"
+                  type="text"
+                  v-model="searchInput"
+                  :placeholder="placeholder"
+                  @keyup.enter="handleSubmit"
+                  autofocus>
+            </div>
+            <p class="help">Type "/" to enter a command</p>
+          </div>
         </section>
       </div>
     </div>
@@ -37,5 +92,4 @@ const showSearch = ref(false)
 </template>
 
 <style scoped>
-
 </style>
