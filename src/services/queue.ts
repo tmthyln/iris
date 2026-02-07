@@ -1,9 +1,5 @@
 import {DurableObject} from "cloudflare:workers";
 
-export interface Env {
-    ITEM_QUEUE: DurableObjectNamespace<ItemQueue>
-}
-
 export function getQueue(env: Env, name: string = 'default') {
     const id: DurableObjectId = env.ITEM_QUEUE.idFromName(name)
     return env.ITEM_QUEUE.get(id)

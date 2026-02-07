@@ -2,6 +2,7 @@ import { app } from './services/endpoints'
 import {FeedProcessingTask, RefreshFeedTask} from "./services/types";
 import {refreshFeed} from "./services/flows";
 import {getFeeds} from "./services/crud";
+export {ItemQueue} from "./services/queue";
 
 // noinspection JSUnusedGlobalSymbols
 export default {
