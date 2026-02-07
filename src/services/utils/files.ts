@@ -228,7 +228,7 @@ function parseDuration(rawDuration: number | string | null) {
     return typeof rawDuration === 'string' ? parseInt(rawDuration) : rawDuration
 }
 
-function determineDurationUnit(rawDuration: unknown) {
+function determineDurationUnit(_rawDuration: unknown) {
     return 'seconds'
 }
 
@@ -239,11 +239,7 @@ function cleanList(rawListString: string | null) {
     return rawListString.split(',').map(raw => raw.trim()).join(',')
 }
 
-interface RecursiveMapping {
-    [key: string]: RecursiveMapping | RecursiveMapping[] | string | number
-}
-
-function coalesce(mapping: RecursiveMapping, ...keys: string[]) {
+function coalesce(mapping, ...keys: string[]) {
     for (const key of keys) {
         const value = getMultikey(mapping, key)
         if (value !== null) {
@@ -254,21 +250,28 @@ function coalesce(mapping: RecursiveMapping, ...keys: string[]) {
     return null
 }
 
-function getMultikey(mapping: RecursiveMapping, keyString: string) {
+function getMultikey(mapping, keyString: string) {
     const keyParts = keyString.split('.');
     let currentObjs = [mapping];
 
     for (const key of keyParts) {
-        const newObjs = [] as RecursiveMapping[];
+        const newObjs = [];
+        const primitives = [];
         for (const currentObj of currentObjs) {
             const currVal = currentObj[key]
-            if (currVal) {
+            if (currVal !== undefined && currVal !== null && currVal !== false && currVal !== '') {
                 if (Array.isArray(currVal)) {
                     newObjs.push(...currVal)
                 } else if (typeof currVal === 'object') {
                     newObjs.push(currVal)
+                } else {
+                    primitives.push(currVal)
                 }
             }
+        }
+
+        if (primitives.length > 0) {
+            return primitives[0];
         }
 
         if (newObjs.length === 0) {

@@ -58,7 +58,23 @@ abstract class ServerEntity {
             values.push(...updateValues)
         }
 
-        await db.prepare(stmt).bind(...values).run()
+        try {
+            await db.prepare(stmt).bind(...values).run()
+        } catch (error) {
+            console.error(`[D1 Error] Failed to persist to table "${this.tableName}"`)
+            console.error('Statement:', stmt)
+            console.error('Bind values:', JSON.stringify(values, null, 2))
+            console.error('Data:', JSON.stringify(data, null, 2))
+            if (error instanceof Error) {
+                if ('cause' in error) {
+                    console.error(error.cause)
+                } else {
+                    console.error(error.message)
+                }
+            }
+            console.error()
+            throw error
+        }
 
         return this
     }
