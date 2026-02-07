@@ -26,7 +26,7 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
   <div>
     <div class="is-flex is-align-items-center mb-4">
       <figure class="image is-64x64 ml-3 mr-4">
-        <img :src="resolvedSrc" :alt="feed.image_alt" @error="onImageError">
+        <img :src="resolvedSrc" :alt="feed?.image_alt ?? undefined" @error="onImageError">
       </figure>
       <div class="is-inline-block">
         <small>Posted {{ formattedPubDate }}</small>
