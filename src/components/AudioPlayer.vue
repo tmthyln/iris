@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import {computed, ref, watch} from "vue";
-import {useIntervalFn, useMediaControls} from "@vueuse/core";
+import {useIntervalFn, useMediaControls, onClickOutside} from "@vueuse/core";
+import {useSortable} from "@vueuse/integrations/useSortable";
 import {useDurationFormat} from "../format.ts";
 import {useQueueStore} from "../stores/queue.ts";
+import type {FeedItemPreview} from "../types.ts";
 
 const queueStore = useQueueStore()
 
 const currentItem = computed(() => queueStore.currentlyPlaying)
+const upcomingItems = computed(() => queueStore.items.slice(1))
 
 const src = computed(() => currentItem.value?.enclosure_url ?? '')
 
@@ -54,6 +57,35 @@ watch(ended, () => {
         // TODO: handle playback ended
     }
 })
+
+/* Queue popover */
+const showQueue = ref(false)
+const queuePopover = ref<HTMLElement>()
+
+onClickOutside(queuePopover, () => {
+    showQueue.value = false
+}, {ignore: ['.queue-toggle-button']})
+
+const queueListEl = ref<HTMLElement>()
+useSortable(queueListEl, upcomingItems, {
+    handle: '.drag-handle',
+    animation: 150,
+    onEnd(event) {
+        if (event.oldIndex != null && event.newIndex != null && event.oldIndex !== event.newIndex) {
+            const item = upcomingItems.value[event.oldIndex]
+            // offset by 1 since items[0] is the currently playing item
+            queueStore.moveItem(item, event.newIndex + 1)
+        }
+    },
+})
+
+function playNow(item: FeedItemPreview) {
+    queueStore.playItem(item)
+}
+
+function removeFromQueue(item: FeedItemPreview) {
+    queueStore.removeItem(item)
+}
 </script>
 
 <template>
@@ -100,11 +132,47 @@ watch(ended, () => {
           </button>
 
         </div>
-        <div class="level-right">
+        <div class="level-right" style="position: relative;">
           <span>{{ useDurationFormat(currentTime).value }} / {{ useDurationFormat(duration).value }}</span>
-          <button class="button is-rounded px-2 control-button" title="Show queue and what's up next">
+          <button
+              class="button is-rounded px-2 control-button queue-toggle-button"
+              :class="{'has-text-info': showQueue}"
+              title="Show queue and what's up next"
+              @click="showQueue = !showQueue">
             <span class="material-symbols-outlined">playlist_play</span>
           </button>
+
+          <div v-if="showQueue" ref="queuePopover" class="queue-popover box p-0">
+            <div class="queue-popover-header px-4 py-3">
+              <strong>Up Next</strong>
+            </div>
+            <div v-if="upcomingItems.length === 0" class="px-4 py-3 has-text-grey">
+              Nothing queued
+            </div>
+            <div ref="queueListEl" class="queue-list">
+              <div
+                  v-for="item in upcomingItems"
+                  :key="item.guid"
+                  class="queue-item is-flex is-align-items-center px-3 py-2 is-gap-2">
+                <span class="material-symbols-outlined drag-handle has-text-grey" style="cursor: grab;">
+                  drag_indicator
+                </span>
+                <span class="is-flex-grow-1 is-size-7 queue-item-title">{{ item.title }}</span>
+                <button
+                    class="button is-small px-1 control-button"
+                    title="Play now"
+                    @click="playNow(item)">
+                  <span class="material-symbols-outlined is-size-6">play_arrow</span>
+                </button>
+                <button
+                    class="button is-small px-1 control-button"
+                    title="Remove from queue"
+                    @click="removeFromQueue(item)">
+                  <span class="material-symbols-outlined is-size-6">close</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </footer>
@@ -147,5 +215,38 @@ input[type="range"].playback-progress {
       border: 2px solid #aced32;
       transition: .2s ease-in-out;
     }
+}
+
+.queue-popover {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    width: 350px;
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 8px;
+    z-index: 10;
+}
+
+.queue-popover-header {
+    border-bottom: 1px solid hsl(0, 0%, 90%);
+}
+
+.queue-item {
+    border-bottom: 1px solid hsl(0, 0%, 95%);
+
+    &:last-child {
+        border-bottom: none;
+    }
+
+    &:hover {
+        background-color: hsl(0, 0%, 96%);
+    }
+}
+
+.queue-item-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 </style>

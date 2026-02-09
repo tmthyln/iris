@@ -223,6 +223,20 @@ app.post('/queue', async (c) => {
     return Response.json({items: await hydrateQueueItems(db, guids)}, {status: 201})
 })
 
+app.patch('/queue/:guid', async (c) => {
+    const feedItemGuid = c.req.param('guid')
+    const {position} = await c.req.json()
+
+    if (typeof position !== 'number') {
+        return new Response(null, {status: 400, statusText: 'position is required'})
+    }
+
+    const queue = getQueue(c.env)
+    const guids = await queue.insertItem(feedItemGuid, position)
+
+    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
+})
+
 app.delete('/queue/:guid', async (c) => {
     const feedItemGuid = c.req.param('guid')
     const queue = getQueue(c.env)

@@ -16,8 +16,10 @@
   },
   "dependencies": {
     "@vueuse/core": "^10.9.0",
+    "@vueuse/integrations": "^14.2.0",
     "bulma": "^1.0.0",
     "pinia": "^2.1.7",
+    "sortablejs": "^1.15.6",
     "vue": "^3.4.21",
     "vue-router": "^4.2.5"
   },
@@ -26,6 +28,7 @@
     "@cloudflare/workers-types": "^4.20250109.0",
     "@eslint/css": "^0.8.1",
     "@eslint/js": "^9.28.0",
+    "@types/sortablejs": "^1.15.9",
     "@vite-pwa/assets-generator": "^1.0.0",
     "@vitejs/plugin-vue": "^5.2.4",
     "eslint": "^9.28.0",

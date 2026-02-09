@@ -74,6 +74,18 @@ export default {
         }
         return null
     },
+    async moveQueueItem(feedItemGuid: string, position: number): Promise<FeedItemPreview[] | null> {
+        const response = await fetch(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({position}),
+        })
+
+        if (response.ok) {
+            const data: {items: FeedItemPreview[]} = await response.json()
+            return data.items
+        }
+        return null
+    },
     async removeQueueItem(feedItemGuid: string): Promise<FeedItemPreview[] | null> {
         const response = await fetch(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
             method: 'DELETE',
