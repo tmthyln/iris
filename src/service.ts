@@ -8,7 +8,7 @@ export {ItemQueue} from "./services/queue";
 export default {
     fetch: app.fetch,
 
-    async queue(batch, env, ctx): Promise<void> {
+    async queue(batch, env, _ctx): Promise<void> {
         for (const msg of batch.messages) {
             const task = msg.body as FeedProcessingTask
 
@@ -27,7 +27,7 @@ export default {
         }
     },
 
-    async scheduled(event, env, ctx) {
+    async scheduled(event, env, _ctx) {
         console.log('Kicking off scheduled refresh of all active feeds')
 
         const feeds = await getFeeds(env.DB)

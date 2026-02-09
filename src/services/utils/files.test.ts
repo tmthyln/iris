@@ -1,7 +1,7 @@
 import {describe, it, expect} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
-import {parseRssText, type ChannelData, type ChannelItemData} from './files'
+import {parseRssText} from './files'
 
 const BLOG_RSS = readFileSync(
     resolve(__dirname, '../../assets/test/test_rss_johndcook.rss'),

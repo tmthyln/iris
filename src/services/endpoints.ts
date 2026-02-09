@@ -137,7 +137,7 @@ app.get('/feeditem', async (c) => {
     const bookmarked = c.req.query('bookmarked')
     const limit = parseInt(c.req.query('limit') ?? '20')
 
-    let feedItems = []
+    let feedItems
     if (bookmarked === 'true') {
         feedItems = await getBookmarkedFeedItems(db)
     } else {

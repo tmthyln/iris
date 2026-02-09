@@ -40,7 +40,7 @@ export class ItemQueue extends DurableObject<Env> {
     }
 
     clearQueue(): string[] {
-        this.sql.exec(`DELETE FROM queue_item;`);
+        this.sql.exec(`DELETE FROM queue_item WHERE true;`);
         return []
     }
 
