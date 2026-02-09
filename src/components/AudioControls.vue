@@ -44,7 +44,7 @@ const toggleQueuedButton = ref<HTMLButtonElement>()
 const isHoveredQueuedButton = useElementHover(toggleQueuedButton)
 
 function playItem() {
-    if (playingStatus.value === 'playing') {
+    if (playingStatus.value === 'playing' || playingStatus.value === 'paused') {
         queueStore.togglePaused()
     } else if (playingStatus.value === 'playable' || playingStatus.value === 'replayable' || playingStatus.value === 'queued') {
         queueStore.playItem(props.feedItem)
