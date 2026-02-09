@@ -86,6 +86,18 @@ export default {
         }
         return null
     },
+    async clearQueue(keepFirst: boolean): Promise<FeedItemPreview[] | null> {
+        const params = keepFirst ? '?keepFirst=true' : ''
+        const response = await fetch(`/api/queue${params}`, {
+            method: 'DELETE',
+        })
+
+        if (response.ok) {
+            const data: {items: FeedItemPreview[]} = await response.json()
+            return data.items
+        }
+        return null
+    },
     async removeQueueItem(feedItemGuid: string): Promise<FeedItemPreview[] | null> {
         const response = await fetch(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
             method: 'DELETE',

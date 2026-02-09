@@ -245,6 +245,24 @@ app.delete('/queue/:guid', async (c) => {
     return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
 })
 
+app.delete('/queue', async (c) => {
+    const keepFirst = c.req.query('keepFirst') === 'true'
+    const queue = getQueue(c.env)
+
+    let guids: string[] = []
+    if (keepFirst) {
+        const current = (await queue.getItems())[0]
+        await queue.clearQueue()
+        if (current) {
+            guids = await queue.enqueueItem(current)
+        }
+    } else {
+        guids = await queue.clearQueue()
+    }
+
+    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
+})
+
 /******************************************************************************
  * Command endpoints
  *****************************************************************************/

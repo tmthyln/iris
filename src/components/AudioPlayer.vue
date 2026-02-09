@@ -86,6 +86,11 @@ function playNow(item: FeedItemPreview) {
 function removeFromQueue(item: FeedItemPreview) {
     queueStore.removeItem(item)
 }
+
+function clearQueue() {
+    const keepFirst = !queueStore.paused
+    queueStore.clearQueue(keepFirst)
+}
 </script>
 
 <template>
@@ -143,8 +148,15 @@ function removeFromQueue(item: FeedItemPreview) {
           </button>
 
           <div v-if="showQueue" ref="queuePopover" class="queue-popover box p-0">
-            <div class="queue-popover-header px-4 py-3">
+            <div class="queue-popover-header px-4 py-3 is-flex is-align-items-center is-justify-content-space-between">
               <strong>Up Next</strong>
+              <button
+                  v-if="upcomingItems.length"
+                  class="button is-small control-button"
+                  title="Clear queue"
+                  @click="clearQueue">
+                <span class="material-symbols-outlined is-size-6">playlist_remove</span>
+              </button>
             </div>
             <div v-if="upcomingItems.length === 0" class="px-4 py-3 has-text-grey">
               Nothing queued

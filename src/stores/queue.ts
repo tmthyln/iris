@@ -42,6 +42,13 @@ export const useQueueStore = defineStore('queue', {
             }
             return items !== null
         },
+        async clearQueue(keepFirst: boolean) {
+            const items = await client.clearQueue(keepFirst)
+            if (items) {
+                this.items = items
+            }
+            return items !== null
+        },
         async moveItem(item: FeedItemPreview, position: number) {
             const items = await client.moveQueueItem(item.guid, position)
             if (items) {
