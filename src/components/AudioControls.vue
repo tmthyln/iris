@@ -33,7 +33,7 @@ const playingStatusString = computed(() => {
     switch (playingStatus.value) {
         case 'playing': return 'Playing'
         case 'paused': return 'Paused'
-        case 'queued': return 'In the Queue'
+        case 'queued': return 'Queued'
         case 'playable': return 'Play'
         case 'replayable': return 'Play Again'
         default: return 'Unknown'
