@@ -4,9 +4,11 @@ import {useIntervalFn, useMediaControls, onClickOutside} from "@vueuse/core";
 import {useSortable} from "@vueuse/integrations/useSortable";
 import {useDurationFormat} from "../format.ts";
 import {useQueueStore} from "../stores/queue.ts";
+import {useFeedItemStore} from "../stores/feeditems.ts";
 import type {FeedItemPreview} from "../types.ts";
 
 const queueStore = useQueueStore()
+const feedItemStore = useFeedItemStore()
 
 const currentItem = computed(() => queueStore.currentlyPlaying)
 const upcomingItems = computed(() => queueStore.items.slice(1))
@@ -29,6 +31,9 @@ watch(() => queueStore.paused, (paused) => {
 })
 watch(playing, (isPlaying) => {
     queueStore.paused = !isPlaying
+    if (!isPlaying && currentItem.value && duration.value > 0) {
+        feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+    }
 })
 
 function setPlaybackPosition(event: Event) {
@@ -49,12 +54,14 @@ function cyclePlaybackRate() {
     rate.value = playbackRates[nextIndex]
 }
 
-const {pause: pauseUpdates, resume: resumeUpdates} = useIntervalFn(() => {
-    // TODO: update progress with latest position
+useIntervalFn(() => {
+    if (playing.value && currentItem.value && duration.value > 0) {
+        feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+    }
 }, 5000)
 watch(ended, () => {
-    if (ended.value) {
-        // TODO: handle playback ended
+    if (ended.value && currentItem.value) {
+        feedItemStore.updateItemProgress(currentItem.value, 1)
     }
 })
 
