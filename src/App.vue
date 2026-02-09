@@ -2,12 +2,17 @@
 import SidePanel from "./components/SidePanel.vue";
 import NavBar from "./components/NavBar.vue";
 import {useFeedStore} from "./stores/feeds.ts";
+import {useQueueStore} from "./stores/queue.ts";
 import {onMounted} from "vue";
 import AudioPlayer from "./components/AudioPlayer.vue";
 
 const feedStore = useFeedStore()
+const queueStore = useQueueStore()
 
-onMounted(feedStore.loadFeeds)
+onMounted(() => {
+    feedStore.loadFeeds()
+    queueStore.loadQueue()
+})
 </script>
 
 <template>

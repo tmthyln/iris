@@ -1,6 +1,8 @@
+import type {D1Database} from '@cloudflare/workers-types';
 import { Hono } from 'hono';
 import {
     ClientFeed,
+    ClientFeedItemPreview,
     ServerFeed,
     ServerFeedSource,
     ClientFeedItem,
@@ -20,6 +22,7 @@ import {
 import type { RefreshFeedTask, LoadFeedSourceArchivesTask } from "./types";
 import {fetchRssFile, parseRssText} from "./utils/files";
 import {getQueue} from "./queue";
+import {refreshFeed} from "./flows";
 
 export const app = new Hono<{Bindings: Env}>().basePath('/api');
 
@@ -177,9 +180,17 @@ app.patch('/feeditem/:guid', async (c) => {
  * Feed item endpoints
  *****************************************************************************/
 
+async function hydrateQueueItems(db: D1Database, guids: string[]) {
+    const items = await Promise.all(guids.map(guid => ServerFeedItem.get(db, guid)))
+    return items
+        .filter((item): item is ServerFeedItem => item !== null)
+        .map(item => new ClientFeedItemPreview(item))
+}
+
 app.get('/queue', async (c) => {
     const queue = getQueue(c.env)
-    return Response.json({items: await queue.getItems()})
+    const guids = await queue.getItems()
+    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
 })
 
 app.post('/queue', async (c) => {
@@ -202,14 +213,22 @@ app.post('/queue', async (c) => {
     }
 
     const queue = getQueue(c.env)
-    let items
+    let guids
     if (typeof position === 'number') {
-        items = await queue.insertItem(feedItemId, position)
+        guids = await queue.insertItem(feedItemId, position)
     } else {
-        items = await queue.enqueueItem(feedItemId)
+        guids = await queue.enqueueItem(feedItemId)
     }
 
-    return Response.json({items}, {status: 201})
+    return Response.json({items: await hydrateQueueItems(db, guids)}, {status: 201})
+})
+
+app.delete('/queue/:guid', async (c) => {
+    const feedItemGuid = c.req.param('guid')
+    const queue = getQueue(c.env)
+    const guids = await queue.removeItem(feedItemGuid)
+
+    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
 })
 
 /******************************************************************************

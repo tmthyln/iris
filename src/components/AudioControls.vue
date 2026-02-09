@@ -19,8 +19,8 @@ const feed = feedStore.getFeedById(props.feedItem.source_feed)
 const queueStore = useQueueStore()
 
 const playingStatus = computed(() => {
-    if (queueStore.itemIsPlaying(props.feedItem)) {
-        return 'playing'
+    if (queueStore.itemPlaying(props.feedItem)) {
+        return queueStore.paused ? 'paused' : 'playing';
     } else if (queueStore.itemQueued(props.feedItem)) {
         return 'queued'
     } else if (!props.feedItem.finished) {
@@ -32,6 +32,7 @@ const playingStatus = computed(() => {
 const playingStatusString = computed(() => {
     switch (playingStatus.value) {
         case 'playing': return 'Playing'
+        case 'paused': return 'Paused'
         case 'queued': return 'In the Queue'
         case 'playable': return 'Play'
         case 'replayable': return 'Play Again'
@@ -42,11 +43,19 @@ const playingStatusString = computed(() => {
 const toggleQueuedButton = ref<HTMLButtonElement>()
 const isHoveredQueuedButton = useElementHover(toggleQueuedButton)
 
+function playItem() {
+    if (playingStatus.value === 'playing') {
+        queueStore.togglePaused()
+    } else if (playingStatus.value === 'playable' || playingStatus.value === 'replayable' || playingStatus.value === 'queued') {
+        queueStore.playItem(props.feedItem)
+    }
+}
+
 function toggleQueue() {
     if (queueStore.itemQueuedOrPlaying(props.feedItem)) {
-        // TODO remove from queue
+        queueStore.removeItem(props.feedItem)
     } else {
-        // TODO add to queue
+        queueStore.addItem(props.feedItem)
     }
 }
 
@@ -77,10 +86,11 @@ function toggleBookmark() {
 
 <template>
   <div class="is-flex is-align-items-center mb-3 is-gap-1">
-    <div
+    <button
         v-if="feed.type === 'podcast'"
         class="button tag px-3 is-rounded is-medium is-gap-1"
-        :class="{'has-text-info': true, 'has-text-success': false}">
+        :class="{'has-text-info': true, 'has-text-success': false}"
+        @click="playItem">
 
       <span
           v-if="!feedItem.finished && !queueStore.itemQueuedOrPlaying(feedItem)"
@@ -88,7 +98,7 @@ function toggleBookmark() {
         play_arrow
       </span>
       <span
-          v-else-if="queueStore.itemIsPlaying(feedItem)"
+          v-else-if="queueStore.itemPlaying(feedItem)"
           class="material-symbols-outlined">
         play_circle
       </span>
@@ -99,7 +109,7 @@ function toggleBookmark() {
       </span>
 
       {{ playingStatusString }}
-    </div>
+    </button>
 
     <button
         v-if="feed.type === 'podcast'"

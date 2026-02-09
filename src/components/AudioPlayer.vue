@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import {ref, watch} from "vue";
+import {computed, ref, watch} from "vue";
 import {useIntervalFn, useMediaControls} from "@vueuse/core";
 import {useDurationFormat} from "../format.ts";
+import {useQueueStore} from "../stores/queue.ts";
+
+const queueStore = useQueueStore()
+
+const currentItem = computed(() => queueStore.currentlyPlaying)
+
+const src = computed(() => currentItem.value?.enclosure_url ?? '')
 
 const audio = ref<HTMLAudioElement>()
 const {
@@ -11,7 +18,14 @@ const {
     duration,
     ended,
 } = useMediaControls(audio, {
-    src: 'https://media.transistor.fm/97a0251c/e2001ce8.mp3',
+    src,
+})
+
+watch(() => queueStore.paused, (paused) => {
+    playing.value = !paused
+})
+watch(playing, (isPlaying) => {
+    queueStore.paused = !isPlaying
 })
 
 function setPlaybackPosition(event: Event) {
@@ -43,56 +57,58 @@ watch(ended, () => {
 </script>
 
 <template>
-  <div class="footer-placeholder"/>
-  <footer class="audio-player-section has-background is-flex is-flex-direction-column is-align-items-stretch is-justify-content-space-between">
-    <input
-        class="playback-progress p-0 m-0"
-        type="range"
-        :min="0" :max="duration"
-        :value="currentTime" @input="setPlaybackPosition"
-        :style="{background: `linear-gradient(to right, #aced32 ${Math.floor(100*currentTime/duration)}%, #ccc ${Math.floor(100*currentTime/duration)}%)`}">
-    <div class="level p-4 is-flex-grow-1">
-      <audio ref="audio"></audio>
+  <template v-if="queueStore.items.length">
+    <div class="footer-placeholder"/>
+    <footer class="audio-player-section has-background is-flex is-flex-direction-column is-align-items-stretch is-justify-content-space-between">
+      <input
+          class="playback-progress p-0 m-0"
+          type="range"
+          :min="0" :max="duration"
+          :value="currentTime" @input="setPlaybackPosition"
+          :style="{background: `linear-gradient(to right, #aced32 ${Math.floor(100*currentTime/duration)}%, #ccc ${Math.floor(100*currentTime/duration)}%)`}">
+      <div class="level p-4 is-flex-grow-1">
+        <audio ref="audio"></audio>
 
-      <div class="level-left">
-        About the podcast/episode
+        <div class="level-left">
+          {{ currentItem?.title }}
+        </div>
+        <div class="level-item is-gap-1">
+
+          <button class="button is-rounded px-2 control-button">
+            <span class="material-symbols-outlined">skip_previous</span>
+          </button>
+
+          <button class="button is-rounded px-2 control-button" @click="fastRewind">
+            <span class="material-symbols-outlined">fast_rewind</span>
+          </button>
+
+          <button class="button is-rounded px-3 is-large control-button" @click="playing = !playing">
+            <span v-if="!playing" class="material-symbols-outlined">play_arrow</span>
+            <span v-else class="material-symbols-outlined">pause</span>
+          </button>
+
+          <button class="button is-rounded px-2 control-button" @click="fastForward">
+            <span class="material-symbols-outlined">fast_forward</span>
+          </button>
+
+          <button class="button is-rounded px-2 control-button">
+            <span class="material-symbols-outlined">skip_next</span>
+          </button>
+
+          <button class="tag button" @click="cyclePlaybackRate">
+            {{ rate }}x
+          </button>
+
+        </div>
+        <div class="level-right">
+          <span>{{ useDurationFormat(currentTime).value }} / {{ useDurationFormat(duration).value }}</span>
+          <button class="button is-rounded px-2 control-button" title="Show queue and what's up next">
+            <span class="material-symbols-outlined">playlist_play</span>
+          </button>
+        </div>
       </div>
-      <div class="level-item is-gap-1">
-
-        <button class="button is-rounded px-2 control-button">
-          <span class="material-symbols-outlined">skip_previous</span>
-        </button>
-
-        <button class="button is-rounded px-2 control-button" @click="fastRewind">
-          <span class="material-symbols-outlined">fast_rewind</span>
-        </button>
-
-        <button class="button is-rounded px-3 is-large control-button" @click="playing = !playing">
-          <span v-if="!playing" class="material-symbols-outlined">play_arrow</span>
-          <span v-else class="material-symbols-outlined">pause</span>
-        </button>
-
-        <button class="button is-rounded px-2 control-button" @click="fastForward">
-          <span class="material-symbols-outlined">fast_forward</span>
-        </button>
-
-        <button class="button is-rounded px-2 control-button">
-          <span class="material-symbols-outlined">skip_next</span>
-        </button>
-
-        <button class="tag button" @click="cyclePlaybackRate">
-          {{ rate }}x
-        </button>
-
-      </div>
-      <div class="level-right">
-        <span>{{ useDurationFormat(currentTime).value }} / {{ useDurationFormat(duration).value }}</span>
-        <button class="button is-rounded px-2 control-button" title="Show queue and what's up next">
-          <span class="material-symbols-outlined">playlist_play</span>
-        </button>
-      </div>
-    </div>
-  </footer>
+    </footer>
+  </template>
 </template>
 
 <style scoped lang="scss">
