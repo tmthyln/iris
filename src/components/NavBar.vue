@@ -1,15 +1,74 @@
 <script setup lang="ts">
-import {ref, computed} from "vue";
+import {ref, computed, nextTick, watch, onMounted, onUnmounted} from "vue";
 
 const showSearch = ref(false)
 const searchInput = ref('')
+const searchInputEl = ref<HTMLInputElement>()
 const commandStatus = ref<'idle' | 'running' | 'success' | 'error'>('idle')
+
+function handleKeydown(e: KeyboardEvent) {
+    if (showSearch.value) return
+    const tag = (e.target as HTMLElement).tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+    if (e.key === '/') {
+        e.preventDefault()
+        openSearch('/')
+    } else if (e.key === '?') {
+        e.preventDefault()
+        openSearch()
+    }
+}
+
+onMounted(() => document.addEventListener('keydown', handleKeydown))
+onUnmounted(() => document.removeEventListener('keydown', handleKeydown))
 
 const isCommand = computed(() => searchInput.value.startsWith('/'))
 const placeholder = computed(() => isCommand.value ? 'Enter command...' : 'Search posts and podcasts...')
 
+const commands = [
+    {name: 'refresh all', description: 'Refresh all feed subscriptions'},
+]
+
+const commandQuery = computed(() => isCommand.value ? searchInput.value.slice(1).trim().toLowerCase() : '')
+const matchingCommands = computed(() => {
+    if (!isCommand.value) return []
+    if (!commandQuery.value) return commands
+    return commands.filter(c => c.name.includes(commandQuery.value))
+})
+
+const selectedCommandIndex = ref(-1)
+watch(searchInput, () => { selectedCommandIndex.value = -1 })
+
+function handleInputKeydown(e: KeyboardEvent) {
+    if (!matchingCommands.value.length) return
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        selectedCommandIndex.value = Math.min(selectedCommandIndex.value + 1, matchingCommands.value.length - 1)
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        selectedCommandIndex.value = Math.max(selectedCommandIndex.value - 1, -1)
+    }
+}
+
+function selectCommand(index: number) {
+    const cmd = matchingCommands.value[index]
+    if (cmd) {
+        searchInput.value = '/' + cmd.name
+        handleSubmit()
+    }
+}
+
 async function handleSubmit() {
     if (isCommand.value) {
+        if (selectedCommandIndex.value >= 0) {
+            const cmd = matchingCommands.value[selectedCommandIndex.value]
+            if (cmd) {
+                await executeCommand(cmd.name)
+                return
+            }
+        }
         await executeCommand(searchInput.value.slice(1).trim())
     } else {
         // TODO: handle search
@@ -40,10 +99,11 @@ async function executeCommand(command: string) {
     }
 }
 
-function openSearch() {
+function openSearch(initialText: string = '') {
     showSearch.value = true
-    searchInput.value = ''
+    searchInput.value = initialText
     commandStatus.value = 'idle'
+    nextTick(() => searchInputEl.value?.focus())
 }
 
 function closeSearch() {
@@ -76,14 +136,27 @@ function closeSearch() {
           <div class="field">
             <div class="control">
               <input
+                  ref="searchInputEl"
                   class="input is-large"
                   type="text"
                   v-model="searchInput"
                   :placeholder="placeholder"
+                  @keydown="handleInputKeydown"
                   @keyup.enter="handleSubmit"
-                  autofocus>
+                  @keyup.esc="closeSearch">
             </div>
-            <p class="help">Type "/" to enter a command</p>
+            <p v-if="!isCommand" class="help">Type "/" to enter a command</p>
+            <div v-if="matchingCommands.length" class="command-list mt-2">
+              <div
+                  v-for="(cmd, i) in matchingCommands"
+                  :key="cmd.name"
+                  class="command-item px-3 py-2"
+                  :class="{'is-selected': i === selectedCommandIndex}"
+                  @click="selectCommand(i)">
+                <span class="has-text-weight-medium">/{{ cmd.name }}</span>
+                <span class="has-text-grey ml-2">{{ cmd.description }}</span>
+              </div>
+            </div>
           </div>
         </section>
       </div>
@@ -92,4 +165,18 @@ function closeSearch() {
 </template>
 
 <style scoped>
+.command-list {
+    border: 1px solid hsl(0, 0%, 90%);
+    border-radius: 4px;
+}
+.command-item {
+    cursor: pointer;
+}
+.command-item:hover,
+.command-item.is-selected {
+    background-color: hsl(0, 0%, 96%);
+}
+.command-item + .command-item {
+    border-top: 1px solid hsl(0, 0%, 95%);
+}
 </style>
