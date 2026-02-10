@@ -1,50 +1,55 @@
 <script setup lang="ts">
 import SubscriptionPreview from "./SubscriptionPreview.vue";
-import {computed, onMounted, ref} from "vue";
+import {nextTick, onMounted, ref} from "vue";
 import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
-
-const showFeedAdder = ref(false);
-
-const feedUrl = ref('')
-function updateFeedUrl(event: InputEvent) {
-    feedUrl.value = (event.target as HTMLInputElement).value;
-}
-
-async function submitFeedURL() {
-    if (feedUrl.value === '') {
-        showFeedAdder.value = false;
-        return;
-    }
-
-    if (!feedUrl.value.startsWith('http')) {
-        feedUrl.value = `https://${feedUrl.value}`;
-    }
-
-    await fetch('/api/feed', {
-        method: 'POST',
-        body: JSON.stringify({
-            url: feedUrl.value,
-        }),
-    })
-}
 
 const feedStore = useFeedStore()
 const feedItemStore = useFeedItemStore()
 onMounted(feedItemStore.loadRecentUnreadItems)
 
-const allFeedItems = computed(() => feedItemStore.recentItems)
+const showFeedAdder = ref(false)
+const feedUrl = ref('')
+const feedUrlEl = ref<HTMLInputElement>()
+
+function openFeedAdder() {
+    feedUrl.value = ''
+    showFeedAdder.value = true
+    nextTick(() => feedUrlEl.value?.focus())
+}
+
+function closeFeedAdder() {
+    showFeedAdder.value = false
+}
+
+async function submitFeedURL() {
+    if (feedUrl.value === '') {
+        closeFeedAdder()
+        return
+    }
+
+    if (!feedUrl.value.startsWith('http')) {
+        feedUrl.value = `https://${feedUrl.value}`
+    }
+
+    await fetch('/api/feed', {
+        method: 'POST',
+        body: JSON.stringify({url: feedUrl.value}),
+    })
+
+    closeFeedAdder()
+}
 </script>
 
 <template>
   <div>
 
     <section class="section pb-4">
-      <h2 class="is-flex is-align-items-center title is-2">
-        Subscribed Feeds
-        <button class="button is-small is-primary ml-5" aria-hidden="true" @click="showFeedAdder = true">Add Feed</button>
-      </h2>
+      <div class="is-flex is-align-items-center mb-4">
+        <h2 class="title is-2 mb-0">Subscribed Feeds</h2>
+        <button class="button is-small is-primary ml-5" @click="openFeedAdder">Add Feed</button>
+      </div>
 
       <div class="is-flex subscriptions-list">
         <SubscriptionPreview
@@ -58,42 +63,42 @@ const allFeedItems = computed(() => feedItemStore.recentItems)
     </section>
 
     <section class="section">
-      <h2 class="title is-2">
-        Recent Unread Items
-      </h2>
+      <h2 class="title is-2">Recent Unread Items</h2>
 
       <div>
         <ItemPreview
-            v-for="feedItem in allFeedItems" :key="feedItem.guid"
+            v-for="feedItem in feedItemStore.recentItems" :key="feedItem.guid"
             :feed-item="feedItem"
             class="mb-6"/>
-        <div v-if="feedStore.feeds.length === 0">
+        <div v-if="feedItemStore.recentItems.length === 0">
           You don't have any unread items from any feeds. Yay, inbox zero!
         </div>
       </div>
     </section>
 
     <div class="modal" :class="{'is-active': showFeedAdder}">
-      <div class="modal-background" @click="showFeedAdder = false"></div>
+      <div class="modal-background" @click="closeFeedAdder"/>
       <div class="modal-card">
         <header class="modal-card-head">
           <p class="modal-card-title">Add a feed by URL</p>
-          <button class="delete" aria-label="close" @click="showFeedAdder = false"></button>
+          <button class="delete" aria-label="close" @click="closeFeedAdder"></button>
         </header>
         <section class="modal-card-body">
-
           <div class="field">
-            <label class="label">Input URL</label>
+            <label class="label">Feed URL</label>
             <div class="control">
-              <input class="input" type="url" :value="feedUrl" @input="updateFeedUrl"/>
+              <input
+                  ref="feedUrlEl"
+                  class="input" type="url"
+                  v-model="feedUrl"
+                  placeholder="https://example.com/feed.xml"
+                  @keyup.enter="submitFeedURL">
             </div>
           </div>
-
-          <button class="button is-success" @click="submitFeedURL">Submit URL</button>
-
         </section>
-        <footer class="modal-card-foot">
-
+        <footer class="modal-card-foot is-gap-2">
+          <button class="button is-success" @click="submitFeedURL">Submit</button>
+          <button class="button" @click="closeFeedAdder">Cancel</button>
         </footer>
       </div>
     </div>
