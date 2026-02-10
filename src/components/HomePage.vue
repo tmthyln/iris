@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import SubscriptionPreview from "./SubscriptionPreview.vue";
 import {nextTick, onMounted, ref} from "vue";
+import {useIntersectionObserver} from "@vueuse/core";
 import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
@@ -8,6 +9,13 @@ import {useFeedItemStore} from "../stores/feeditems.ts";
 const feedStore = useFeedStore()
 const feedItemStore = useFeedItemStore()
 onMounted(feedItemStore.loadRecentUnreadItems)
+
+const loadMoreSentinel = ref<HTMLElement>()
+useIntersectionObserver(loadMoreSentinel, ([entry]) => {
+    if (entry.isIntersecting) {
+        feedItemStore.loadMoreRecentItems()
+    }
+})
 
 const showFeedAdder = ref(false)
 const feedUrl = ref('')
@@ -70,8 +78,11 @@ async function submitFeedURL() {
             v-for="feedItem in feedItemStore.recentItems" :key="feedItem.guid"
             :feed-item="feedItem"
             class="mb-6"/>
-        <div v-if="feedItemStore.recentItems.length === 0">
+        <div v-if="feedItemStore.recentItems.length === 0 && feedItemStore.recentLoadState === 'loaded'">
           You don't have any unread items from any feeds. Yay, inbox zero!
+        </div>
+        <div v-if="feedItemStore.recentHasMore" ref="loadMoreSentinel" class="has-text-centered py-4">
+          <span v-if="feedItemStore.recentLoadState === 'loading'" class="has-text-grey">Loading...</span>
         </div>
       </div>
     </section>

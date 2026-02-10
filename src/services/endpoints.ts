@@ -136,12 +136,13 @@ app.get('/feeditem', async (c) => {
     const db = c.env.DB;
     const bookmarked = c.req.query('bookmarked')
     const limit = parseInt(c.req.query('limit') ?? '20')
+    const offset = parseInt(c.req.query('offset') ?? '0')
 
     let feedItems
     if (bookmarked === 'true') {
         feedItems = await getBookmarkedFeedItems(db)
     } else {
-        feedItems = await getFeedItems(db, {limit})
+        feedItems = await getFeedItems(db, {limit, offset})
     }
 
     return Response.json(feedItems.map(item => new ClientFeedItem(item)))
