@@ -42,7 +42,9 @@ export const useFeedStore = defineStore('feeds', {
                 const data = await response.json();
 
                 this.feeds.length = 0;
-                this.feeds.push(...data);
+                this.feeds.push(...(data as Feed[]).sort((a, b) =>
+                    new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime()
+                ));
 
                 this.feedsLoadState = 'loaded'
 
