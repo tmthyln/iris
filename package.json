@@ -15,7 +15,7 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@vueuse/core": "^10.9.0",
+    "@vueuse/core": "^14.2.1",
     "@vueuse/integrations": "^14.2.0",
     "bulma": "^1.0.0",
     "pinia": "^2.1.7",
