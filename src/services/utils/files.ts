@@ -41,10 +41,10 @@ export async function fetchRssFile(url: string): Promise<FetchFileResult> {
                 },
             }
         } else {
-            console.log('Content appears to be HTML')
+            console.log(`[fetchRssFile] Content appears to be HTML, not RSS (url: ${url})`)
         }
     } else {
-        console.log(`Received non-ok response from upstream: ${response.status} ${response.statusText}`)
+        console.log(`[fetchRssFile] Non-ok response from upstream: ${response.status} ${response.statusText} (url: ${url})`)
     }
 
     const htmlResponse = await fetch(url, {
