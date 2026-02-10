@@ -1,0 +1,1187 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+	xmlns:slash="http://purl.org/rss/1.0/modules/slash/"
+	>
+
+<channel>
+	<title>John D. Cook</title>
+	<atom:link href="https://www.johndcook.com/blog/feed/" rel="self" type="application/rss+xml" />
+	<link>https://www.johndcook.com/blog</link>
+	<description>Applied Mathematics Consulting</description>
+	<lastBuildDate>Sat, 07 Feb 2026 14:02:45 +0000</lastBuildDate>
+	<language>en-US</language>
+	<sy:updatePeriod>
+	hourly	</sy:updatePeriod>
+	<sy:updateFrequency>
+	1	</sy:updateFrequency>
+	<generator>https://wordpress.org/?v=6.9.1</generator>
+
+<image>
+	<url>https://www.johndcook.com/wp-content/uploads/2020/01/cropped-favicon_512-32x32.png</url>
+	<title>John D. Cook</title>
+	<link>https://www.johndcook.com/blog</link>
+	<width>32</width>
+	<height>32</height>
+</image>
+	<item>
+		<title>Minimum of cosine sum</title>
+		<link>https://www.johndcook.com/blog/2026/02/07/chowla/</link>
+					<comments>https://www.johndcook.com/blog/2026/02/07/chowla/#respond</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Sat, 07 Feb 2026 14:02:45 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Fourier analysis]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246836</guid>
+
+					<description><![CDATA[<p>Suppose f(x) is the sum of terms of the form cos(kx) where k is an integer from a set A with n elements. Then the maximum value of f is f(0) = n. But what is the minimum value of f? The Chowla cosine conjecture says that the minimum should be less than −√n for large n. For now the best [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/02/07/chowla/">Minimum of cosine sum</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>Suppose <em>f</em>(<em>x</em>) is the sum of terms of the form cos(<em>kx</em>) where <em>k</em> is an integer from a set <em>A</em> with <em>n</em> elements.</p>
+<p><img decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/chowla_cosine.svg" alt="f_A(x) = \sum_{k \in A} \cos(kx)" width="159" height="44" /></p>
+<p>Then the maximum value of <em>f</em> is <em>f</em>(0) = <em>n</em>. But what is the minimum value of <em>f</em>?</p>
+<p>The <strong>Chowla cosine conjecture</strong> says that the minimum should be less than −√<em>n</em> for large <em>n</em>. For now the best proven results are much smaller in absolute value [1].</p>
+<p>I was playing around with this problem, and the first thing I thought of was to let the set <em>A</em> be the first <em>n</em> primes. This turned out to not be the most interesting example. Since all the primes except for the first are odd, and cos(<em>k</em>π) = −1 for odd <em>k</em>, the minimum was always approximately −<em>n</em> and always occurred near π [2].</p>
+<p>Here&#8217;s a plot where <em>A</em> is the set of primes less than 100.</p>
+<p><img fetchpriority="high" decoding="async" class="aligncenter size-medium" src="https://www.johndcook.com/chowla_prime.png" width="480" height="360" /></p>
+<p>For the cosine conjecture to be interesting, the set <em>A</em> should contain a mix of even and odd numbers.</p>
+<p>Here&#8217;s a plot with <em>A</em> equal to a random selection of 25 points between 1 and 100. (I chose 25 because there are 25 primes less than 100.)</p>
+<p><img decoding="async" class="aligncenter size-medium" src="https://www.johndcook.com/chowla_random.png" width="480" height="360" /></p>
+<p>Here&#8217;s the Python code I used to generate the two sets <em>A</em> and the function to plot.</p>
+<pre>import numpy as np
+from sympy import prime
+
+def f(x, A):
+    return sum([np.cos(k*x) for k in A])
+
+n = 25
+A_prime = [prime(i) for i in range(1, n+1)]
+np.random.seed(20260207)
+A_random = np.random.choice(range(1, 101), size=n, replace=False)
+</pre>
+<p>If you wanted to explore the Chowla conjecture numerically, direct use of minimization software is impractical. As you can tell from the plots above, there are a lot of local minima. If the values in <em>A</em> are not too large, you can look at a plot to see approximately where the minimum occurs, then use a numerical method to find the minimum in this region, but that doesn&#8217;t scale.</p>
+<p>Here&#8217;s an approach that would scale better. You could find all the zeros of the derivative of <em>f</em><sub><em>A</em></sub> and evaluate the function at each. One of these is the minimum. The derivative is a sum of sines with integer frequencies, and so it could be written as a polynomial in <em>z</em> = exp(<em>ix</em>) [3]. You could find all the zeros of this polynomial using the QR algorithm as discussed in the <a href="https://www.johndcook.com/blog/2026/02/06/eigenvalue-roots/">previous post</a>.</p>
+<p>[1] Benjamin Bedert. Polynomial bounds for the Chowla cosine problem. <a href="https://arxiv.org/abs/2509.05260v2">arXiv</a></p>
+<p>[2] If <em>A</em> is the set of the first <em>n</em> primes, <em>f</em><sub><em>A</em></sub>(π) = 2 − <em>n</em> because the sum defining <em>f</em><sub><em>A</em></sub>(π) has one term equal to 1 and <em>n</em> − 1 terms equal to −1. I think for <em>n</em> ≥ 4 this is the minimum, but I haven&#8217;t verified this. If so, the minimum isn&#8217;t just near π but exactly at π.</p>
+<p>[3] You get a polynomial of degree <em>n</em> in <em>z</em> and 1/<em>z</em>. Then multiply by <em>z</em><sup>2<em>n</em></sup> to get a polynomial in <em>z</em> only of degree 2<em>n</em>.</p>The post <a href="https://www.johndcook.com/blog/2026/02/07/chowla/">Minimum of cosine sum</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/02/07/chowla/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+
+
+			</item>
+		<item>
+		<title>Eigenvalue homework problems are backward</title>
+		<link>https://www.johndcook.com/blog/2026/02/06/eigenvalue-roots/</link>
+					<comments>https://www.johndcook.com/blog/2026/02/06/eigenvalue-roots/#respond</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Fri, 06 Feb 2026 23:31:11 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Numerical analysis]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246837</guid>
+
+					<description><![CDATA[<p>Classroom When you take a linear algebra course and get to the chapter on eigenvalues, your homework problems will include a small matrix A and you will be asked to find the eigenvalues. You do this by computing the determinant det(A − λI) = P(λ) and getting P(λ), a polynomial in λ. The roots of [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/02/06/eigenvalue-roots/">Eigenvalue homework problems are backward</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<h2>Classroom</h2>
+<p>When you take a linear algebra course and get to the chapter on eigenvalues, your homework problems will include a small matrix <em>A</em> and you will be asked to find the eigenvalues. You do this by computing the determinant</p>
+<p style="padding-left: 40px;">det(<em>A</em> − λ<em>I</em>) = <em>P</em>(λ)</p>
+<p>and getting <em>P</em>(λ), a polynomial in λ. The roots of <em>P</em> are the eigenvalues of <em>A</em>.</p>
+<p>Either <em>A</em> will be a 2 × 2 matrix, in which case you can find the roots using the quadratic formula, or the matrix will have been carefully selected so that <em>P</em>(λ) will be easy to factor. Otherwise, finding the roots of a polynomial is hard.</p>
+<h2>Real world</h2>
+<p>Numerical algorithms to find eigenvalues have gotten really good. In practice, you don&#8217;t compute determinants or find roots of polynomials. Instead you do something like the <em>QR</em> algorithm.</p>
+<p>Finding all the roots of a polynomial is a challenging problem, and so what you might do in practice is find the roots by constructing a matrix, called the <strong>companion matrix</strong>, whose eigenvalues correspond to the roots you&#8217;re after.</p>
+<h2>Summary</h2>
+<p>As a classroom exercise, you calculate roots of polynomials to find eigenvalues.</p>
+<p>In the real world, you might use an eigenvalue solver to find the roots of polynomials.</p>
+<p>I wrote a <a href="https://www.johndcook.com/blog/2020/08/03/conceptual-vs-numerical/">similar post</a> a few years ago. It explains that textbooks definite hyperbolic functions using <em>e</em><sup><em>x</em></sup>, but you might want to compute <em>e</em><sup><em>x</em></sup> using hyperbolic functions.</p>The post <a href="https://www.johndcook.com/blog/2026/02/06/eigenvalue-roots/">Eigenvalue homework problems are backward</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/02/06/eigenvalue-roots/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+
+
+			</item>
+		<item>
+		<title>Fibonacci number certificates</title>
+		<link>https://www.johndcook.com/blog/2026/02/05/fibonacci-certificate/</link>
+					<comments>https://www.johndcook.com/blog/2026/02/05/fibonacci-certificate/#respond</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Thu, 05 Feb 2026 17:14:20 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246835</guid>
+
+					<description><![CDATA[<p>Suppose I give you a big number F and claim that F is a Fibonacci number. How could you confirm this? Before I go further, let me say what this post is really about. It&#8217;s not about Fibonacci numbers so much as it is about proofs and certificates. There&#8217;s no market for large Fibonacci numbers, and certainly [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/02/05/fibonacci-certificate/">Fibonacci number certificates</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>Suppose I give you a big number <em>F</em> and claim that <em>F</em> is a Fibonacci number. How could you confirm this?</p>
+<p>Before I go further, let me say what this post is really about. It&#8217;s not about Fibonacci numbers so much as it is about proofs and certificates. There&#8217;s no market for large Fibonacci numbers, and certainly no need to quickly verify that a number is a Fibonacci number.</p>
+<p>You could write a program to generate Fibonacci numbers, and run it until it either produces <em>F</em> , in which case you know <em>F</em> is a Fibonacci number, or the program produces a larger number than <em>F</em> without having produced <em>F</em>, in which case you know it&#8217;s not a Fibonacci number. But there&#8217;s a faster way.</p>
+<p>A certificate is data that allows you to confirm a solution to a problem in less time, usually far less time, than it took to generate the solution. For example, <a href="https://www.johndcook.com/blog/2023/01/03/pratt-certificate/">Pratt certificates</a> give you a way to prove that a number is prime. For a large prime, you could verify its Pratt certificate much faster than directly trying to prove the number is prime.</p>
+<p>There is a theorem that says a number <em>f</em> is a Fibonacci number if and only if one of 5<em>f</em><sup>2</sup> ± 4 is a perfect square. So in addition to <em>F</em> another number <em>r</em> that is a certificate that <em>F</em> is a Fibonacci number. You compute</p>
+<p style="padding-left: 40px;"><em>N</em> = 5<em>F</em>² − <em>r</em>²</p>
+<p>and if <em>N</em> is equal to 4 or −4, you know that <em>F</em> is a Fibonacci number. Otherwise it is not.</p>
+<p>Here&#8217;s a small example. Suppose I give you (12586269025, 28143753123) and claim that the first number is a Fibonacci number and the second number is its certificate. You can compute</p>
+<p style="padding-left: 40px;">5 × 12586269025² − 28143753123²</p>
+<p>and get −4, verifying the claim.</p>
+<p>Certificates are all about the amount of computation the verifier needs to do. The prover, i.e. the person producing the certificate, has to do extra work to provide a certificate in addition to a problem solution. This trade-off is acceptable, for example, in a <a href="https://www.johndcook.com/blog/crypto/">blockchain</a> where a user posts one transaction but many miners will verify many transactions.</p>
+<h2>Related posts</h2>
+<ul>
+<li class='link'><a href='https://www.johndcook.com/blog/2023/01/13/ecpp/'>Elliptic curve primality certificates</a></li>
+<li class='link'><a href='https://www.johndcook.com/blog/2024/11/30/generation-verification-costs/'>Generation versus verification costs</a></li>
+<li class='link'><a href='https://www.johndcook.com/blog/2023/01/13/proof-of-optimization/'>Proof of optimization</a></li>
+<li class='link'><a href='https://www.johndcook.com/blog/2025/11/29/zkp-composite/'>Zero knowledge proof of compositeness</a></li>
+</ul>The post <a href="https://www.johndcook.com/blog/2026/02/05/fibonacci-certificate/">Fibonacci number certificates</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/02/05/fibonacci-certificate/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+
+
+			</item>
+		<item>
+		<title>Γ(1/n)</title>
+		<link>https://www.johndcook.com/blog/2026/02/04/gamma-reciprocal/</link>
+					<comments>https://www.johndcook.com/blog/2026/02/04/gamma-reciprocal/#respond</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Thu, 05 Feb 2026 03:42:12 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Special functions]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246834</guid>
+
+					<description><![CDATA[<p>If n is a positive integer, then rounding Γ(1/n) up to the nearest integer gives n. In symbols, We an illustrate this with the following Python code. &#62;&#62;&#62; from scipy.special import gamma &#62;&#62;&#62; from math import ceil &#62;&#62;&#62; for n in range(1, 101): ... assert(ceil(gamma(1/n)) == n) You can find a full proof in [1]. I&#8217;ll [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/02/04/gamma-reciprocal/">Γ(1/n)</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>If <em>n</em> is a positive integer, then rounding Γ(1/<em>n</em>) up to the nearest integer gives <em>n</em>. In symbols,</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/gamma_recip.svg" alt="\left\lceil \Gamma\left( \tfrac{1}{n}\right) \right\rceil = n" width="91" height="36" /></p>
+<p>We an illustrate this with the following Python code.</p>
+<pre>&gt;&gt;&gt; from scipy.special import gamma
+&gt;&gt;&gt; from math import ceil
+&gt;&gt;&gt; for n in range(1, 101):
+    ... assert(ceil(gamma(1/n)) == n)
+</pre>
+<p>You can find a full proof in [1]. I&#8217;ll give a partial proof that may be more informative than the full proof.</p>
+<p>The asymptotic expansion of the gamma function near zero is</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/gamma_recip2.svg" alt="\Gamma(z) = \frac{1}{z} - \gamma + {\cal O}(z^2)" width="172" height="40" /></p>
+<p>where γ is the Euler-Mascheroni constant.</p>
+<p>So when we set <em>z</em> = 1/<em>n</em> we find Γ(1/<em>n</em>) ≈ <em>n</em> − γ + <em>O</em>(1/<em>n</em>²). Since 0 &lt; γ &lt; 1, the theorem above is true for sufficiently large <em>n</em>. And it turns out &#8220;sufficiently large&#8221; can be replaced with <em>n</em> ≥ 1.</p>
+<p>[1] Gamma at reciprocals of integers: 12225. American Mathematical Monthly. October 2022. pp 789–790.</p>The post <a href="https://www.johndcook.com/blog/2026/02/04/gamma-reciprocal/">Γ(1/n)</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/02/04/gamma-reciprocal/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+
+
+			</item>
+		<item>
+		<title>Polish serenity</title>
+		<link>https://www.johndcook.com/blog/2026/02/03/polish-serenity/</link>
+					<comments>https://www.johndcook.com/blog/2026/02/03/polish-serenity/#respond</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Tue, 03 Feb 2026 12:56:58 +0000</pubDate>
+				<category><![CDATA[Uncategorized]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246832</guid>
+
+					<description><![CDATA[<p>Yesterday I ran across the following mashup by Amy Swearer of a Polish proverb and the Serenity Prayer. Lord, grant me the serenity to accept when it&#8217;s no longer my circus, the courage to control the monkeys that are still mine, and the wisdom to know the difference. The proverb is &#8220;Nie mój cyrk, nie [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/02/03/polish-serenity/">Polish serenity</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>Yesterday I ran across the following mashup by <a href="https://x.com/AmySwearer/status/2018363836336607464">Amy Swearer</a> of a Polish proverb and the Serenity Prayer.</p>
+<blockquote><p>Lord, grant me the serenity to accept when it&#8217;s no longer my circus,<br />
+the courage to control the monkeys that are still mine,<br />
+and the wisdom to know the difference.</p></blockquote>
+<p>The proverb is &#8220;<span lang="pl">Nie mój cyrk, nie moje małpy</span>,&#8221; literally &#8220;Not my circus, not my monkeys&#8221;.</p>The post <a href="https://www.johndcook.com/blog/2026/02/03/polish-serenity/">Polish serenity</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/02/03/polish-serenity/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+
+
+			</item>
+		<item>
+		<title>Satellites have a lot of room</title>
+		<link>https://www.johndcook.com/blog/2026/02/02/satellites-have-a-lot-of-room/</link>
+					<comments>https://www.johndcook.com/blog/2026/02/02/satellites-have-a-lot-of-room/#comments</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Mon, 02 Feb 2026 19:11:03 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Orbital mechanics]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246831</guid>
+
+					<description><![CDATA[<p>I saw an animation this morning showing how the space above our planet is dangerously crowded with satellites. That motivated me to do a little back-of-the-envelope math. The vast majority of satellites are in low earth orbit (LEO), which extends from 160 to 2000 km above the earth&#8217;s surface. The radius of the earth is [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/02/02/satellites-have-a-lot-of-room/">Satellites have a lot of room</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>I saw an animation this morning showing how the space above our planet is dangerously crowded with satellites. That motivated me to do a little back-of-the-envelope math.</p>
+<p>The vast majority of satellites are in low earth orbit (LEO), which extends from 160 to 2000 km above the earth&#8217;s surface. The radius of the earth is about 6400 km, so the volume of the LEO region is</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/satellite_room2.svg" alt="\frac{4\pi}{3} \left((6400 + 2000)^3 - (6400 + 160)^3\right) \text{km}^3 = 1.3 \times 10^{12} \,\text{km}^3" width="484" height="40" /></p>
+<p>There are about 12,500 satellites in LEO, so the average volume of LEO per satellite is about 100,000,000 km³.</p>
+<p>Now this isn&#8217;t the last word in collision avoidance—there are lots of complications we&#8217;re not going to get into here—but it is the first word: <strong>there&#8217;s a lot of space in space</strong>.</p>The post <a href="https://www.johndcook.com/blog/2026/02/02/satellites-have-a-lot-of-room/">Satellites have a lot of room</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/02/02/satellites-have-a-lot-of-room/feed/</wfw:commentRss>
+			<slash:comments>2</slash:comments>
+
+
+			</item>
+		<item>
+		<title>AGI, ASI, A*I &#8211; Do we have all we need to get there?</title>
+		<link>https://www.johndcook.com/blog/2026/01/30/agi-asi-ai-do-we-have-all-we-need-to-get-there/</link>
+
+		<dc:creator><![CDATA[Wayne Joubert]]></dc:creator>
+		<pubDate>Fri, 30 Jan 2026 19:46:37 +0000</pubDate>
+				<category><![CDATA[AI]]></category>
+		<category><![CDATA[Algorithms]]></category>
+		<category><![CDATA[Artificial Intelligence]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246745</guid>
+
+					<description><![CDATA[<p>Demis: &#8220;[to get to AGI] maybe there&#8217;s one or two big innovations needed&#8221; Sam: &#8220;everything based off what we see today is that it will happen.&#8221; Ilya: &#8220;But is the belief really that if you just 100x the scale, everything would be transformed? I don&#8217;t think that&#8217;s true.&#8221; Dario: &#8220;If you just kind of like [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/30/agi-asi-ai-do-we-have-all-we-need-to-get-there/">AGI, ASI, A*I – Do we have all we need to get there?</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>Demis: &#8220;[to get to AGI] maybe there&#8217;s one or two big <a href="https://www.youtube.com/watch?v=Iar4yweKGoI&amp;t=407s">innovations needed</a>&#8221;</p>
+<p>Sam: &#8220;everything based off what we see today is that <a href="https://www.youtube.com/watch?v=2P27Ef-LLuQ&amp;t=1971s">it will happen</a>.&#8221;</p>
+<p>Ilya: &#8220;But is the belief really that if you just 100x the scale, everything would be transformed? <a href="https://www.youtube.com/watch?v=aR20FWCCjAs&amp;t=1315s">I don&#8217;t think that&#8217;s true.</a>&#8221;</p>
+<p>Dario: &#8220;If you just kind of like eyeball the rate at which these capabilities are increasing, it does make you think that <a href="https://www.youtube.com/watch?v=ugvHCXCOmm4&amp;t=22s">we&#8217;ll get there by 2026 or 2027.</a>&#8221;</p>
+<p>Jerry: &#8220;is [the transformer architecture] the last thing? <a href="https://www.youtube.com/watch?v=VaCq4u5c78U&amp;t=747s">I&#8217;m pretty sure it isn&#8217;t.</a>&#8221;</p>
+<p>For years leading researchers have been speculating one way or the other as to whether better algorithms are needed to get to AGI, artificial general intelligence (however that might be defined).</p>
+<p>Around the time of the release of GPT-4, some were saying they felt something more was needed. Since then, we have had several major new advances, like reasoning models and tool use. If we&#8217;d said, &#8220;we don&#8217;t need anything else&#8221; three years ago, where would we be now?</p>
+<p>For frankness, I like this from John Schulman: &#8220;it&#8217;s hard to know <a href="https://www.youtube.com/watch?v=PqVbypvxDto&amp;t=2s">what we need.</a>&#8221; And for strategy, Demis: &#8220;you can think of as <a href="https://www.youtube.com/watch?v=PqVbypvxDto&amp;t=2s">50% of our effort is on scaling, 50% of it is on innovation</a>. My betting is you&#8217;re going to need both to get to AGI.&#8221;</p>The post <a href="https://www.johndcook.com/blog/2026/01/30/agi-asi-ai-do-we-have-all-we-need-to-get-there/">AGI, ASI, A*I – Do we have all we need to get there?</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Bridging secrets is hard</title>
+		<link>https://www.johndcook.com/blog/2026/01/30/bridging-secrets/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Fri, 30 Jan 2026 17:09:30 +0000</pubDate>
+				<category><![CDATA[Computing]]></category>
+		<category><![CDATA[Cryptocurrency]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246829</guid>
+
+					<description><![CDATA[<p>Cryptocurrency and privacy don&#8217;t fit together as easily as you might expect. Blockchains give you the illusion of privacy via pseudonymization: you don&#8217;t put your name on a blockchain, but you do put information on a blockchain that can be used to determine your name. Blockchain analysis can often reveal information that no one intended [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/30/bridging-secrets/">Bridging secrets is hard</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p><a href="https://www.johndcook.com/blog/crypto/">Cryptocurrency</a> and <a href="https://www.johndcook.com/blog/data-privacy/">privacy</a> don&#8217;t fit together as easily as you might expect. Blockchains give you the illusion of privacy via pseudonymization: you don&#8217;t put your name on a blockchain, but you do put information on a blockchain that <em>can be used</em> to determine your name. Blockchain analysis can often reveal information that no one intended to share.</p>
+<p>This is true even for privacy coins like Monero and Zcash. These coins put less information directly on chain in the clear, but they still have to be <strong>used with skill</strong> to maintain privacy. And because they can offer more privacy, they are harder to use. For example, an exchange might let you swap between a thousand different currencies, but privacy coins are conspicuously missing from the list of options. Or maybe you can move money into Zcash, but not with privacy, i.e. not into the shielded pool.</p>
+<p>The <a href="https://x.com/a16zcrypto/status/2008611265565127086">Privacy trends for 2026</a> report from a16z summarizes the current situation very well.</p>
+<blockquote><p>Thanks to bridging protocols, it’s trivial to move from one chain to another as long as everything is public. But, as soon as you make things private, that is no longer true: <strong>Bridging tokens is easy, bridging secrets is hard</strong>. There is always a risk when moving in or out of a private zone that people who are watching the chain, mempool, or network traffic could figure out who you are. Crossing the boundary between a private chain and a public one—or even between two private chains—leaks all kinds of metadata like transaction timing and size correlations that makes it easier to track someone.</p></blockquote>
+<p>As is often the case, the weak link is the metadata, not the data <em>per se</em>.</p>The post <a href="https://www.johndcook.com/blog/2026/01/30/bridging-secrets/">Bridging secrets is hard</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Fortunes and Geometric Means</title>
+		<link>https://www.johndcook.com/blog/2026/01/24/geometric-means/</link>
+					<comments>https://www.johndcook.com/blog/2026/01/24/geometric-means/#comments</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Sat, 24 Jan 2026 16:56:33 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246820</guid>
+
+					<description><![CDATA[<p>I saw a post on X recently that said Bill Gates is closer to you in wealth than he is to Elon Musk. Mind blown. For round numbers, let&#8217;s say Elon Musk&#8217;s net worth is 800 billion and Bill Gates&#8217; net worth is 100 billion. So if your net worth is less 450 billion, the [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/24/geometric-means/">Fortunes and Geometric Means</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>I saw a <a href="https://x.com/Morris_Monye/status/2014616615908765823?s=20">post</a> on X recently that said</p>
+<blockquote><p>Bill Gates is closer to you in wealth than he is to Elon Musk. Mind blown.</p></blockquote>
+<p>For round numbers, let&#8217;s say Elon Musk&#8217;s net worth is 800 billion and Bill Gates&#8217; net worth is 100 billion. So if your net worth is less 450 billion, the statement in the post is true.</p>
+<p>The reason the statement above is mind blowing is that in this context you naturally think on a logarithmic scale, even if you don&#8217;t know what a logarithm is.</p>
+<p>Or to put it another way, we think in terms of orders of magnitude. Musk&#8217;s net worth is an order of magnitude greater than Gates&#8217;, and Gates&#8217; net worth would be an order of magnitude greater than that of someone worth 10 billion. Musk is a notch above Gates, and Gates is a notch above someone with a net worth around 10 billion, where a &#8220;notch&#8221; is an order of magnitude.</p>
+<p>To put it another way, we think in terms of geometric mean √<em>ab</em> rather than arithmetic mean (<em>a</em> + <em>b</em>)/2 in this context. 100 billion is the geometric mean between 12.5 billion and 800 billion. Geometric mean corresponds to the arithmetic mean on a log scale. And on this scale, Gates is closer to Musk than you are, unless you&#8217;re worth more than 12.5 billion.</p>
+<p>Here are three more examples of geometric means.</p>
+<p>The size of <strong>Jupiter</strong> is about midway between that of earth and the sun; it&#8217;s the geometric mean. On a linear scale Jupiter is much closer to the size of the earth than the sun, but on a logarithmic scale it&#8217;s about in the middle. More on that <a href="https://www.johndcook.com/blog/2024/04/09/earth-jupiter-sun/">here</a>.</p>
+<p>The <strong>tritone</strong> (augmented fourth) is half an octave. So, for example, an F# is in the middle between a C and the C an octave higher. Its frequency is the geometric mean of the frequencies of the two C&#8217;s. More <a href="https://www.johndcook.com/blog/2023/10/10/tritone/">here</a>.</p>
+<p>Finally, the <strong>humans body</strong> is a middle-sized object in the universe. From <a href="https://www.johndcook.com/blog/2010/11/15/the-middle-size-of-the-universe/">Kevin Kelly</a>:</p>
+<p style="padding-left: 40px;">Our body size is, weirdly, almost exactly in the middle of the size of the universe. The smallest things we know about are approximately 30 orders of magnitude smaller than we are, and the largest structures in the universe are about 30 orders of magnitude bigger.</p>The post <a href="https://www.johndcook.com/blog/2026/01/24/geometric-means/">Fortunes and Geometric Means</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/01/24/geometric-means/feed/</wfw:commentRss>
+			<slash:comments>1</slash:comments>
+
+
+			</item>
+		<item>
+		<title>Proving you know a product</title>
+		<link>https://www.johndcook.com/blog/2026/01/24/proving-you-know-a-product/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Sat, 24 Jan 2026 16:21:32 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Cryptography]]></category>
+		<category><![CDATA[ZKP]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246819</guid>
+
+					<description><![CDATA[<p>There is a way to prove that you know two numbers a and b, and their product c = ab, without revealing a, b, or c. This isn&#8217;t very exciting without more context — maybe you know that 7 × 3 = 21 — but it&#8217;s a building block of more interesting zero knowledge proofs, such as proving that a cryptocurrency transaction [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/24/proving-you-know-a-product/">Proving you know a product</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>There is a way to prove that you know two numbers <em>a</em> and <em>b</em>, and their product <em>c</em> = <em>ab</em>, without revealing <em>a</em>, <em>b</em>, or <em>c</em>. This isn&#8217;t very exciting without more context — maybe you know that 7 × 3 = 21 — but it&#8217;s a building block of more interesting zero knowledge proofs, such as proving that a cryptocurrency transaction is valid without revealing the amount of the transaction.</p>
+<p>The proof mechanism requires an elliptic curve <em>G</em> and a pairing of <em>G</em> with itself. (More on pairings shortly.) It also requires a generator <em>g</em> of the group structure on <em>G</em>.</p>
+<p>The prover takes the three secret numbers and multiplies the generator <em>g</em> by each, encrypting the numbers as <em>ag</em>, <em>bg</em>, and <em>cg</em>. When <em>G</em> is a large elliptic curve, say one with on the order of 2<sup>256</sup> points, then computing products like <em>ag</em> can be done quickly, but recovering <em>a</em> from <em>g</em> and <em>ag</em> is impractical. In a nutshell, multiplication is easy but division [1] is practically impossible [2].</p>
+<p>The verifier receives <em>ag</em>, <em>bg</em>, and <em>cg</em>. How can he verify that <em>ab</em> = c without knowing <em>a</em>, <em>b</em>, or <em>c</em>? Here&#8217;s where pairing come in.</p>
+<p>I go more into pairings <a href="https://www.johndcook.com/blog/2025/11/16/elliptic-curve-pairings/">here</a>, but essentially a pairing is a mapping from two groups to a third group</p>
+<p style="padding-left: 40px;"><em>e</em>: <em>G</em><sub>1</sub> × <em>G</em><sub>2</sub> → <em>G</em><sub>T</sub></p>
+<p>such that</p>
+<p style="padding-left: 40px;"><em>e</em>(<em>aP</em>, <em>bQ</em>) = <em>e</em>(<i>P</i>, <em>Q</em>)<sup><em>ab</em></sup>.</p>
+<p>In our case <em>G</em><sub>1</sub> and <em>G</em><sub>2</sub> are both equal to the group <em>G</em> above, and the target group <em>G</em><sub>T</sub> doesn&#8217;t matter for our discussion here. Also, <em>P</em> and <em>Q</em> will both be our generator <em>g</em>.</p>
+<p>By the defining property of a pairing,</p>
+<p style="padding-left: 40px;"><em>e</em>(<em>ag</em>, <em>bg</em>) = <em>e</em>(<em>g</em>, <em>g</em>)<sup><em>ab</em></sup></p>
+<p>and</p>
+<p style="padding-left: 40px;"><em>e</em>(<em>cg</em>, <em>g</em>) = <em>e</em>(<em>g</em>, <em>g</em>)<sup><em>c</em></sup>.</p>
+<p>So if <em>ab</em> = <em>c</em>, then <em>e</em>(<em>g</em>, <em>g</em>)<sup><em>ab</em></sup> and <em>e</em>(<em>g</em>, <em>g</em>)<sup><em>c</em></sup> will be equal.</p>
+<h2>Related posts</h2>
+<ul>
+<li class='link'><a href='https://www.johndcook.com/blog/2025/11/16/elliptic-curve-pairings/'>Elliptic curve pairings in cryptography</a></li>
+<li class='link'><a href='https://www.johndcook.com/blog/2025/11/17/three-party-diffie-hellman/'>Three-party Diffie-Hellman</a></li>
+<li class='link'><a href='https://www.johndcook.com/blog/2025/08/04/pairing-unfriendly-curves/'>Pairing-unfriendly curves</a></li>
+</ul>
+<p>[1] The literature will usually speak of discrete logarithms rather than division. The group structure on an elliptic curve is Abelian, and so it is usually written as addition. If you write the group operation as multiplication, then you&#8217;re taking logs rather than dividing. The multiplicative notation highlights the similarity to working in the multiplicative group modulo a large prime.</p>
+<p>[2] The computation is theoretically possible but not possible in practice without spending enormous resources, or inventing a large scale quantum computer. This is the discrete logarithm assumption.</p>The post <a href="https://www.johndcook.com/blog/2026/01/24/proving-you-know-a-product/">Proving you know a product</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>How to prove you know a discrete logarithm</title>
+		<link>https://www.johndcook.com/blog/2026/01/23/zkp-discrete-logarithm/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Fri, 23 Jan 2026 16:51:33 +0000</pubDate>
+				<category><![CDATA[Computing]]></category>
+		<category><![CDATA[Cryptography]]></category>
+		<category><![CDATA[ZKP]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246818</guid>
+
+					<description><![CDATA[<p>In a high school math class, the solution to the equation bx = y is the logarithm of y in base b. The implicit context of the equation is the real numbers, and the solution is easy to calculate. The same problem in the context of finite groups is called the discrete logarithm problem, and it is difficult [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/23/zkp-discrete-logarithm/">How to prove you know a discrete logarithm</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>In a high school math class, the solution to the equation</p>
+<p style="padding-left: 40px;"><em>b</em><sup><em>x</em></sup> = <em>y</em></p>
+<p>is the logarithm of <em>y</em> in base <em>b</em>. The implicit context of the equation is the real numbers, and the solution is easy to calculate.</p>
+<p>The same problem in the context of finite groups is called the discrete logarithm problem, and it is difficult to solve for large groups. In particular, it is impractical to solve when working modulo a sufficiently large prime number or when working over a sufficiently large elliptic curve [1]. In either context, the exponential <em>b</em><sup><em>x</em></sup> can be computed efficiently but its inverse cannot.</p>
+<p>Now suppose you want to prove that you know <em>x</em> without revealing <em>x</em> itself. That is, you&#8217;d like to construct a <strong>zero knowledge proof</strong> that you know <em>x</em>. How could you do this?</p>
+<p>Here&#8217;s one way.</p>
+<ol>
+<li>You, the prover, create a random number <em>r</em>, compute <em>t</em> = <em>b</em><sup><em>r</em></sup>, and send the verifier <em>t</em>.</li>
+<li>The other party, the verifier, creates a random number <em>c</em>, the challenge, and sends it to you.</li>
+<li>You calculate <em>s</em> = <em>r</em> + <em>cx</em> and send <em>s</em> to the verifier.</li>
+<li>The verifier checks whether <em>b</em><sup><em>s</em></sup> = <em>t</em> <em>y</em><sup><em>c</em></sup>. and believes you if and only if equality holds.</li>
+</ol>
+<p>Let&#8217;s see why this works.</p>
+<p>First of all, what have you revealed to the prover? Two values: <em>t</em> and <em>s</em>. The value <em>t</em> is the exponential of a random number, and so another random number. The value <em>s</em> is based on <em>x</em>, and so conceivably you&#8217;ve revealed your secret. But the verifier does not know <em>r</em>, only a value computed from <em>r</em> (i.e. <em>t</em>) and the verifier cannot recover <em>r</em> from <em>t</em> because this would require computing a discrete logarithm.</p>
+<p>Next, why should <em>b</em><sup><em>s</em></sup> = <em>t</em> <em>y</em><sup><em>c</em></sup>? Because</p>
+<p style="padding-left: 40px;"><em>b</em><sup><em>s</em></sup> = <em>b</em><sup><em>r</em> + <em>cx</em></sup> = <em>b</em><sup><em>r</em></sup> <em>b</em><sup><em>cx</em></sup> = <em>t</em> (<em>b</em><sup><em>x</em></sup>)<sup><em>c</em></sup> = <em>t</em> <em>y</em><sup><em>c</em></sup>.</p>
+<p>Finally, why should the verifier believe you know <em>x</em>? If you don&#8217;t know <em>x</em>, but were able to come up with an <em>s</em> that satisfies the verifier, then you were able to compute the discrete logarithm of <em>t</em> <em>y</em><sup><em>c</em></sup>.</p>
+<h2>Related posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2025/08/01/jubjub/">Lewis Carroll and zero knowledge proofs</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2025/12/06/pedersen-commitment/">What is a Pedersen commitment?</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2025/11/29/zkp-composite/">Zero knowledge proof of compositeness</a></li>
+</ul>
+<p>[1] At least without a large-scale quantum computer. Shor&#8217;s algorithm could efficiently compute discrete logarithms if only there were a large quantum computer to run it on.</p>The post <a href="https://www.johndcook.com/blog/2026/01/23/zkp-discrete-logarithm/">How to prove you know a discrete logarithm</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Mills ratio and tail thickness</title>
+		<link>https://www.johndcook.com/blog/2026/01/21/mills-ratio/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Wed, 21 Jan 2026 15:27:57 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Probability and Statistics]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246817</guid>
+
+					<description><![CDATA[<p>The Mills ratio [1] is the ratio of the CCDF to the PDF. That is, for a random variable X, the Mills ratio at x is the complementary cumulative distribution function divided by the density function. If the density function of X is f, then The Mills ratio highlights an important difference between the Student [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/21/mills-ratio/">Mills ratio and tail thickness</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>The Mills ratio [1] is the ratio of the CCDF to the PDF. That is, for a random variable <em>X</em>, the Mills ratio at <em>x</em> is the complementary cumulative distribution function divided by the density function. If the density function of <em>X</em> is <em>f</em>, then</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/mills_ratio.svg" alt="m(x) = \frac{\int_x^\infty f(x)\, dx}{f(x)}" width="161" height="54" /></p>
+<p>The Mills ratio highlights an important difference between the Student <em>t</em> distribution and the normal distribution.</p>
+<p>Introductory statistics classes will say things like &#8220;you can approximate a <em>t</em> distribution with a normal if it has more than 30 degrees of freedom.&#8221; That may be true, depending on the application. A <em>t</em>(30) distribution and a normal distribution behave similarly in the middle but not in the tails.</p>
+<p><img loading="lazy" decoding="async" class="aligncenter size-medium" src="https://www.johndcook.com/mills_ratio.png" alt="Mills ratio plot for t(30) vs normal" width="480" height="360" /></p>
+<p>The Mills ratio for a <em>t</em> distribution with ν degrees of freedom is asymptotically <em>x</em>/ν,  while the Mills ratio for a standard normal distribution is asymptotically 1/<em>x</em>. Note that increasing ν does make the Mills function smaller, but it still eventually grows linearly whereas the Mills function of a normal distribution decays linearly.</p>
+<p>In general, the Mills ratio is a decreasing function for thin-tailed distributions and an increasing function for fat-tailed distributions. The exponential distribution is in the middle, with constant Mills function.</p>
+<h2>Related posts</h2>
+<ul>
+<li class='link'><a href='https://www.johndcook.com/blog/norm-dist-bounds/'>Normal tail bounds</a></li>
+<li class='link'><a href='https://www.johndcook.com/blog/2025/09/09/mandelbrot-fat-tails/'>Mandelbrot set and fat tails</a></li>
+<li class='link'><a href='https://www.johndcook.com/blog/2011/08/09/single-big-jump-principle/'>The single big jump principle</a></li>
+</ul>
+<p>[1] Named after John P. Mills, so there&#8217;s no apostrophe before the <em>s</em>.</p>The post <a href="https://www.johndcook.com/blog/2026/01/21/mills-ratio/">Mills ratio and tail thickness</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Sigmas and Student</title>
+		<link>https://www.johndcook.com/blog/2026/01/21/sigmas-and-student/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Wed, 21 Jan 2026 13:20:49 +0000</pubDate>
+				<category><![CDATA[Statistics]]></category>
+		<category><![CDATA[Probability and Statistics]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246816</guid>
+
+					<description><![CDATA[<p>I saw something yesterday saying that the Japanese bond market had experienced a six standard deviation move. This brought to mind a post I&#8217;d written eight years ago. All probability statements depend on a model. And if you&#8217;re probability model says an event had a probability six standard deviations from the mean, it&#8217;s more likely [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/21/sigmas-and-student/">Sigmas and Student</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>I saw something yesterday saying that the Japanese bond market had experienced a six standard deviation move. This brought to mind a post I&#8217;d written eight years ago.</p>
+<p>All probability statements depend on a model. And if you&#8217;re probability model says an event had a probability six standard deviations from the mean, it&#8217;s more likely that your model is wrong than that you&#8217;ve actually seen something that rare. I expand on this idea <a href="https://www.johndcook.com/blog/2018/05/31/six-sigma-events/">here</a>.</p>
+<p>How likely is it that a sample from a random variable will be six standard deviations from its mean? If you have in mind a normal (Gaussian) distribution, as most people do, then the probability is on the order of 1 chance in 10,000,000. Six sigma events are not common for any distribution, but they&#8217;re not unheard of for distributions with heavy tails.</p>
+<p>Let <em>X</em> be a random variable with a Student <em>t</em> distribution and ν degrees of freedom. When ν is small, i.e. no more than 2, the tails of <em>X</em> are so fat that the standard deviation doesn&#8217;t exist. As ν → ∞ the Student <em>t</em> distribution approaches the normal distribution. So in some sense this distribution interpolates between fat tails and thin tails.</p>
+<p>What is the probability that <em>X</em> takes on a value more than six standard deviations from its mean at 0, i.e. what does the function</p>
+<p style="padding-left: 40px;"><em>f</em>(ν) = Prob(<em>X</em> &gt; 6σ)</p>
+<p>look like as a function of ν where σ² = ν/(ν − 2) is the variance of <em>X</em>?</p>
+<p>As you&#8217;d expect, the limit of <em>f</em>(ν) as ν → ∞ is the probability of a six-sigma event for a normal distribution, around 10<sup>−7</sup> as mentioned above. Here&#8217;s a plot of <em>f</em>(ν) for ν &gt; 3. Notice that the vertical axis is on a log scale, i.e. the probability decreases exponentially.</p>
+<p><img loading="lazy" decoding="async" class="aligncenter size-medium" src="https://www.johndcook.com/ttails1.png" width="480" height="360" /></p>
+<p>What you might not expect is that <em>f</em>(ν) isn&#8217;t monotone. It rises to a maximum value before it decays exponentially. In hindsight this makes sense. As ν → 2<sup>+</sup> the variance becomes infinite, and the probability of being infinitely far from the mean is 0. Here&#8217;s a plot of <em>f</em>(ν) between 2 and 3.</p>
+<p><img loading="lazy" decoding="async" class="aligncenter size-medium" src="https://www.johndcook.com/ttails2.png" width="480" height="360" /></p>
+<p>So six sigma probabilities for a Student <em>t</em> distribution rise from 0 up to a maximum of around 10<sup>−3</sup> then decrease exponentially, then asymptotically approach a value around 10<sup>−7</sup>.</p>
+<h2>Related posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2019/06/20/nines-and-sigmas/">Converting between nines and sigmas</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2008/11/12/normal-approximation-for-student-t-distribution-isnt-good-enough/">When ν = 30 isn&#8217;t normal enough</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2019/09/27/fat-tails-and-the-t-test/">Fat tails and the <em>t</em>-test</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2008/06/27/wine-beer-and-statistics/">Beer, wine, and statistics</li>
+</ul>The post <a href="https://www.johndcook.com/blog/2026/01/21/sigmas-and-student/">Sigmas and Student</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Stylometry</title>
+		<link>https://www.johndcook.com/blog/2026/01/20/stylometry/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Tue, 20 Jan 2026 15:10:02 +0000</pubDate>
+				<category><![CDATA[Statistics]]></category>
+		<category><![CDATA[NLP]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246814</guid>
+
+					<description><![CDATA[<p>I was reading an article this morning that mentioned a stylometric analysis of a controversial paragraph written by Roman historian Flavius Josephus. I&#8217;ve written several posts that could be called stylometry or adjacent, but I haven&#8217;t used that word. Here are some posts that touch on the statistical analysis of a text or of an [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/20/stylometry/">Stylometry</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>I was reading an <a href="https://www.thegospelcoalition.org/reviews/josephus-jesus-new-evidence/">article</a> this morning that mentioned a stylometric analysis of a controversial paragraph written by Roman historian Flavius Josephus. I&#8217;ve written several posts that could be called stylometry or adjacent, but I haven&#8217;t used that word. Here are some posts that touch on the statistical analysis of a text or of an author.</p>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2025/08/07/federalist-papers/">Authorship in the Federalist Papers</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2025/08/06/tf-idf/">Using TF-IDF to pick out important words</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2023/07/24/nlp/">Natural language processing and unnatural text</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2019/08/27/heaps-law/">Estimating vocabulary size with Heaps&#8217; law</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2023/07/23/rare-words/">How rare are rare words</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2023/07/25/a-note-on-zipfs-law/">A note on Zipf&#8217;s law</a></li>
+</ul>The post <a href="https://www.johndcook.com/blog/2026/01/20/stylometry/">Stylometry</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Two cheers for ugly code</title>
+		<link>https://www.johndcook.com/blog/2026/01/19/ugly-code/</link>
+					<comments>https://www.johndcook.com/blog/2026/01/19/ugly-code/#comments</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Mon, 19 Jan 2026 17:56:39 +0000</pubDate>
+				<category><![CDATA[Software development]]></category>
+		<category><![CDATA[Programming]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246812</guid>
+
+					<description><![CDATA[<p>Ugly code may be very valuable, depending on why it&#8217;s ugly. I&#8217;m not saying that it&#8217;s good for code to be ugly, but that code that is already ugly may be valuable. Some of the ugliest code was started by someone who knew the problem domain well but did not know how to write maintainable [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/19/ugly-code/">Two cheers for ugly code</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>Ugly code may be very valuable, depending on why it&#8217;s ugly. I&#8217;m not saying that it&#8217;s good for code to be ugly, but that code that is already ugly may be valuable.</p>
+<p>Some of the ugliest code was started by someone who knew the problem domain well but did not know how to write maintainable code. It may implicitly contain information that is not explicitly codified anywhere else. It may contain information the original programmer isn&#8217;t even consciously aware of. It&#8217;s often easier to clean up the code than to surface the information it contains using any other source.</p>
+<p>Another way code gets ugly is undisciplined modification by multiple programmers over a long period of time. In that case the code has proved to be useful. It&#8217;s the opposite of Field of Dreams code that you hope will be used if you build it.</p>
+<p><a href="https://www.r7krecon.com/legacy-code">Working effectively with legacy code</a> is hard. It may be easier, and certainly more pleasant, to start from scratch. Even so, there may be more to learn from the old code than is immediately obvious.</p>
+<p style="text-align: center;">***</p>
+<p>This post was motivated by looking to extend some code I use in my business. It wouldn&#8217;t win a beauty pageant, but it&#8217;s very useful.</p>
+<p>Writing this post reminded me of a post <a href="https://www.johndcook.com/blog/2023/06/03/productive-productivity/">Productive Productivity</a> that I wrote a while back. From that post:</p>
+<blockquote><p>The scripts that have been most useful are of zero interest to anyone else because they are very specific to my work. I imagine that’s true of most scripts ever written.</p></blockquote>The post <a href="https://www.johndcook.com/blog/2026/01/19/ugly-code/">Two cheers for ugly code</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/01/19/ugly-code/feed/</wfw:commentRss>
+			<slash:comments>2</slash:comments>
+
+
+			</item>
+		<item>
+		<title>Prime gaps and Gapcoin</title>
+		<link>https://www.johndcook.com/blog/2026/01/18/prime-gaps-gapcoin/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Mon, 19 Jan 2026 01:20:19 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Cryptocurrency]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246808</guid>
+
+					<description><![CDATA[<p>The previous post looked at tightly clustered primes. This post looks at the opposite, large gaps between primes. Riecoin is a cryptocurrency that uses finding prime clusters as its proof of work task. Gapcoin uses finding prime gaps as its proof of work task. There&#8217;s some nuance to defining prime gaps. It&#8217;s trivial to produce [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/18/prime-gaps-gapcoin/">Prime gaps and Gapcoin</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>The previous post looked at tightly clustered primes. This post looks at the <strong>opposite</strong>, large gaps between primes.</p>
+<p><strong>Riecoin</strong> is a cryptocurrency that uses finding prime clusters as its proof of work task. <strong>Gapcoin</strong> uses finding prime gaps as its proof of work task.</p>
+<p>There&#8217;s some nuance to defining prime gaps. It&#8217;s trivial to produce a gap of any size. For example, [<em>n</em>! + 2, <em>n</em>! + <em>n</em>] is an interval of length <em>n</em> − 1 that contains no primes. It is more interesting to find gaps that are large <em>relative to</em> the size of the endpoints. The <strong>merit</strong> of a gap is the ratio of the gap length to the log of the initial number in the interval.</p>
+<p>To be specific, suppose <em>p</em> and <em>q</em> are consecutive primes. The length of the gap between them is defined to be <em>q</em> − <em>p</em> and the merit of that gap is (<em>q</em> − <em>p</em>) / log <em>p</em>. For large <em>p</em>, the average gap between primes near <em>p</em> is log <em>p</em> and so the merit function measures how large the gap is relative to what you would expect for the size of <em>p</em>.</p>
+<p>The following code will compute the merit function.</p>
+<pre>&gt;&gt;&gt; from sympy import nextprime, log, N
+&gt;&gt;&gt; merit = lambda p: (nextprime(p) - p)/log(p)
+</pre>
+<p>Gapcoin adjusts its mining difficulty by adjusting the minimum merit value the miner must search for. Gapcoin miners must find a prime <em>p</em> of the form</p>
+<p style="padding-left: 40px;"><em>p</em> = <em>h</em> × 2<sup><em>a</em></sup> + <em>b</em></p>
+<p>where <em>h</em> is the SHA256 hash of the previous block in the blockchain and <em>b</em> &lt; 2<sup><em>a</em></sup>.</p>
+<p>The prime gap with the largest known merit is [<em>p</em>, <em>p</em> + 8350] where</p>
+<p style="padding-left: 40px;"><em>p</em> = 293703234068022590158723766104419463425709075574811762098588798217895728858676728143227</p>
+<p>The code</p>
+<pre>&gt;&gt;&gt; N(merit(p))</pre>
+<p>shows that the merit is 41.94.</p>
+<p>This record was found by the Gapcoin network. I don&#8217;t know the backstory, but I presume the mining task wasn&#8217;t to find a world record gap. Instead, the miner got lucky and found a much larger gap than necessary.</p>
+<h2>Related posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2026/01/10/prime-chains/">Prime chains and Primecoin</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2026/01/18/prime-clusters-riecoin/">Prime clusters and Riecoin</a></li>
+</ul>The post <a href="https://www.johndcook.com/blog/2026/01/18/prime-gaps-gapcoin/">Prime gaps and Gapcoin</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Prime clusters and Riecoin</title>
+		<link>https://www.johndcook.com/blog/2026/01/18/prime-clusters-riecoin/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Sun, 18 Jan 2026 20:23:09 +0000</pubDate>
+				<category><![CDATA[Computing]]></category>
+		<category><![CDATA[Cryptocurrency]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246807</guid>
+
+					<description><![CDATA[<p>Prime clusters are sets of primes that appear as close together as is generally possible. There is one pair of consecutive prime numbers, 2 and 3, but there cannot be any more: in any larger pair of consecutive numbers, one of the pair will be even. But there are a lot of twin primes, perhaps infinitely [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/18/prime-clusters-riecoin/">Prime clusters and Riecoin</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>Prime clusters are sets of primes that appear as close together as is <em>generally</em> possible.</p>
+<p>There is one pair of consecutive prime numbers, 2 and 3, but there cannot be any more: in any larger pair of consecutive numbers, one of the pair will be even. But there are a lot of twin primes, perhaps infinitely many, and so a prime cluster of size two is a pair of primes whose difference is 2.</p>
+<p>How close together can a set of three primes be? The set {2, 3, 5} has diameter 3, i.e. the difference between the largest and smallest element is 3. And the set {3, 5, 7} has diameter 4. But <em>in general</em> the diameter of a set of three primes must be at least 6. If the smallest element is bigger than 3, then all the elements are odd, but they cannot be consecutive odd numbers or else one of them would be divisible by 3. But there are many prime clusters of diameter 6. For example, {13, 17, 19} and {37, 41, 43}.</p>
+<h2>Formal definition and motivation</h2>
+<p>There is some fuzziness in the discussion above regarding what is <em>generally</em> possible. This section will make our definitions more rigorous.</p>
+<p>In general a pair of primes cannot be consecutive numbers because one of the pair must be even. Stated more abstractly, every pair of integers larger than {2, 3} will contain a complete residue class mod 2, i.e. one of the numbers will be congruent to 0 mod 2 and one of the numbers will be congruent to 1 mod 2.</p>
+<p>Now let&#8217;s look at sets of three primes. The example {2, 3, 5} is exceptional because it contains a complete residue class mod 2, i.e. it contains even and odd numbers. The example {3, 5, 7} is exceptional because it contains a complete residue class mod 3.</p>
+<p>We say that a set of <em>k</em> primes is a <strong>cluster</strong> if it does not contain a full residue class modulo any prime. We could say it does not contain a full residue class modulo any prime <em>q</em> ≤ <em>k</em> because trivially no set of <em>k</em> elements can have set of more than <em>k</em> elements. For example, the cluster {13, 17, 19} does not contain a full set of residues mod 2 or 3, but it also does not have a full set of residues mod 5, 7, 11, ….</p>
+<p>We say a cluster is <strong>maximally dense</strong> if it has the minimum diameter for a cluster of its number of primes.</p>
+<p>Informally, we will call a maximally dense cluster simply a cluster. A maximally dense prime cluster is also sometimes called a <strong>prime constellation</strong>.</p>
+<h2>Riecoin cryptocurrency</h2>
+<p>I&#8217;ve written several posts about the <a href="https://www.johndcook.com/blog/2026/01/10/prime-chains/">Primecoin</a> cryptocurrency whose proof of work task is finding prime chains. The <strong>Riecoin</strong> cryptocurrency requires miners to find prime clusters.</p>
+<p>Primecoin is far from a major cryptocurrency, with a market cap of around $2.3M. <a href="https://riecoin.xyz/">Riecoin</a> is about four times smaller than Primecoin. There is another number-theoretic cryptocurrency, <a href="https://www.johndcook.com/blog/2026/01/18/prime-gaps-gapcoin/">Gapcoin</a>, whose market cap is about 10x smaller than that of Riecoin. Safe to say these three projects are of more interest to mathematicians than investment firms. All three of these prime-based cryptocurrencies were launched between 2013 and 2014.</p>
+<p>A proof of work task should satisfy three criteria:</p>
+<ol>
+<li>Solutions should be difficult to find but easy to confirm.</li>
+<li>The time to find a solution should be roughly predictable.</li>
+<li>The difficulty should be adjustable.</li>
+</ol>
+<p>Finding prime clusters requires a brute force search, but it&#8217;s easy to test whether a cluster has been found, and so the first property is satisfied.</p>
+<p>The Hardy-Littlewood conjectures give an estimate of the difficulty in finding prime clusters of a given length. The difficulty can be adjusted by adjusting the required length. So the Hardy-Littlewood conjectures assist in satisfying the second and third properties. It does not matter if the conjectures are false somewhere out in asymptopia; they empirically give good estimates for the size of numbers used in mining Riecoin.</p>
+<h2>More about clusters</h2>
+<p>The definition of a maximally dense cluster depends on a function <em>s</em>(<em>k</em>) that says what the diameter of a cluster of <em>k</em> primes would need to be. We&#8217;ve said <em>s</em>(2) = 2 and <em>s</em>(3) = 6. More values of <em>s</em> are listed on the page for OEIS sequence <a href="https://oeis.org/A008407">A008407</a>.</p>
+<h2>Related posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2026/01/10/prime-chains/">Prime chains</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2026/01/10/primecoin-primality-test/">Primecoin&#8217;s primality test</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/crypto/">Cryptocurrency posts</a></li>
+</ul>The post <a href="https://www.johndcook.com/blog/2026/01/18/prime-clusters-riecoin/">Prime clusters and Riecoin</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Efficiently testing multiple primes at once</title>
+		<link>https://www.johndcook.com/blog/2026/01/16/testing-multiple-primes/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Fri, 16 Jan 2026 15:52:05 +0000</pubDate>
+				<category><![CDATA[Computing]]></category>
+		<category><![CDATA[Math]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246805</guid>
+
+					<description><![CDATA[<p>The previous post looked at a technique for inverting multiple integers mod m at the same time, using fewer compute cycles than inverting each integer individually. This post will do something analogous for prime chains, revisiting a post from a few days ago about testing prime chains. A prime chain is a sequence of primes in [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/16/testing-multiple-primes/">Efficiently testing multiple primes at once</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>The <a href="https://www.johndcook.com/blog/2026/01/14/montgomerys-trick/">previous post</a> looked at a technique for inverting multiple integers mod <em>m</em> at the same time, using fewer compute cycles than inverting each integer individually. This post will do something analogous for prime chains, revisiting a post from a few days ago about <a href="https://www.johndcook.com/blog/2026/01/10/primecoin-primality-test/">testing prime chains</a>.</p>
+<p>A prime chain is a sequence of primes in which each is twice its predecessor, plus or minus 1. In a Cunningham chain of the first kind, it&#8217;s always plus, and in a Cunningham chain of the second kind, it&#8217;s always minus.</p>
+<p><a href="https://www.johndcook.com/blog/2026/01/10/prime-chains/">Primecoin</a> is a cryptocurrency that uses finding prime chains as its proof-of-work (PoW) task. The miner has a choice of finding one of three kinds of prime chain: a Cunningham chain of the first or second kind, or a <a href="https://www.johndcook.com/blog/2026/01/10/bi-twin-prime-chains/">bi-twin chain</a>. The length of the necessary chain varies over time to keep the difficulty relatively constant. Other PoW blockchains do something similar.</p>
+<p>Some people say that Primecoin has miners search for primes for PoW. That&#8217;s not quite right. Miners have to find a <em>chain</em> of medium-sized primes rather than finding one big prime. This leads to more predictable compute times.</p>
+<p>There is a way to test a candidate Cunningham chain of the second kind all at once. Henri Lifchitz gives his algorithm <a href="http://www.primenumbers.net/Henri/us/NouvTh1us.htm">here</a>. Given a sequence of numbers</p>
+<p style="padding-left: 40px;"><em>n</em><sub>1</sub>, <em>n</em><sub>2</sub>, <em>n</em><sub>3</sub>, …, <em>n</em><sub><em>k</em></sub></p>
+<p>where <em>n</em><sub><em>i</em></sub> = 2<em>n</em><sub><em>i</em>−1</sub> − 1 for each <em>i</em> and  <em>n</em><sub>0</sub> = 1 mod 4, all the numbers in the sequence are probably prime if</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/lifchitz.svg" alt="2^{n_{k-1} - 1} = 1 \bmod n_0 n_1 n_2 \cdots n_k" width="237" height="21" /></p>
+<p>For example, consider the chain</p>
+<p style="padding-left: 40px;">31029721, 62059441, 124118881</p>
+<p>Note that 31029721 mod 4 = 1 and 31029721 = 2*15514861 − 1. The following code demonstrates that the numbers in the chain are probable primes because it prints 1.</p>
+<pre>n0 = 15514861
+n1 = 2*n0 - 1
+n2 = 2*n1 - 1
+n3 = 2*n2 - 1
+prod = n0*n1*n2*n3
+print( pow(2, n2 - 1, prod) )
+</pre>
+<p>Next I wanted to try the algorithm on much larger numbers where its efficiency would be more apparent, as in the previous post. But when I did, the test returned a result other than 1 on a <a href="https://www.pzktupel.de/CC/cc.php">known</a> Cunningham chain of the second kind. For example, when I change the first two lines of code above to</p>
+<pre>n1 = 49325406476*primorial(9811, False) + 1
+n0 = (n1 + 1) // 2
+</pre>
+<p>the code returns a large result. I verified that each of the numbers in the chain are prime using Sympy&#8217;s <code>isprime</code> function.</p>
+<p>Usually a probable prime test can have false positives but never a false negative. I haven&#8217;t looked at Lifschitz method closely enough to tell whether it can have false negatives, but the code above suggests it can.</p>The post <a href="https://www.johndcook.com/blog/2026/01/16/testing-multiple-primes/">Efficiently testing multiple primes at once</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Tighter bounds in the prime number theorem</title>
+		<link>https://www.johndcook.com/blog/2026/01/16/prime-number-theorem-bounds/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Fri, 16 Jan 2026 15:50:28 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246806</guid>
+
+					<description><![CDATA[<p>The most elementary form of the prime number theorem says that π(x), the number of prime numbers less than x, is asymptotically equal to x / log(x). That&#8217;s true, but a more accurate result says π(x) is asymptotically equal to li(x) where Five years ago I wrote about a result that was new at the [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/16/prime-number-theorem-bounds/">Tighter bounds in the prime number theorem</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>The most elementary form of the prime number theorem says that π(<em>x</em>), the number of prime numbers less than <em>x</em>, is asymptotically equal to <em>x</em> / log(<em>x</em>). That&#8217;s true, but a more accurate result says π(<em>x</em>) is asymptotically equal to li(<em>x</em>) where</p>
+<p><img loading="lazy" decoding="async" class="aligncenter size-medium" style="background-color: white;" src="https://www.johndcook.com/li_def.svg" alt="\text{li}(x) = \int_0^x \frac{dt}{\log t}" width="120" height="41" /></p>
+<p><a href="https://www.johndcook.com/blog/2020/11/23/refined-pnt-bound/">Five years ago</a> I wrote about a result that was new at the time, giving a bound on |π(<em>x</em>) − li(<em>x</em>)| for <em>x</em> &gt; exp(2000). This morning I saw a result in a <a href="https://terrytao.wordpress.com/2026/01/15/the-integrated-explicit-analytic-number-theory-network/">blog post</a> by Terence Tao that says</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/fiori.svg" alt="\left| \pi(x) - \text{li}(x) \right| \leq 9.2211\, x\sqrt{\log(x)} \exp\left( -0.8476 \sqrt{\log(x)} \right)" width="456" height="36" /></p>
+<p>for all <em>x</em> ≥ 2. The result comes from <a href="https://arxiv.org/abs/2206.12557">this paper</a>.</p>
+<p>The new bound has the same form as the bound from five years ago but with smaller constants.</p>The post <a href="https://www.johndcook.com/blog/2026/01/16/prime-number-theorem-bounds/">Tighter bounds in the prime number theorem</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Efficiently computing multiple modular inverses at once</title>
+		<link>https://www.johndcook.com/blog/2026/01/14/montgomerys-trick/</link>
+					<comments>https://www.johndcook.com/blog/2026/01/14/montgomerys-trick/#comments</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Wed, 14 Jan 2026 15:06:03 +0000</pubDate>
+				<category><![CDATA[Computing]]></category>
+		<category><![CDATA[Cryptography]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246804</guid>
+
+					<description><![CDATA[<p>Suppose you have a large prime number M and you need to find the inverse of several numbers mod M.  Montgomery&#8217;s trick is a way to combine the computation of the inverses to take less time than computing the inverses individually. Peter Montgomery (1947–2020) came up with this trick in 1985. We will illustrate Montgomery&#8217;s trick by [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/14/montgomerys-trick/">Efficiently computing multiple modular inverses at once</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>Suppose you have a large prime number <em>M</em> and you need to find the inverse of several numbers mod <em>M</em>.  Montgomery&#8217;s trick is a way to combine the computation of the inverses to take less time than computing the inverses individually. Peter Montgomery (1947–2020) came up with this trick in 1985.</p>
+<p>We will illustrate Montgomery&#8217;s trick by inverting three numbers—<em>a</em>, <em>b</em>, and <em>c</em>—though the trick extends to any number of numbers. It is commonly used in <a href="https://www.johndcook.com/blog/cryptography/">cryptography</a>.</p>
+<p>Modular inverses are much slower to calculate than modular products, so doing fewer of the former and more of the latter is a good tradeoff. Montgomery&#8217;s method only calculates one modular inverse, regardless of how many numbers need to be inverted.</p>
+<p>The idea is to directly invert the product of all the numbers and use multiplication to find the inverses of the individual numbers. In our case, we compute</p>
+<p style="padding-left: 40px;"><em>x</em> = <em>ab</em><br />
+<em>y</em> = <em>cy</em> = <em>abc</em><br />
+<em>x</em><sup>−1</sup> = <em>c</em><em>y</em><sup>−1</sup><br />
+<em>b</em><sup>−1</sup> = <em>ax</em><sup>−1</sup><br />
+<em>a</em><sup>−1</sup> = <em>bx</em><sup>−1</sup></p>
+<p>To show that this actually saves time, we&#8217;ll run some Python code to invert three random numbers modulo a very large prime, much larger than occurs in practice. The reason is to make the computation time longer and easier to demonstrate. In practice, Montgomery&#8217;s trick saves a little time off of a lot of calculations. Here we&#8217;ll save a lot of time off a handful of calculations.</p>
+<pre>import sys
+import time
+from secrets import randbelow
+
+# extend the default maximum integer size
+sys.set_int_max_str_digits(100000)
+
+# the 32nd Mersenne prime
+M = 2**756839 - 1
+
+def simple(a, b, c, M):
+    return [pow(x, -1, M) for x in [a, b, c]]
+
+def montgomery(a, b, c, M):
+    x = a*b % M
+    y = x*c % M
+    yinv = pow(y, -1, M)
+    cinv = x*yinv % M
+    xinv = c*yinv % M
+    binv = a*xinv % M
+    ainv = b*xinv % M
+    return [ainv, binv, cinv]
+
+a = randbelow(M)
+b = randbelow(M)
+c = randbelow(M)
+
+start = time.perf_counter()
+result = simple(a, b, c, M)
+elapsed = time.perf_counter() - start
+print(elapsed)
+
+start = time.perf_counter()
+result = montgomery(a, b, c, M)
+elapsed = time.perf_counter() - start
+print(elapsed)
+</pre>
+<p>When we ran this, the direct approach took 121.8 seconds, and Montgomery&#8217;s trick took 47.6 seconds.</p>
+<h2>Related posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2010/01/19/dont-invert-that-matrix/">Don&#8217;t invert that matrix</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2025/08/13/weierstrass-montgomery-edwards/">Montgomery curves</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2025/11/17/three-party-diffie-hellman/">Three-party Diffie-Hellman</a></li>
+</ul>The post <a href="https://www.johndcook.com/blog/2026/01/14/montgomerys-trick/">Efficiently computing multiple modular inverses at once</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/01/14/montgomerys-trick/feed/</wfw:commentRss>
+			<slash:comments>1</slash:comments>
+
+
+			</item>
+		<item>
+		<title>The middle binomial coefficient</title>
+		<link>https://www.johndcook.com/blog/2026/01/12/the-middle-binomial-coefficient/</link>
+					<comments>https://www.johndcook.com/blog/2026/01/12/the-middle-binomial-coefficient/#comments</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Mon, 12 Jan 2026 12:41:29 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Probability and Statistics]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246800</guid>
+
+					<description><![CDATA[<p>The previous post contained an interesting observation: Is it true more generally that for large n? Sorta, but the approximation gets better if we add a correction factor. If we square both sides of the approximation and move the factorials to one side, the question becomes whether Now the task becomes to estimate the middle coefficient [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/12/the-middle-binomial-coefficient/">The middle binomial coefficient</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>The previous post contained an interesting observation:</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/middle_coeff1.svg" alt="\sqrt{52!} \approx 26! \, 2^{26}" width="119" height="19" /></p>
+<p>Is it true more generally that</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/middle_coeff2.svg" alt="\sqrt{(2n)!} \approx n! \, 2^n" width="118" height="24" /></p>
+<p>for large <em>n</em>? Sorta, but the approximation gets better if we add a correction factor.</p>
+<p>If we square both sides of the approximation and move the factorials to one side, the question becomes whether</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/middle_coeff3.svg" alt="\frac{(2n)!}{(n!)^2} = \binom{2n}{n} \approx 4^n" width="147" height="48" /></p>
+<p>Now the task becomes to estimate the middle coefficient in when we apply the binomial theorem to (<em>x</em> + <em>y</em>)<sup>2<em>n</em></sup>.</p>
+<p>A better approximation for the middle binomial coefficient is</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/middle_coeff4.svg" alt="\binom{2n}{n} \approx \frac{4^n}{\sqrt{\pi n}}" width="99" height="49" /></p>
+<p>Now the right hand side is the first term of an asymptotic series for the left. The ratio of the two sides goes to 1 as <em>n</em> → ∞.</p>
+<p>We could prove the asymptotic result using Stirling&#8217;s approximation, but it&#8217;s more fun to use a probability argument.</p>
+<p>Let <em>X</em> be a binomial random variable with distribution <em>B</em>(2<em>n</em>, 1/2). As <em>n</em> grows, <em>X</em> converges in distribution to a normal random variable with the same mean and variance, i.e. with μ = <em>n</em> and σ² = <em>n</em>/2. This says for large <em>n</em>,</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/middle_coeff5.svg" alt="\text{Prob}(X = 1/2) = \binom{2n}{n} 4^{-n} \approx \frac{1}{\sqrt{2\pi\sigma^2}} = \frac{1}{\sqrt{\pi n}}" width="355" height="49" /></p>
+<p>The argument above only gives the first term in the asymptotic series for the middle coefficient. If you want more terms in the series, you&#8217;ll need to use more terms in Stirling&#8217;s series. If we add a couple more terms we get</p>
+<p><img loading="lazy" decoding="async" class="aligncenter" style="background-color: white;" src="https://www.johndcook.com/middle_coeff6.svg" alt="\binom{2n}{n} = \frac{4^n}{\sqrt{\pi n}} \left(1 - \frac{1}{8n} + \frac{1}{128n^2} + {\cal O}\left(\frac{1}{n^3}\right) \right)" width="330" height="49" /></p>
+<p>Let&#8217;s see how much accuracy we get in estimating 52 choose 26.</p>
+<pre>from scipy.special import binom
+from numpy import pi, sqrt
+
+n = 26
+exact = binom(2*n, n)
+approx1 = 4**n/sqrt(pi*n)
+approx2 = approx1*(1 - 1/(8*n))
+approx3 = approx1*(1 - 1/(8*n) + 1/(128*n**2))
+
+for a in [approx1, approx2, approx3]:
+    print(exact/a)
+</pre>
+<p>This prints</p>
+<pre>0.9952041409266293
+1.0000118903997048
+1.0000002776131290
+</pre>
+<p>and so we see substantial improvement from each additional term. This isn&#8217;t always the case with asymptotic series. We&#8217;re guaranteed that for a <em>fixed</em> number of terms, the relative error goes to zero as <em>n</em> increases. For a fixed <em>n</em>, we do not necessarily get more accuracy by including more terms.</p>
+<h2>Related posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2013/05/21/binomial-coefficients-log-concave/">Rise and fall of binomial coefficients</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2021/09/20/combinators-and-catalan-numbers/">Combinators and Catalan numbers</a></li>
+</ul>The post <a href="https://www.johndcook.com/blog/2026/01/12/the-middle-binomial-coefficient/">The middle binomial coefficient</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/01/12/the-middle-binomial-coefficient/feed/</wfw:commentRss>
+			<slash:comments>1</slash:comments>
+
+
+			</item>
+		<item>
+		<title>Combining in-shuffles and out-shuffles</title>
+		<link>https://www.johndcook.com/blog/2026/01/12/in-out-shuffle/</link>
+					<comments>https://www.johndcook.com/blog/2026/01/12/in-out-shuffle/#comments</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Mon, 12 Jan 2026 12:00:39 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Combinatorics]]></category>
+		<category><![CDATA[Group theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246799</guid>
+
+					<description><![CDATA[<p>A few days ago I wrote two posts about perfect shuffles. Once you&#8217;ve cut a deck of cards in half, an in-shuffle lets a card from the top half fall first, and an out-shuffle lets a card from the bottom half fall first. Suppose we have a deck of 52 cards. We said in the [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/12/in-out-shuffle/">Combining in-shuffles and out-shuffles</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>A few days ago I wrote <a href="https://www.johndcook.com/blog/2026/01/01/perfect-shuffles/">two</a> <a href="https://www.johndcook.com/blog/2026/01/01/in-shuffle-out-shuffle/">posts</a> about perfect shuffles. Once you&#8217;ve cut a deck of cards in half, an in-shuffle lets a card from the top half fall first, and an out-shuffle lets a card from the bottom half fall first.</p>
+<p>Suppose we have a deck of 52 cards. We said in the earlier posts that the order of an in-shuffle <em>I</em> is 52. That is, after 52 in-shuffles, a deck returns to its initial order. And the order of an out-shuffle <em>O</em> is 8.</p>
+<p>We can think of <em>I</em> and <em>O</em> as generators of subgroups of order 52 and 8 respectively in the group <em>S</em> of all permutations of 52 cards. I was curious when I wrote the earlier posts how large the group generated by <em>I</em> and <em>O</em> together would be. Is it possible to reach all 52! permutations of the deck by some combination of applying <em>I</em> and <em>O</em>? If not, how many permutations can be generated?</p>
+<p>I&#8217;ve since found the answer in [1] in a theorem by Diaconis, Graham, and Kantor. I don&#8217;t know who Kantor is, but it&#8217;s no surprise that a theorem on card shuffles would come from Persi Diaconis and Ron Graham. The theorem covers the case for decks of size <em>N</em> = 2<em>n</em>, which branches into different results depending on the size of <em>n</em> and the value of <em>n</em> mod 4.</p>
+<p>For <em>N</em> = 52, the group generated by <em>I</em> and <em>O</em> has</p>
+<p style="padding-left: 40px;">26! × 2<sup>26</sup></p>
+<p>elements.</p>
+<p>On the one hand, that&#8217;s a big number, approximately 2.7 × 10<sup>34</sup>. On the other hand, it&#8217;s quite small compared to 52! = 8 × 10<sup>67</sup>. So while there are a lot of permutations reachable by a combination of in-shuffles and out-shuffles, your chances of selecting such a permutation from the set of all such permutations is vanishingly small.</p>
+<p>To put it yet another way, the number of arrangements is on the order of the square root of 52!, a big number, but not big relative to 52!. (Does this pattern</p>
+<p style="padding-left: 40px;">√52! ≈ 26! × 2<sup>26</sup></p>
+<p>generalize? See the <a href="https://www.johndcook.com/blog/2026/01/12/the-middle-binomial-coefficient/">next post</a>.)</p>
+<p>Not only does the theorem of Diaconis et al give the order of the group, it gives the group itself: the group of permutations generated by <em>I</em> and <em>O</em> is isomorphic to the group of symmetries of a 26-dimensional octahedron.</p>
+<p>[1] S. Brent Morris. Magic Tricks, Card Shuffling and Dynamic Computer Memories. MAA 1998.</p>The post <a href="https://www.johndcook.com/blog/2026/01/12/in-out-shuffle/">Combining in-shuffles and out-shuffles</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/01/12/in-out-shuffle/feed/</wfw:commentRss>
+			<slash:comments>2</slash:comments>
+
+
+			</item>
+		<item>
+		<title>Primecoin primality test</title>
+		<link>https://www.johndcook.com/blog/2026/01/10/primecoin-primality-test/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Sat, 10 Jan 2026 16:05:21 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246797</guid>
+
+					<description><![CDATA[<p>When I wrote about how Primecoin uses prime chains for proof of work, I left out a detail. To mine a new Primecoin block, you have to find a prime chain of specified length that starts with a number that is a multiple of the block header hash. According to the Primecoin whitepaper Another important [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/10/primecoin-primality-test/">Primecoin primality test</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>When I wrote about how <a href="https://www.johndcook.com/blog/2026/01/10/prime-chains/">Primecoin</a> uses prime chains for proof of work, I left out a detail.</p>
+<p>To mine a new Primecoin block, you have to find a prime chain of specified length that starts with a number that is a multiple of the block header hash. According to the <a href="https://primecoin.io/primecoin-paper.pdf">Primecoin whitepaper</a></p>
+<blockquote><p>Another important property of proof-of-work for cryptocurrency is non-reusability. … To achieve this, the prime chain is linked to the block header hash by requiring that its origin be divisible by the block header hash.</p></blockquote>
+<p>So given a hash <em>h</em>, you have to find <em>k</em> such that <em>kh</em> is the origin of a prime chain, where &#8220;origin&#8221; is defined in footnote [2] <a href="https://www.johndcook.com/blog/2026/01/10/prime-chains/">here</a>.</p>
+<p>Strictly speaking, the primes in a Primecoin prime chain are <strong>probable</strong> primes. Someone verifying a Primecoin blockchain will be satisfied that the block is authentic if the necessary numbers are prime <em>according to the test used by the Primecoin software</em>. Whether the numbers are actually prime is irrelevant.</p>
+<p>Probabilistic primality tests are much more efficient than deterministic tests, and most applications requiring primes, such as RSA encryption, actually use probable primes. If a number is rejected as a probable prime, it&#8217;s certainly not a prime. If it is accepted as a prime, it very like is prime. More on probable primes <a href="https://www.johndcook.com/blog/2020/06/04/probable-prime/">here</a>.</p>
+<p>If you write your own Primecoin mining software using a different primality test, that&#8217;s fine as long as you actually find primes. But if one time you find pseudoprimes, composite numbers that pass your primality test, then your block will be rejected unless your pseudoprimes also pass the Primecoin software&#8217;s primality test.</p>
+<h2>Primecoin&#8217;s primality test</h2>
+<p>So what is Primecoin&#8217;s (probable) primality test? We quote the Primecoin whitepaper:</p>
+<blockquote><p>The classical Fermat test of base 2 is used together with Euler-Lagrange-Lifchitz test to verify probable primality for the prime chains. Note we do not require strict primality proof during verification, as it would unnecessarily burden the efficiency of verification. Composite number that passes Fermat test is commonly known as pseudoprime. Since it is known by the works of Erdös and Pomerance that pseudoprimes of base 2 are much more rare than primes, it suffices to only verify probable primality.</p></blockquote>
+<h2>Fermat&#8217;s test</h2>
+<p>The Fermat test with base <em>b</em> says to test whether a candidate number <em>n</em> satisfies</p>
+<p style="padding-left: 40px;"><em>b</em><sup><em>n</em> − 1</sup> = 1 mod <em>n</em>.</p>
+<p>If <em>n</em> is prime, the equation above will hold. The converse is <em>usually</em> true: if the equation above hold, <em>n</em> is likely to be prime. There are exceptions, such as <em>b</em> = 2 and <em>n</em> = 561 = 3 × 11 × 17.</p>
+<h2>Euler-Lagrange-Lifchitz test</h2>
+<p>But what is the Euler-Lagrange-Lifchitz test? The whitepaper links <a href="http://www.primenumbers.net/Henri/us/NouvTh1us.htm">here</a>, a page by Henri Lifchitz that gives results generalizing those of Leonard Euler and Joseph-Louis Lagrange.</p>
+<h3>Testing 2<em>p</em> + 1</h3>
+<p>Suppose <em>p</em> is an odd prime. Then the Euler-Lagrange test says that if <em>p</em> = 3 mod 4, then <em>q</em> = 2<em>p</em> + 1 is also prime if and only if</p>
+<p style="padding-left: 40px;">2<sup><em>p</em> </sup> = 1 mod <em>q</em>.</p>
+<p>Lifchitz gives three variations on this result. First, if <em>p</em> = 1 mod 4, then <em>q</em> = 2<em>p</em> + 1 is also prime if and only if</p>
+<p style="padding-left: 40px;">2<sup><em>p</em> </sup> = −1 mod <em>q</em>.</p>
+<p>Together these two theorems give a way to test <em>with certainty</em> whether 2<em>p</em> + 1, i.e. the next term in a Cunningham chain of the first kind, is prime. However, the test is still probabilistic if we don&#8217;t know for certain that <em>p</em> is prime.</p>
+<h3>Testing 2<em>p</em> − 1</h3>
+<p>The last two results of Lifchitz are as follows. If <em>p</em> and <em>q</em> = 2<em>p</em> − 1 are prime, then</p>
+<p style="padding-left: 40px;">2<sup><em>p</em> − 1</sup> = 1 mod <em>q</em></p>
+<p>if <em>p</em> = 1 mod 4 and</p>
+<p style="padding-left: 40px;">2<sup><em>p</em> − 1</sup> = −1 mod <em>q</em></p>
+<p>if <em>p</em> = 3 mod 4.</p>
+<p>The converses of these two statements give <em>probable</em> prime tests for <em>q</em> if we know <em>p</em> is prime.</p>
+<p>So we can verify a (probable) prime chain by using Fermat&#8217;s test to verify that the first element is (probably) prime and use the Euler-Lagrange-Lifchitz test that the rest of the numbers in the chain are (probably) prime.</p>
+<h2>Related posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2018/10/28/fermat-factoring/">Fermat&#8217;s factoring trick</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2025/06/02/false-witnesses/">False witnesses</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2025/11/29/zkp-composite/">Zero-knowledge proof of compositeness</a></li>
+</ul>The post <a href="https://www.johndcook.com/blog/2026/01/10/primecoin-primality-test/">Primecoin primality test</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Bi-twin prime chains</title>
+		<link>https://www.johndcook.com/blog/2026/01/10/bi-twin-prime-chains/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Sat, 10 Jan 2026 13:56:54 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246795</guid>
+
+					<description><![CDATA[<p>I mentioned bi-twin prime chains in the previous post, but didn&#8217;t say much about them so as not to interrupt the flow of the article. A pair of prime numbers are called twins if they differ by 2. For example, 17 and 19 are twin primes. A bi-twin chain is a sequence of twin primes [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/10/bi-twin-prime-chains/">Bi-twin prime chains</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>I mentioned bi-twin prime chains in the <a href="https://www.johndcook.com/blog/2026/01/10/prime-chains/">previous post</a>, but didn&#8217;t say much about them so as not to interrupt the flow of the article.</p>
+<p>A pair of prime numbers are called twins if they differ by 2. For example, 17 and 19 are twin primes.</p>
+<p>A bi-twin chain is a sequence of twin primes in which the average of each twin pair is double that of the preceding pair. For example,</p>
+<p style="padding-left: 40px;">5, 7, 11, 13</p>
+<p>is a bi-twin chain because (5, 7) and (11, 13) are twin pairs of primes, and the average of the latter pair is twice the average of the former pair.</p>
+<p>There is some variation in how to describe how long a bi-twin chain is. We will define the length of a bi-twin chain to be the number prime pairs it contains, and so the chain above has length 2. The <a href="http://www.primenumbers.net/Henri/fr-us/BiTwinRec.htm">BiTwin Record</a> page describes a bi-twin chain of length <em>k</em> as a chain with <em>k</em> − 1 links.</p>
+<p>It is widely believed that there are infinitely many twin primes, but this has not been proven. So we don&#8217;t know for certain whether there are infinitely many bi-twin prime chains of length 1, much less chains of longer length.</p>
+<p>The bi-twin chain of length three with smallest beginning number is</p>
+<p style="padding-left: 40px;">211049, 211051, 422099, 422101, 844199, 844201</p>
+<p>Bi-twin records are expressed in terms of primorial numbers. I first mentioned primorial numbers <a href="https://www.johndcook.com/blog/2026/01/06/largest-known-compositorial-prime/">a few days ago</a> and now they come up again. Just as <em>n</em> factorial is the product of the positive integers up to <em>n</em>, <em>n</em> primorial is the product of the primes up to <em>n</em>. The primorial of <em>n</em> is written <em>n</em>#. [1]</p>
+<p>The longest known bi-twin chains start with</p>
+<p style="padding-left: 40px;">112511682470782472978099, 112511682470782472978101</p>
+<p>and has length 9.</p>
+<p>We can verify the chains mentioned above with the following Python code.</p>
+<pre>
+def bitwin_length(average):
+    n = average
+    c = 0
+    while isprime(n-1) and isprime(n+1):
+        c += 1
+        n *= 2
+    return c
+
+for n in [6, 211050, 112511682470782472978100]:
+    print(bitwin_length(n))
+</pre>
+<p>[1] There are two conventions for defining <em>n</em>#. The definition used here, and on the BiTwin Record page, is the product of primes up to <em>n</em>. Another convention is to define <em>n</em># to be the product of the first <em>n</em> primes.</p>
+<p>The <code>priomorial</code> function in Sympy takes two arguments and will compute either definition, depending on whether the second argument is <code>True</code> or <code>False</code>. The default second argument is <code>True</code>, in which case <code>primorial(n)</code> returns the product of the first n primes.</p>The post <a href="https://www.johndcook.com/blog/2026/01/10/bi-twin-prime-chains/">Bi-twin prime chains</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Prime chains</title>
+		<link>https://www.johndcook.com/blog/2026/01/10/prime-chains/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Sat, 10 Jan 2026 12:32:19 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Cryptocurrency]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246794</guid>
+
+					<description><![CDATA[<p>The title of this post has a double meaning. We will look at chains in the sense of number theory and in the sense of cryptocurrency, i.e. Cunningham chains and blockchains, that involve prime numbers. Cunningham chains A chain of primes is a sequence of prime numbers in which each is almost double its predecessor. [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/10/prime-chains/">Prime chains</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>The title of this post has a double meaning. We will look at chains in the sense of number theory and in the sense of cryptocurrency, i.e. Cunningham chains and blockchains, that involve prime numbers.</p>
+<h2>Cunningham chains</h2>
+<p>A chain of primes is a sequence of prime numbers in which each is almost double its predecessor. That is, the next number after <em>p</em> is 2<em>p</em> ± 1.</p>
+<p>In a <strong>Cunningham chain of the first kind</strong>, the successor of <em>p</em> is 2<em>p</em> + 1. For example,</p>
+<p style="padding-left: 40px;">41, 83, 167.</p>
+<p>In a <strong>Cunningham chain of the second kind</strong>, the successor of <em>p</em> is 2<em>p</em> − 1. For example,</p>
+<p style="padding-left: 40px;">19, 37, 73.</p>
+<p>Two questions come up immediately. First, are there infinitely many Cunningham chains? Second, how long can a Cunningham chain be? What is known and what is conjectured are at opposite ends of the spectrum. It is unknown whether there are infinitely many Cunningham chains of length 2, but it is conjectured that there are infinitely many Cunningham chains of all lengths.</p>
+<p>According to <a href="https://www.pzktupel.de/CC/cc.php">this page</a>, the longest known Cunningham chains of the first kind has length 17, and the longest known Cunningham chain of the second kind has length 19. We can verify these results with the following Python code.</p>
+<pre>from sympy import isprime
+
+def chain_length(start, kind):
+    p = start
+    c = 0
+    while isprime(p):
+        c += 1
+        p = 2*p + kind
+    return c
+
+print(chain_length(2759832934171386593519, 1))
+print(chain_length(79910197721667870187016101, -1))
+</pre>
+<h2>Bi-twin chains</h2>
+<p>A number <em>n</em> is the basis of a <strong>bi-twin chain</strong> of length <em>k</em> if <em>n</em> − 1 is the start of a Cunningham chain of the first kind of length <em>k</em> and <em>n</em> + 1 is the start of a Cunningham chain of the second kind of length <em>k</em>.</p>
+<p>I say more about bi-twin prime chains in the <a href="https://www.johndcook.com/blog/2026/01/10/bi-twin-prime-chains/">next post</a>.</p>
+<h2>Primecoin</h2>
+<p>Primecoin was one of the first cryptocurrencies, coming out four years after Bitcoin. Primecoin is still going, though its market cap is six orders magnitude smaller than that of Bitcoin.</p>
+<p>What&#8217;s interesting about Primecoin is that it uses finding prime chains as its <a href="https://www.johndcook.com/blog/2025/06/22/why-hash-puzzles/">proof of work</a> task [1]. To mint a new Primecoin block, you must find a prime chain of the required length whose origin a multiple of the hash of the block header [2].</p>
+<p>Primecoin allows any of the three kinds of prime chains mentioned above: Cunningham chains of the first or second kind, or a bi-twin prime chain. Primecoin adjusts its mining difficulty over time by varying the length of Cunningham or bi-twin chain needed to mint a new block.</p>
+<p>There are also cryptocurrencies based on finding <a href="https://www.johndcook.com/blog/2026/01/18/prime-clusters-riecoin/">prime clusters</a> and <a href="https://www.johndcook.com/blog/2026/01/18/prime-gaps-gapcoin/">prime gaps</a>.</p>
+<h2>Related posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2023/04/10/density-of-safe-primes/">Density of safe primes</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2023/08/14/twin-stars-and-twin-primes/">Twin stars and twin primes</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/crypto/">Blockchains and cryptocurrency</a></li>
+</ul>
+<p>[1] Strictly speaking, Primecoin requires finding <em>probable</em> prime chains, as explained <a href="https://www.johndcook.com/blog/2026/01/10/primecoin-primality-test/">here</a>.</p>
+<p>[2] The <em>origin</em> of a prime chain is <em>n</em> if the first item in a Cunningham chain of the first kind is <em>n</em> + 1, or if the first item in a Cunningham chain of the first kind or a bi-twin chain is <em>n</em> − 1.</p>The post <a href="https://www.johndcook.com/blog/2026/01/10/prime-chains/">Prime chains</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Compressing a set of hash values</title>
+		<link>https://www.johndcook.com/blog/2026/01/09/golomb-rice/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Fri, 09 Jan 2026 13:01:39 +0000</pubDate>
+				<category><![CDATA[Computing]]></category>
+		<category><![CDATA[Compression]]></category>
+		<category><![CDATA[Cryptocurrency]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246792</guid>
+
+					<description><![CDATA[<p>Suppose you have a set of k hash values, each n bits long. Can you compress the set into less than kn bits? It&#8217;s not possible to compress a list of hashes into less than kn bits, but you can hash a set into fewer bits. Suppose you have a set of 230, roughly a billion, 64-bit hashes. Sort the [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/09/golomb-rice/">Compressing a set of hash values</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>Suppose you have a set of <em>k</em> hash values, each <em>n</em> bits long. Can you compress the set into less than <em>kn</em> bits?</p>
+<p>It&#8217;s not possible to compress a <em>list</em> of hashes into less than <em>kn</em> bits, but you can hash a <em>set</em> into fewer bits.</p>
+<p>Suppose you have a set of 2<sup>30</sup>, roughly a billion, 64-bit hashes. Sort the set and look at the size of gaps between elements. You might expect that consecutive items on the list are roughly 2<sup>34</sup> apart, and so you could reconstruct the list by reporting the first item and the gaps between the rest, which are 34-bit numbers, not 64-bit numbers, a savings of 30 bits per hash.</p>
+<p>This doesn&#8217;t exactly work, but it&#8217;s the kernel of a good idea. We don&#8217;t know that the distance between hashes can be represented by a 34 bit number. The gap could be more or less than 2<sup>34</sup>, but we don&#8217;t expect it to often be much more than 2<sup>34</sup>. So we use a variable-length encoding such that when the distance between values is on the order of 2<sup>34</sup>, or less, we save bits, but we allow for the distance to be any size.</p>
+<h2>Applications</h2>
+<p>What we&#8217;ve described is the essence of <strong>Golomb-Rice coding</strong>. Its implementation in the Bitcoin protocol is referred to as <strong>Golomb-Coded Sets (GCS)</strong>, described in <a href="https://github.com/bitcoin/bips/blob/master/bip-0158.mediawiki">BIP 158</a>. Golomb-Rice coding is also used other applications where the  values to be compressed are not hashes, such as in lossless auto compression.</p>
+<h2>Encoding</h2>
+<p>Let&#8217;s go into some detail as to how the distances between sorted values are represented. Suppose you expect the differences to be on the order of <em>M</em> where <em>M</em> is a power of 2. For each difference <em>d</em>, let <em>q</em> and <em>r</em> be the quotient and remainder by <em>M</em>, i.e.</p>
+<p style="padding-left: 40px;"><em>d</em> = <em>qM</em> + <em>r</em>.</p>
+<p>Encode <em>q</em> as a <strong>unary</strong> number, i.e. string of <em>q</em> 1s, and encode <em>r</em> as an ordinary <strong>binary</strong> number. Then Golomb-Rice coding of <em>d</em> is the concatenation of the representations of <em>q</em> and <em>r</em>. with a 0 in the middle as a separator. Using || to denote string concatenation we have</p>
+<p style="padding-left: 40px;">unary(<em>q</em>)  ||  0  ||  binary(<em>r</em>).</p>
+<p>In general, unary encoding is extremely inefficient, but we&#8217;re betting that <em>q</em> will typically be quite small.</p>
+<p>The reason we require <em>M</em> to be a power of 2 is so the representation of <em>r</em> will have a fixed length [1].</p>
+<p>Let&#8217;s work out an example. Suppose <em>M</em> = 2<sup>20</sup> and</p>
+<p style="padding-left: 40px;"><em>d</em> = 2<sup>22</sup> + 123456 = 4 × <em>M</em> + 123456.</p>
+<p>Then we write <em>q</em> as <span style="color: #3366ff;">1111</span> and <em>r</em> as <span style="color: #ff0000;">0011110001001000000</span> and encode <em>d</em> as the string</p>
+<p style="padding-left: 40px;"><span style="color: #3366ff;">1111</span>0<span style="color: #ff0000;">0011110001001000000</span></p>
+<h2>Decoding</h2>
+<p>You can concatenate the encodings of consecutive <em>d</em> values and still be able to unambiguously decode the result. Because the <em>r</em> representations have a constant length, you know when an <em>r</em> ends and the next <em>q</em> begins.</p>
+<p>For example, suppose we have the following string of bits.</p>
+<p>1110010011001011001011111001000000110010001110011101111000101111011</p>
+<p>We decode the string from left to right. We count how many ones we see, skip over a 0, then regarding the next 20 bits as a binary number.</p>
+<p style="padding-left: 40px;"><span style="color: #3366ff;">111</span> 0 <span style="color: #ff0000;">01001100101100101111</span> <span style="color: #3366ff;">1</span> 0 <span style="color: #ff0000;">01000000110010001110</span> 0 <span style="color: #ff0000;">11101111000101111011</span></p>
+<p>We see three 1s before the first 0 and so we conclude <em>q</em><sub>1</sub> = 3. We skip over the 0 and read the value of <em>r</em>.</p>
+<p style="padding-left: 40px;"><em>r</em><sub>1</sub> = 01001100101100101111<sub>two</sub> = 314159.</p>
+<p>Next we see a single 1 before the next 0, so <em>q</em><sub>2</sub> = 1. We read the next value of <em>r</em> as</p>
+<p style="padding-left: 40px;"><em>r</em><sub>2</sub> =  01000000110010001110<sub>two</sub> = 265358.</p>
+<p>Next we see a 0, i.e. there are no 1s, and so the final <em>q</em><sub>3</sub> = 0. And we have</p>
+<p style="padding-left: 40px;"><em>r</em><sub>3</sub> =  11101111000101111011<sub>two</sub> = 979323.</p>
+<p>So our reconstructed values of <em>d</em> are</p>
+<p style="padding-left: 40px;"><em>d</em><sub>1</sub> = <em>q</em><sub>1</sub> <em>M</em>+ <em>r</em><sub>1</sub> = 3 × 2<sup>20</sup> + 314159 = 3459887</p>
+<p style="padding-left: 40px;"><em>d</em><sub>2</sub> = <em>q</em><sub>2</sub> <em>M</em>+ <em>r</em><sub>2</sub> = 1 × 2<sup>20</sup> + 265358 = 1313934</p>
+<p style="padding-left: 40px;"><em>d</em><sub>3</sub> = <em>q</em><sub>3</sub> <em>M</em>+ <em>r</em><sub>3</sub> = 0 × 2<sup>20</sup> + 979323 = 979323.</p>
+<p>Now these are difference values. We need to know the smallest value <em>m</em> in order to construct the original set of values from the differences. Then the full values are <em>m</em>, <em>m</em> + <em>d</em><sub>1</sub>, <em>m</em> + <em>d</em><sub>1</sub> + <em>d</em><sub>2</sub>, and <em>m</em> + <em>d</em><sub>1 </sub>+ <em>d</em><sub>2 </sub>+ <em>d</em><sub>3</sub>,.</p>
+<h2>Related posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2024/08/17/compression-and-interpolation/">Compression and interpolation</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2024/10/15/burrows-wheeler/">Burrows-Wheeler transform</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2022/03/01/varicode/">Varicode</a></li>
+</ul>
+<p>[1] This is the Rice part. Robert Rice simplified Samuel Golomb&#8217;s encoding scheme in the special case that <em>M</em> is a power of 2.</p>The post <a href="https://www.johndcook.com/blog/2026/01/09/golomb-rice/">Compressing a set of hash values</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>Memorizing chemical element symbols</title>
+		<link>https://www.johndcook.com/blog/2026/01/07/chemical-element-symbols/</link>
+					<comments>https://www.johndcook.com/blog/2026/01/07/chemical-element-symbols/#comments</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Wed, 07 Jan 2026 13:58:01 +0000</pubDate>
+				<category><![CDATA[Uncategorized]]></category>
+		<category><![CDATA[Memory]]></category>
+		<category><![CDATA[Science]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246779</guid>
+
+					<description><![CDATA[<p>Here&#8217;s something I&#8217;ve wondered about before: are there good mnemonics for chemical element symbols? Some element symbols are based on Latin or German names and seem arbitrary to English speakers, such as K (kalium) for potassium or Fe (ferrum) for iron. However, these elements are very common and so their names and symbols are familiar. [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/07/chemical-element-symbols/">Memorizing chemical element symbols</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>Here&#8217;s something I&#8217;ve wondered about before: are there good mnemonics for chemical element symbols?</p>
+<p>Some element symbols are based on Latin or German names and seem arbitrary to English speakers, such as K (kalium) for potassium or Fe (ferrum) for iron. However, these elements are very common and so their names and symbols are familiar.</p>
+<p>When you take out the elements whose symbols are mnemonic in another language, <strong>every element symbol begins with the first letter of the element name</strong>. The tricky part is the second letter. For example, does Ra stand for radon or radium?</p>
+<p>The following rule of thumb usually holds whenever there is a chemical symbol what corresponds to the first letters of two different elements:</p>
+<p style="padding-left: 40px;"><strong> The lightest/longest-known element wins</strong>.</p>
+<p>Scientists didn&#8217;t wait until the periodic table was complete before assigning symbols, and the easiest names were handed out first. Calcium (20) was assigned Ca, for example, before cadmium (48) and californium (98) were known.</p>
+<p>The elements were discovered roughly in order of atomic weight. For example, beryllium (4) was discovered before berkelium (97) and neon (10) was discovered before neptunium (93). So sometimes you can substitute knowledge of chemistry for knowledge of history. [1]</p>
+<p>There are instances where the heavier element got to claim the first-two-letter symbol. Usually the heavier element was discovered first. That&#8217;s why Ra stands for radium (88) and not radon (86). One glaring exception to this rule is that palladium (Pd) was discovered a century before protactinium (Pa).</p>
+<p>Often the element that was discovered first is more <strong>familiar</strong>, and so you could almost say that when there&#8217;s a conflict, the more <em>familiar</em> element wins. For example, Li stands for lithium and not livermorium. This revises our rule of thumb above:</p>
+<p style="padding-left: 40px;"><strong>The lightest/longest-known/most familiar element wins</strong>.</p>
+<p>To return to the question at the top of the post, I&#8217;m not aware of a satisfying set of mnemonics for chemical element symbols. But there are some heuristics. Generally the elements that are the lightest, most familiar, and have been known the longest get the simpler names. Maybe you can remember, for example, that berkelium must be Bk because B, Be, and Br were already taken by the time berkelium was discovered.</p>
+<p>After using this heuristic, you could apply more brute-force mnemonic techniques for whenever the heuristic doesn&#8217;t work. (Whenever it doesn&#8217;t work <em>for you</em>: mnemonics are very personal.) For example, you might imagine a registered nurse (an <span style="text-decoration: underline;">RN</span>) spraying the insecticide <span style="text-decoration: underline;">Raid on</span> a <span style="text-decoration: underline;">fish</span>, <em>fish</em> being a <a href="https://www.johndcook.com/blog/2021/07/26/major-memory-keypad/">Major system</a> encoding of the number 86, the atomic number of radon.</p>
+<h2>Related posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2023/11/30/memorize-the-periodic-table/">How to memorize the periodic table</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2023/08/05/word-to-number/">Code to convert words to Major system numbers</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2025/10/05/memorizing-a-list-of-seed-words/">Memorizing a list of seed words</a></li>
+</ul>
+<p>[1] Chemical elements named after scientists, planets, and laboratories appear toward the end of the table and are recent discoveries.</p>The post <a href="https://www.johndcook.com/blog/2026/01/07/chemical-element-symbols/">Memorizing chemical element symbols</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/01/07/chemical-element-symbols/feed/</wfw:commentRss>
+			<slash:comments>2</slash:comments>
+
+
+			</item>
+		<item>
+		<title>Largest known compositorial prime</title>
+		<link>https://www.johndcook.com/blog/2026/01/06/largest-known-compositorial-prime/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Tue, 06 Jan 2026 17:11:41 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246788</guid>
+
+					<description><![CDATA[<p>I ran across a blog post here that said a new record has been set for the largest compositorial prime. [1] OK, so what is a compositorial prime? It is a prime number of the form n! / n# + 1 where n# denotes n primorial, the product of the prime numbers no greater than n. The [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/06/largest-known-compositorial-prime/">Largest known compositorial prime</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>I ran across a blog post <a href="https://aperiodical.com/2026/01/aperiodical-news-roundup-december-2025/">here</a> that said a new record has been set for the largest <strong>compositorial</strong> prime. [1]</p>
+<p>OK, so what is a compositorial prime? It is a prime number of the form</p>
+<p style="padding-left: 40px;"><em>n</em>! / <em>n</em># + 1</p>
+<p>where <em>n</em># denotes <em>n</em> <strong>primorial</strong>, the product of the prime numbers no greater than <em>n</em>.</p>
+<p>The newly discovered prime is</p>
+<p style="padding-left: 40px;"><em>N</em> = 751882!/751882# + 1</p>
+<p>It was described in the article cited above as</p>
+<p style="padding-left: 40px;">751882!/751879# + 1,</p>
+<p>but the two numbers are the same because there are no primes greater than 751879 and less than 751882, i.e.</p>
+<p style="padding-left: 40px;">751879# = 751882#.</p>
+<p>About how large is <em>N</em>? We can calculate the log of the numerator easily enough:</p>
+<pre>&gt;&gt;&gt; import scipy.special
+&gt;&gt;&gt; scipy.special.loggamma(751883)
+9421340.780760147</pre>
+<p>However, the denominator is harder to compute. According to <a href="https://oeis.org/A034386">OIES</a> we have</p>
+<p style="padding-left: 40px;"><em>n</em># = exp((1 + o(1)) <em>n</em>)</p>
+<p>which would give us the estimate</p>
+<p style="padding-left: 40px;">log(751882#) ≈ 751882.</p>
+<p>So</p>
+<p style="padding-left: 40px;">log<sub>10</sub>(<em>N</em>) = log(<em>N</em>) / log(10) ≈ (9421340 − 751882) / log(10) ≈ 3765097.</p>
+<p>According to <a href="https://t5k.org/primes/page.php?id=141301">this page</a>,</p>
+<p style="padding-left: 40px;">log<sub>10</sub>(<em>N</em>) = 3765620.3395779</p>
+<p>and so our approximation above was good to four figures.</p>
+<p>So <em>N</em> has between 3 and 4 million digits, making it much smaller than the largest known prime, which has roughly 41 million digits. Overall, <em>N</em> is the 110th largest known prime.</p>
+<p>&nbsp;</p>
+<p>[1] I misread the post at first and thought it said there was a new prime record (skipping over the &#8220;compositorial&#8221; part) and was surprised because the number is not a Mersenne number. For a long time now the largest known prime has been a Mersenne prime because there is a special algorithm for testing whether Mersenne numbers are prime, one that is much more efficient than testing numbers in general.</p>
+<p>&nbsp;</p>The post <a href="https://www.johndcook.com/blog/2026/01/06/largest-known-compositorial-prime/">Largest known compositorial prime</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+		<item>
+		<title>log2(3) and log2(5)</title>
+		<link>https://www.johndcook.com/blog/2026/01/05/log2-of-3-and-5/</link>
+					<comments>https://www.johndcook.com/blog/2026/01/05/log2-of-3-and-5/#comments</comments>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Tue, 06 Jan 2026 01:02:08 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Continued fractions]]></category>
+		<category><![CDATA[Number theory]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246785</guid>
+
+					<description><![CDATA[<p>AlmostSure on X pointed out that log2 3 ≈ 19/12, an approximation that&#8217;s pretty good relative to the size of the denominator. To get an approximation that&#8217;s as accurate or better requires a larger denominator for log2 5. log2 5 ≈ 65/28 This above observations are correct, but are they indicative of a more general [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/05/log2-of-3-and-5/">log2(3) and log2(5)</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p><a href="https://x.com/Almost_Sure/status/2007487484029218965?s=20">AlmostSure</a> on X pointed out that</p>
+<p style="padding-left: 40px;">log<sub>2</sub> 3 ≈ 19/12,</p>
+<p>an approximation that&#8217;s pretty good relative to the size of the denominator. To get an approximation that&#8217;s as accurate or better requires a larger denominator for log<sub>2</sub> 5.</p>
+<p style="padding-left: 40px;">log<sub>2</sub> 5 ≈ 65/28</p>
+<p>This above observations are correct, but are they indicative of a more general pattern? Is log<sub>2</sub> 3 easier to approximate than log<sub>2</sub> 5 using rational numbers? There are theoretical ways to quantify this—irrationality measures—but they&#8217;re hard to compute.</p>
+<p>If you look at the series of approximations for both numbers, based on continued fraction convergents, the <em>n</em>th convergent for log<sub>2</sub> 5 is more accurate than the <em>n</em>th convergent for log<sub>2</sub> 3, at least for the first 16 terms. After that I ran out of floating point precision and wasn&#8217;t sufficiently interested to resort to extended precision.</p>
+<p><img loading="lazy" decoding="async" class="aligncenter size-medium" src="https://www.johndcook.com/log2_3_5.png" width="480" height="360" /></p>
+<p>Admittedly this is a non-standard way to evaluate approximation error. Typically you look at the approximation error relative to the size of the denominator, not relative to the index of the convergents.</p>
+<p>Here&#8217;s a more conventional comparison, plotting the log of approximation error against the log of the denominators.</p>
+<p><img loading="lazy" decoding="async" class="aligncenter size-medium" src="https://www.johndcook.com/log2_3_52.png" width="480" height="360" /></p>
+<h2>Continued fraction posts</h2>
+<ul>
+<li class="link"><a href="https://www.johndcook.com/blog/2023/09/22/continued-fractions-as-matrix-products-2/">Continued fractions as matrix products</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2022/03/30/continued-fraction-applications/">Applications of continued fractions</a></li>
+<li class="link"><a href="https://www.johndcook.com/blog/2018/05/30/calendars-and-continued-fractions/">Calendars and continued fractions</a></li>
+</ul>The post <a href="https://www.johndcook.com/blog/2026/01/05/log2-of-3-and-5/">log2(3) and log2(5)</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+					<wfw:commentRss>https://www.johndcook.com/blog/2026/01/05/log2-of-3-and-5/feed/</wfw:commentRss>
+			<slash:comments>1</slash:comments>
+
+
+			</item>
+		<item>
+		<title>In-shuffles and out-shuffles</title>
+		<link>https://www.johndcook.com/blog/2026/01/01/in-shuffle-out-shuffle/</link>
+
+		<dc:creator><![CDATA[John]]></dc:creator>
+		<pubDate>Thu, 01 Jan 2026 20:48:02 +0000</pubDate>
+				<category><![CDATA[Math]]></category>
+		<category><![CDATA[Combinatorics]]></category>
+		<guid isPermaLink="false">https://www.johndcook.com/blog/?p=246780</guid>
+
+					<description><![CDATA[<p>The previous post talked about doing perfect shuffles: divide a deck in half, and alternately let one card from each half fall. It matters which half lets a card fall first. If the top half&#8217;s bottom card falls first, this is called an in-shuffle. If the bottom half&#8217;s bottom card falls first, it&#8217;s called an [&#8230;]</p>
+The post <a href="https://www.johndcook.com/blog/2026/01/01/in-shuffle-out-shuffle/">In-shuffles and out-shuffles</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></description>
+										<content:encoded><![CDATA[<p>The <a href="https://www.johndcook.com/blog/2026/01/01/perfect-shuffles/">previous post</a> talked about doing perfect shuffles: divide a deck in half, and alternately let one card from each half fall.</p>
+<p>It matters which half lets a card fall first. If the top half&#8217;s bottom card falls first, this is called an <strong>in-shuffle</strong>. If the bottom half&#8217;s bottom card falls first, it&#8217;s called an <strong>out-shuffle</strong>.</p>
+<p>With an out-shuffle, the top and bottom cards don&#8217;t move. Presumably it&#8217;s called an out-shuffle because the outside cards remain in place.</p>
+<p>An out-shuffle amounts to an in-shuffle of the inner cards, i.e. the rest of the deck not including the top and bottom card.</p>
+<p>The previous post had a Python function for doing an in-shuffle. Here we generalize the function to do either an in-shuffle or an out-shuffle. We also get rid of the list comprehension, making the code longer but easier to understand.</p>
+<pre>def shuffle2(deck, inside = True):
+    n = len(deck)
+    top = deck[: n//2]
+    bottom = deck[n//2 :]
+    if inside:
+        first, second = bottom, top
+    else:
+        first, second = top, bottom
+    newdeck = []
+    for p in zip(first, second):
+        newdeck.extend(p)
+    return newdeck
+</pre>
+<p>Let&#8217;s use this code to demonstrate that an out-shuffle amounts to an in-shuffle of the inner cards.</p>
+<pre>deck = list(range(10))
+d1 = shuffle2(deck, False)
+d2 = [deck[0]] + shuffle2(deck[1:9], True) + [deck[9]]
+print(d1)
+print(d2)
+</pre>
+<p>Both print statements produce <code>[0, 5, 1, 6, 2, 7, 3, 8, 4, 9]</code>.</p>
+<p>I said in the previous post that <em>k</em> perfect in-shuffles will restore the order of a deck of <em>n</em> cards if</p>
+<p style="text-align: left; padding-left: 40px;">2<sup><em>k</em></sup> = 1 (mod <em>n</em> + 1).</p>
+<p>It follows that <em>k</em> perfect out-shuffles will restore the order of a deck of <em>n</em> cards if</p>
+<p style="padding-left: 40px;">2<sup><em>k</em></sup> = 1 (mod <em>n</em> − 1)</p>
+<p>since an out-shuffle of <em>n</em> cards is essentially an in-shuffle of the <em>n</em> − 2 cards in the middle.</p>
+<p>So, for example, it only takes 8 out-shuffles to return a deck of 52 cards to its original order. In the previous post we said it takes 52 in-shuffles, so it takes a lot fewer out-shuffles than in-shuffles.</p>
+<p>It&#8217;s plausible to conjecture that it takes fewer out-shuffles than in-shuffles to return a deck to its initial order, since the former leaves the two outside cards in place. But that&#8217;s not always true. It&#8217;s true for a deck of 52 cards, but not for a deck of 14, for example. For a deck of 14 cards, it takes 4 in-shuffles or 12 out-shuffles to restore the deck.</p>The post <a href="https://www.johndcook.com/blog/2026/01/01/in-shuffle-out-shuffle/">In-shuffles and out-shuffles</a> first appeared on <a href="https://www.johndcook.com/blog">John D. Cook</a>.]]></content:encoded>
+
+
+
+			</item>
+	</channel>
+</rss>

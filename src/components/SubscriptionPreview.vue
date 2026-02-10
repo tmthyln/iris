@@ -1,10 +1,18 @@
 <script setup lang="ts">
+import {toRef} from 'vue';
 import {Feed} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
+import {usePlaceholderImage} from "../placeholderImage.ts";
 
-defineProps<{
+const props = defineProps<{
     feed: Feed,
 }>()
+
+const {resolvedSrc, onImageError} = usePlaceholderImage(
+    toRef(() => props.feed.image_src),
+    toRef(() => props.feed.title),
+    128
+)
 </script>
 
 <template>
@@ -12,12 +20,12 @@ defineProps<{
     <router-link :to="{name: 'subscription', params: {guid: feed.guid }}">
       <figure>
 
-        <picture class="image is-128x128">
-          <source :srcset="feed.image_src"/>
+        <div class="image is-128x128">
           <img
-              src="https://bulma.io/images/placeholders/128x128.png"
-              :alt="feed.image_alt ?? 'No feed image'">
-        </picture>
+              :src="resolvedSrc"
+              :alt="feed.image_alt ?? 'No feed image'"
+              @error="onImageError">
+        </div>
 
         <figcaption class="mt-2">
           <div>{{ useUnescapedHTML(feed.title).value }}</div>
@@ -30,5 +38,11 @@ defineProps<{
 </template>
 
 <style scoped>
+figure {
+  max-width: 128px;
+}
 
+figcaption {
+  word-wrap: break-word;
+}
 </style>

@@ -126,37 +126,3 @@ export function createFeedItem(feed: ServerFeed, channelItemData: ChannelItemDat
         progress: 0,
     })
 }
-
-export async function addItemToQueue(
-    db: D1Database,
-    feedItemOrId: ServerFeedItem | string,
-    order: 'start' | 'end' | number,
-) {
-    const feedItemId = typeof feedItemOrId === 'string' ? feedItemOrId : feedItemOrId.guid;
-
-    if (order === 'end') {
-        await db
-            .prepare(`
-                INSERT INTO queue_item(feed_item_guid, queue_order)
-                SELECT ?, MAX(queue_order)
-                FROM queue_item`)
-            .bind(feedItemId)
-            .run()
-    } else {
-        const queueOrder = order === 'start' ? 0 : order
-        await db.batch([
-            db
-                .prepare(`
-                    UPDATE queue_item
-                    SET queue_order = queue_order + 1
-                    WHERE queue_order >= ?`)
-                .bind(queueOrder),
-            db
-                .prepare(`
-                    INSERT INTO queue_item(queue_order, feed_item_guid)
-                    VALUES (?, ?)
-                    ON CONFLICT(feed_item_guid) DO UPDATE SET queue_order = queue_order`)
-                .bind(queueOrder, feedItemId),
-        ])
-    }
-}

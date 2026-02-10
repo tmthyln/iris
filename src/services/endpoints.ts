@@ -1,6 +1,8 @@
+import type {D1Database} from '@cloudflare/workers-types';
 import { Hono } from 'hono';
 import {
     ClientFeed,
+    ClientFeedItemPreview,
     ServerFeed,
     ServerFeedSource,
     ClientFeedItem,
@@ -19,6 +21,8 @@ import {
 } from './crud'
 import type { RefreshFeedTask, LoadFeedSourceArchivesTask } from "./types";
 import {fetchRssFile, parseRssText} from "./utils/files";
+import {getQueue} from "./queue";
+import {refreshFeed} from "./flows";
 
 export const app = new Hono<{Bindings: Env}>().basePath('/api');
 
@@ -132,12 +136,13 @@ app.get('/feeditem', async (c) => {
     const db = c.env.DB;
     const bookmarked = c.req.query('bookmarked')
     const limit = parseInt(c.req.query('limit') ?? '20')
+    const offset = parseInt(c.req.query('offset') ?? '0')
 
-    let feedItems = []
+    let feedItems
     if (bookmarked === 'true') {
         feedItems = await getBookmarkedFeedItems(db)
     } else {
-        feedItems = await getFeedItems(db, {limit})
+        feedItems = await getFeedItems(db, {limit, offset})
     }
 
     return Response.json(feedItems.map(item => new ClientFeedItem(item)))
@@ -170,4 +175,106 @@ app.patch('/feeditem/:guid', async (c) => {
         .run()
 
     return new Response()
+})
+
+/******************************************************************************
+ * Feed item endpoints
+ *****************************************************************************/
+
+async function hydrateQueueItems(db: D1Database, guids: string[]) {
+    const items = await Promise.all(guids.map(guid => ServerFeedItem.get(db, guid)))
+    return items
+        .filter((item): item is ServerFeedItem => item !== null)
+        .map(item => new ClientFeedItemPreview(item))
+}
+
+app.get('/queue', async (c) => {
+    const queue = getQueue(c.env)
+    const guids = await queue.getItems()
+    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
+})
+
+app.post('/queue', async (c) => {
+    const db = c.env.DB
+    const data = await c.req.json()
+    const {feedItemId, position} = data
+
+    if (!feedItemId) {
+        return new Response(null, {status: 400, statusText: 'feedItemId is required'})
+    }
+
+    const feedItem = await ServerFeedItem.get(db, feedItemId)
+    if (!feedItem) {
+        return new Response(null, {status: 404, statusText: `No feed item found with id: ${feedItemId}`})
+    }
+
+    const feed = await ServerFeed.get(db, feedItem.source_feed)
+    if (feed?.type !== 'podcast') {
+        return new Response(null, {status: 400, statusText: 'Only podcast feed items can be queued'})
+    }
+
+    const queue = getQueue(c.env)
+    let guids
+    if (typeof position === 'number') {
+        guids = await queue.insertItem(feedItemId, position)
+    } else {
+        guids = await queue.enqueueItem(feedItemId)
+    }
+
+    return Response.json({items: await hydrateQueueItems(db, guids)}, {status: 201})
+})
+
+app.patch('/queue/:guid', async (c) => {
+    const feedItemGuid = c.req.param('guid')
+    const {position} = await c.req.json()
+
+    if (typeof position !== 'number') {
+        return new Response(null, {status: 400, statusText: 'position is required'})
+    }
+
+    const queue = getQueue(c.env)
+    const guids = await queue.insertItem(feedItemGuid, position)
+
+    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
+})
+
+app.delete('/queue/:guid', async (c) => {
+    const feedItemGuid = c.req.param('guid')
+    const queue = getQueue(c.env)
+    const guids = await queue.removeItem(feedItemGuid)
+
+    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
+})
+
+app.delete('/queue', async (c) => {
+    const keepFirst = c.req.query('keepFirst') === 'true'
+    const queue = getQueue(c.env)
+
+    let guids: string[] = []
+    if (keepFirst) {
+        const current = (await queue.getItems())[0]
+        await queue.clearQueue()
+        if (current) {
+            guids = await queue.enqueueItem(current)
+        }
+    } else {
+        guids = await queue.clearQueue()
+    }
+
+    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
+})
+
+/******************************************************************************
+ * Command endpoints
+ *****************************************************************************/
+
+app.post('/command/refresh-all-feeds', async (c) => {
+    const feeds = await getFeeds(c.env.DB)
+
+    for (const feed of feeds) {
+        await refreshFeed(feed.guid, c.env)
+    }
+    //await Promise.all(feeds.map(feed => refreshFeed(feed.guid, c.env)))
+
+    return Response.json({refreshedCount: feeds.length})
 })

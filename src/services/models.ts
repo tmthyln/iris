@@ -1,5 +1,5 @@
 import type {D1Database, R2Bucket} from '@cloudflare/workers-types'
-import {asBoolean, asDate, asStringList} from "./utils/conversion";
+import {asBoolean, asDate, asStringList} from "../lib/conversion";
 
 interface PersistOptions {
     onConflict?: 'update' | 'ignore'
@@ -9,7 +9,7 @@ interface PersistOptions {
 interface IncludeForTextSearchInput {
     title: string
     alias?: string
-    description: string
+    description: string | null
     author?: string
     content?: string
     categories?: string[]
@@ -34,7 +34,7 @@ abstract class ServerEntity {
         return this
     }
 
-    protected async persistTo(db: D1Database, data: Record<string, any>) {
+    protected async persistTo(db: D1Database, data: Record<string, unknown>) {
         const {
             onConflict = 'ignore',
             updateExcludeFields = [],
@@ -58,7 +58,23 @@ abstract class ServerEntity {
             values.push(...updateValues)
         }
 
-        await db.prepare(stmt).bind(...values).run()
+        try {
+            await db.prepare(stmt).bind(...values).run()
+        } catch (error) {
+            console.error(`[D1 Error] Failed to persist to table "${this.tableName}"`)
+            console.error('Statement:', stmt)
+            console.error('Bind values:', JSON.stringify(values, null, 2))
+            console.error('Data:', JSON.stringify(data, null, 2))
+            if (error instanceof Error) {
+                if ('cause' in error) {
+                    console.error(error.cause)
+                } else {
+                    console.error(error.message)
+                }
+            }
+            console.error()
+            throw error
+        }
 
         return this
     }
@@ -67,7 +83,7 @@ abstract class ServerEntity {
         const {
             title,
             alias= '',
-            description,
+            description = '',
             author = '',
             content = '',
             categories = [],
@@ -77,9 +93,10 @@ abstract class ServerEntity {
 
         // SQLite doesn't support UPSERT for virtual tables
 
-        const existingRecord = db
+        const existingRecord = await db
             .prepare('SELECT guid FROM text_search WHERE guid = ? AND table_name = ?')
             .bind(guid, this.tableName)
+            .first()
 
         if (existingRecord) {
             await db
@@ -340,10 +357,7 @@ export class ServerFeed extends ServerEntity {
 
     async feedSources(db: D1Database) {
         const {results} = await db
-            .prepare(`
-                SELECT feed_source.* FROM feed_source 
-                LEFT JOIN feed ON feed_source.referenced_feed = feed.guid
-                WHERE feed.guid = ?`)
+            .prepare('SELECT * FROM feed_source WHERE referenced_feed = ?')
             .bind(this.guid)
             .all<RawFeedSource>()
 
@@ -401,7 +415,7 @@ export interface RawFeedItem {
     season: number | null
     episode: number | null
     title: string
-    description: string
+    description: string | null
     link: string
     date: string | Date | null
     enclosure_url: string | null
@@ -422,7 +436,7 @@ export class ServerFeedItem extends ServerEntity {
     season: number | null;
     episode: number | null;
     title: string;
-    description: string;
+    description: string | null;
     link: string;
     date: Date | null;
     enclosure_url: string | null;
@@ -503,7 +517,7 @@ export class ClientFeedItemPreview {
     season: number | null;
     episode: number | null;
     title: string;
-    description: string;
+    description: string | null;
     link: string;
     date: Date | null;
     enclosure_url: string | null;
@@ -531,9 +545,9 @@ export class ClientFeedItemPreview {
         this.duration = data.duration
         this.duration_unit = data.duration_unit
         this.keywords = data.keywords
-        this.finished = asBoolean(data.finished)
+        this.finished = data.finished
         this.progress = data.progress
-        this.bookmarked = asBoolean(data.bookmarked)
+        this.bookmarked = data.bookmarked
     }
 }
 

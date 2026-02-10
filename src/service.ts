@@ -2,12 +2,13 @@ import { app } from './services/endpoints'
 import {FeedProcessingTask, RefreshFeedTask} from "./services/types";
 import {refreshFeed} from "./services/flows";
 import {getFeeds} from "./services/crud";
+export {ItemQueue} from "./services/queue";
 
 // noinspection JSUnusedGlobalSymbols
 export default {
     fetch: app.fetch,
 
-    async queue(batch, env, ctx): Promise<void> {
+    async queue(batch, env, _ctx): Promise<void> {
         for (const msg of batch.messages) {
             const task = msg.body as FeedProcessingTask
 
@@ -26,7 +27,7 @@ export default {
         }
     },
 
-    async scheduled(event, env, ctx) {
+    async scheduled(event, env, _ctx) {
         console.log('Kicking off scheduled refresh of all active feeds')
 
         const feeds = await getFeeds(env.DB)

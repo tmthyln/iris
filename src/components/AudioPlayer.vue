@@ -1,7 +1,19 @@
 <script setup lang="ts">
-import {ref, watch} from "vue";
-import {useIntervalFn, useMediaControls} from "@vueuse/core";
+import {computed, ref, watch} from "vue";
+import {useIntervalFn, useMediaControls, onClickOutside} from "@vueuse/core";
+import {useSortable} from "@vueuse/integrations/useSortable";
 import {useDurationFormat} from "../format.ts";
+import {useQueueStore} from "../stores/queue.ts";
+import {useFeedItemStore} from "../stores/feeditems.ts";
+import type {FeedItemPreview} from "../types.ts";
+
+const queueStore = useQueueStore()
+const feedItemStore = useFeedItemStore()
+
+const currentItem = computed(() => queueStore.currentlyPlaying)
+const upcomingItems = computed(() => queueStore.items.slice(1))
+
+const src = computed(() => currentItem.value?.enclosure_url ?? '')
 
 const audio = ref<HTMLAudioElement>()
 const {
@@ -11,11 +23,22 @@ const {
     duration,
     ended,
 } = useMediaControls(audio, {
-    src: 'https://media.transistor.fm/97a0251c/e2001ce8.mp3',
+    src,
 })
 
-function setPlaybackPosition(event: InputEvent) {
-    currentTime.value = event.currentTarget.value
+watch(() => queueStore.paused, (paused) => {
+    playing.value = !paused
+})
+watch(playing, (isPlaying) => {
+    queueStore.paused = !isPlaying
+    if (!isPlaying && currentItem.value && duration.value > 0) {
+        feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+    }
+})
+
+function setPlaybackPosition(event: Event) {
+    const target = event.currentTarget as HTMLInputElement
+    currentTime.value = Number(target.value)
 }
 function fastRewind() {
     currentTime.value = Math.max(0, currentTime.value - 15)
@@ -24,126 +47,155 @@ function fastForward() {
     currentTime.value = Math.min(duration.value, currentTime.value + 30)
 }
 
+const playbackRates = [1, 1.25, 1.5, 1.75, 2, 0.25, 0.5]
 function cyclePlaybackRate() {
-    switch (rate.value) {
-        case 1:
-            rate.value = 1.25
-            break
-        case 1.25:
-            rate.value = 1.5
-            break
-        case 1.5:
-            rate.value = 1.75
-            break
-        case 1.75:
-            rate.value = 2
-            break
-        case 2:
-            rate.value = 0.25
-            break
-        case 0.25:
-            rate.value = 0.5
-            break
-        case 0.5:
-            rate.value = 1
-            break
-    }
+    const currentIndex = playbackRates.indexOf(rate.value)
+    const nextIndex = (currentIndex + 1) % playbackRates.length
+    rate.value = playbackRates[nextIndex]
 }
 
-const {pause, resume} = useIntervalFn(() => {
-    console.log('tick')
-}, 5000)
-watch(
-    ended,
-    () => {
-        if (ended.value) {
-            console.log('ended')
-        }
+useIntervalFn(() => {
+    if (playing.value && currentItem.value && duration.value > 0) {
+        feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
     }
-)
+}, 5000)
+watch(ended, () => {
+    if (ended.value && currentItem.value) {
+        feedItemStore.updateItemProgress(currentItem.value, 1)
+    }
+})
+
+/* Queue popover */
+const showQueue = ref(false)
+const queuePopover = ref<HTMLElement>()
+
+onClickOutside(queuePopover, () => {
+    showQueue.value = false
+}, {ignore: ['.queue-toggle-button']})
+
+const queueListEl = ref<HTMLElement>()
+useSortable(queueListEl, upcomingItems, {
+    handle: '.drag-handle',
+    animation: 150,
+    onEnd(event) {
+        if (event.oldIndex != null && event.newIndex != null && event.oldIndex !== event.newIndex) {
+            const item = upcomingItems.value[event.oldIndex]
+            // offset by 1 since items[0] is the currently playing item
+            queueStore.moveItem(item, event.newIndex + 1)
+        }
+    },
+})
+
+function playNow(item: FeedItemPreview) {
+    queueStore.playItem(item)
+}
+
+function removeFromQueue(item: FeedItemPreview) {
+    queueStore.removeItem(item)
+}
+
+function clearQueue() {
+    const keepFirst = !queueStore.paused
+    queueStore.clearQueue(keepFirst)
+}
 </script>
 
 <template>
-  <div class="footer-placeholder"/>
-  <footer class="audio-player-section has-background is-flex is-flex-direction-column is-align-items-stretch is-justify-content-space-between">
-    <input
-        class="playback-progress p-0 m-0"
-        type="range"
-        :min="0" :max="duration"
-        :value="currentTime" @input="setPlaybackPosition"
-        :style="{background: `linear-gradient(to right, #aced32 ${Math.floor(100*currentTime/duration)}%, #ccc ${Math.floor(100*currentTime/duration)}%)`}">
-    <div class="level p-4 is-flex-grow-1">
-      <audio ref="audio"></audio>
+  <template v-if="queueStore.items.length">
+    <div class="footer-placeholder"/>
+    <footer class="audio-player-section has-background is-flex is-flex-direction-column is-align-items-stretch is-justify-content-space-between">
+      <input
+          class="playback-progress p-0 m-0"
+          type="range"
+          :min="0" :max="duration"
+          :value="currentTime" @input="setPlaybackPosition"
+          :style="{background: `linear-gradient(to right, #aced32 ${Math.floor(100*currentTime/duration)}%, #ccc ${Math.floor(100*currentTime/duration)}%)`}">
+      <div class="level p-4 is-flex-grow-1">
+        <audio ref="audio"></audio>
 
-      <div class="level-left">
-        About the podcast/episode
+        <div class="level-left">
+          {{ currentItem?.title }}
+        </div>
+        <div class="level-item is-gap-1">
+
+          <button class="button is-rounded px-2 control-button">
+            <span class="material-symbols-outlined">skip_previous</span>
+          </button>
+
+          <button class="button is-rounded px-2 control-button" @click="fastRewind">
+            <span class="material-symbols-outlined">fast_rewind</span>
+          </button>
+
+          <button class="button is-rounded px-3 is-large control-button" @click="playing = !playing">
+            <span v-if="!playing" class="material-symbols-outlined">play_arrow</span>
+            <span v-else class="material-symbols-outlined">pause</span>
+          </button>
+
+          <button class="button is-rounded px-2 control-button" @click="fastForward">
+            <span class="material-symbols-outlined">fast_forward</span>
+          </button>
+
+          <button class="button is-rounded px-2 control-button">
+            <span class="material-symbols-outlined">skip_next</span>
+          </button>
+
+          <button class="tag button" @click="cyclePlaybackRate">
+            {{ rate }}x
+          </button>
+
+        </div>
+        <div class="level-right" style="position: relative;">
+          <span>{{ useDurationFormat(currentTime).value }} / {{ useDurationFormat(duration).value }}</span>
+          <button
+              class="button is-rounded px-2 control-button queue-toggle-button"
+              :class="{'has-text-info': showQueue}"
+              title="Show queue and what's up next"
+              @click="showQueue = !showQueue">
+            <span class="material-symbols-outlined">playlist_play</span>
+          </button>
+
+          <div v-if="showQueue" ref="queuePopover" class="queue-popover box p-0">
+            <div class="queue-popover-header px-4 py-3 is-flex is-align-items-center is-justify-content-space-between">
+              <strong>Up Next</strong>
+              <button
+                  v-if="upcomingItems.length"
+                  class="button is-small control-button"
+                  title="Clear queue"
+                  @click="clearQueue">
+                <span class="material-symbols-outlined is-size-6">playlist_remove</span>
+              </button>
+            </div>
+            <div v-if="upcomingItems.length === 0" class="px-4 py-3 has-text-grey">
+              Nothing queued
+            </div>
+            <div ref="queueListEl" class="queue-list">
+              <div
+                  v-for="item in upcomingItems"
+                  :key="item.guid"
+                  class="queue-item is-flex is-align-items-center px-3 py-2 is-gap-2">
+                <span class="material-symbols-outlined drag-handle has-text-grey" style="cursor: grab;">
+                  drag_indicator
+                </span>
+                <span class="is-flex-grow-1 is-size-7 queue-item-title">{{ item.title }}</span>
+                <button
+                    class="button is-small px-1 control-button"
+                    title="Play now"
+                    @click="playNow(item)">
+                  <span class="material-symbols-outlined is-size-6">play_arrow</span>
+                </button>
+                <button
+                    class="button is-small px-1 control-button"
+                    title="Remove from queue"
+                    @click="removeFromQueue(item)">
+                  <span class="material-symbols-outlined is-size-6">close</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="level-item is-gap-1">
-
-        <button
-            class="button is-rounded px-2"
-            style="border: none;">
-          <span class="material-symbols-outlined">
-            skip_previous
-          </span>
-        </button>
-
-        <button
-            class="button is-rounded px-2"
-            style="border: none;"
-            @click="fastRewind">
-          <span class="material-symbols-outlined">
-            fast_rewind
-          </span>
-        </button>
-
-        <button
-            class="button is-rounded px-3 is-large"
-            style="border: none;"
-            @click="playing = !playing">
-          <span v-if="!playing" class="material-symbols-outlined">
-            play_arrow
-          </span>
-          <span v-else class="material-symbols-outlined">
-            pause
-          </span>
-        </button>
-
-        <button
-            class="button is-rounded px-2"
-            style="border: none;"
-            @click="fastForward">
-          <span class="material-symbols-outlined">
-            fast_forward
-          </span>
-        </button>
-
-        <button
-            class="button is-rounded px-2"
-            style="border: none;">
-          <span class="material-symbols-outlined">
-            skip_next
-          </span>
-        </button>
-
-        <button class="tag button" @click="cyclePlaybackRate">
-          {{ rate }}x
-        </button>
-
-      </div>
-      <div class="level-right">
-        <span>{{ useDurationFormat(currentTime).value }} / {{ useDurationFormat(duration).value }}</span>
-        <button
-            class="button is-rounded px-2"
-            style="border: none;"
-            title="Show queue and what's up next">
-          <span class="material-symbols-outlined">
-            playlist_play
-          </span>
-        </button>
-      </div>
-    </div>
-  </footer>
+    </footer>
+  </template>
 </template>
 
 <style scoped lang="scss">
@@ -157,6 +209,9 @@ watch(
 }
 .footer-placeholder {
     height: 100px;
+}
+.control-button {
+    border: none;
 }
 
 input[type="range"].playback-progress {
@@ -179,5 +234,38 @@ input[type="range"].playback-progress {
       border: 2px solid #aced32;
       transition: .2s ease-in-out;
     }
+}
+
+.queue-popover {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    width: 350px;
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 8px;
+    z-index: 10;
+}
+
+.queue-popover-header {
+    border-bottom: 1px solid hsl(0, 0%, 90%);
+}
+
+.queue-item {
+    border-bottom: 1px solid hsl(0, 0%, 95%);
+
+    &:last-child {
+        border-bottom: none;
+    }
+
+    &:hover {
+        background-color: hsl(0, 0%, 96%);
+    }
+}
+
+.queue-item-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 </style>

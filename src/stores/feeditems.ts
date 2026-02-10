@@ -11,6 +11,7 @@ export const useFeedItemStore = defineStore('feeditems', {
 
         recent: [] as string[],
         recentLoadState: 'unloaded' as LoadingState,
+        recentHasMore: true,
     }),
     getters: {
         bookmarkedItems: (state) =>
@@ -157,9 +158,34 @@ export const useFeedItemStore = defineStore('feeditems', {
                     }))
                 )
 
+                this.recentHasMore = data.length >= 20
                 this.recentLoadState = 'loaded'
             } else {
                 this.recentLoadState = 'unloaded'
+            }
+        },
+        async loadMoreRecentItems() {
+            if (this.recentLoadState !== 'loaded' || !this.recentHasMore) {
+                return
+            }
+
+            this.recentLoadState = 'loading'
+
+            const data = await client.getFeedItems({limit: 20, offset: this.recent.length})
+
+            if (data) {
+                this.recent.push(...data
+                    .filter(item => !this.recent.includes(item.guid))
+                    .map(item => {
+                        this.cache[item.guid] = item
+                        return item.guid
+                    })
+                )
+
+                this.recentHasMore = data.length >= 20
+                this.recentLoadState = 'loaded'
+            } else {
+                this.recentLoadState = 'loaded'
             }
         },
     },

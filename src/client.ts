@@ -62,4 +62,59 @@ export default {
 
         return response.ok
     },
+    async queueFeedItem(feedItemGuid: string, position?: number): Promise<FeedItemPreview[] | null> {
+        const response = await fetch('/api/queue', {
+            method: 'POST',
+            body: JSON.stringify({feedItemId: feedItemGuid, position}),
+        })
+
+        if (response.ok) {
+            const data: {items: FeedItemPreview[]} = await response.json()
+            return data.items
+        }
+        return null
+    },
+    async moveQueueItem(feedItemGuid: string, position: number): Promise<FeedItemPreview[] | null> {
+        const response = await fetch(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({position}),
+        })
+
+        if (response.ok) {
+            const data: {items: FeedItemPreview[]} = await response.json()
+            return data.items
+        }
+        return null
+    },
+    async clearQueue(keepFirst: boolean): Promise<FeedItemPreview[] | null> {
+        const params = keepFirst ? '?keepFirst=true' : ''
+        const response = await fetch(`/api/queue${params}`, {
+            method: 'DELETE',
+        })
+
+        if (response.ok) {
+            const data: {items: FeedItemPreview[]} = await response.json()
+            return data.items
+        }
+        return null
+    },
+    async removeQueueItem(feedItemGuid: string): Promise<FeedItemPreview[] | null> {
+        const response = await fetch(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
+            method: 'DELETE',
+        })
+
+        if (response.ok) {
+            const data: {items: FeedItemPreview[]} = await response.json()
+            return data.items
+        }
+        return null
+    },
+    async getQueue(): Promise<FeedItemPreview[] | null> {
+        const response = await fetch('/api/queue')
+        if (response.ok) {
+            const data: {items: FeedItemPreview[]} = await response.json()
+            return data.items
+        }
+        return null
+    },
 }

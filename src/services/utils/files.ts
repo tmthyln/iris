@@ -41,10 +41,10 @@ export async function fetchRssFile(url: string): Promise<FetchFileResult> {
                 },
             }
         } else {
-            console.log('Content appears to be HTML')
+            console.log(`[fetchRssFile] Content appears to be HTML, not RSS (url: ${url})`)
         }
     } else {
-        console.log(`Received non-ok response from upstream: ${response.status} ${response.statusText}`)
+        console.log(`[fetchRssFile] Non-ok response from upstream: ${response.status} ${response.statusText} (url: ${url})`)
     }
 
     const htmlResponse = await fetch(url, {
@@ -128,7 +128,7 @@ export interface ChannelItemData {
     season: number | null
     episode: number | null
     title: string
-    description: string
+    description: string | null
     link: string
     date: string
     enclosure_url: string | null
@@ -153,22 +153,22 @@ export function parseRssText(rawText: string): ParsedFeedData {
         ignorePiTags: true,
     })
     let rssData = parser.parse(rawText)
-    if (rssData.hasOwnProperty('rss'))
+    if (Object.prototype.hasOwnProperty.call(rssData, 'rss'))
         rssData = rssData.rss
     const channelData = rssData.channel
     const itemData = Array.isArray(channelData.item) ? channelData.item : [channelData.item]
     
     const channel = {
         guid: coalesce(channelData, 'guid', 'podcast:guid', 'id', 'title'),
-        source_url: coalesce(channelData, 'atom:link.@_href', 'itunes:new-feed-url'),
+        source_url: coalesce(channelData, 'atom:link.@_href', 'itunes:new-feed-url', 'link') ?? '',
         title: coalesce(channelData, 'title'),
         description: coalesce(channelData, 'description', 'itunes:summary') ?? '',
         author: coalesce(channelData, 'author', 'itunes:author', 'itunes:owner.itunes:name') ?? '',
         type: determineChannelType(channelData),
         image_src: coalesce(channelData, 'image.url', 'itunes:image.@_href'),
         image_alt: coalesce(channelData, 'image.title'),
-        last_updated: coalesce(channelData, 'pubDate', 'lastBuildDate'),
-        link: coalesce(channelData, 'link', 'image.link'),
+        last_updated: coalesce(channelData, 'pubDate', 'lastBuildDate') ?? new Date().toISOString(),
+        link: coalesce(channelData, 'link', 'image.link') ?? '',
         categories: '',
     }
 
@@ -185,7 +185,7 @@ function processChannelItem(item: object) {
         episode: coalesce(item, 'episode', 'itunes:episode', 'podcast:episode'),
         title: coalesce(item, 'title', 'itunes:title'),
         description: coalesce(item, 'description', 'itunes:summary', 'itunes:subtitle'),
-        link: coalesce(item, 'link'),
+        link: coalesce(item, 'link') ?? '',
         date: coalesce(item, 'pubDate'),
         enclosure_url: coalesce(item, 'enclosure.@_url'),
         enclosure_length: coalesce(item, 'enclosure.@_length'),
@@ -197,11 +197,11 @@ function processChannelItem(item: object) {
     }
 }
 
-function determineChannelType(channelData: Record<string, any>) {
+function determineChannelType(channelData: Record<string, unknown>) {
     const hasITunes = ['itunes:summary', 'itunes:type', 'itunes:author']
-        .reduce((hasITunes, key) => hasITunes || channelData.hasOwnProperty(key), false)
+        .reduce((hasITunes, key) => hasITunes || Object.prototype.hasOwnProperty.call(channelData, key), false)
     const hasPodcast = ['podcast:guid', 'podcast:locked', 'podcast:person', 'podcast:podping']
-        .reduce((hasPodcast, key) => hasPodcast || channelData.hasOwnProperty(key), false)
+        .reduce((hasPodcast, key) => hasPodcast || Object.prototype.hasOwnProperty.call(channelData, key), false)
 
     if (hasITunes || hasPodcast) {
         return 'podcast'
@@ -220,15 +220,15 @@ function parseDuration(rawDuration: number | string | null) {
 
     const colonParts = String(rawDuration).split(':');
     if (colonParts.length === 3) {
-        return 60*60*parseInt(colonParts[0]) + 60*parseInt(colonParts[1] + parseInt(colonParts[2]))
+        return 60*60*parseInt(colonParts[0]) + 60*parseInt(colonParts[1]) + parseInt(colonParts[2])
     } else if (colonParts.length === 2) {
         return 60*parseInt(colonParts[0]) + parseInt(colonParts[1])
     }
 
-    return parseInt(rawDuration)
+    return typeof rawDuration === 'string' ? parseInt(rawDuration) : rawDuration
 }
 
-function determineDurationUnit(rawDuration: any) {
+function determineDurationUnit(_rawDuration: unknown) {
     return 'seconds'
 }
 
@@ -239,7 +239,7 @@ function cleanList(rawListString: string | null) {
     return rawListString.split(',').map(raw => raw.trim()).join(',')
 }
 
-function coalesce(mapping, ...keys) {
+function coalesce(mapping, ...keys: string[]) {
     for (const key of keys) {
         const value = getMultikey(mapping, key)
         if (value !== null) {
@@ -250,20 +250,28 @@ function coalesce(mapping, ...keys) {
     return null
 }
 
-function getMultikey(mapping, keyString) {
+function getMultikey(mapping, keyString: string) {
     const keyParts = keyString.split('.');
     let currentObjs = [mapping];
 
     for (const key of keyParts) {
         const newObjs = [];
+        const primitives = [];
         for (const currentObj of currentObjs) {
-            if (currentObj.hasOwnProperty(key)) {
-                if (Array.isArray(currentObj[key])) {
-                    newObjs.push(...currentObj[key])
+            const currVal = currentObj[key]
+            if (currVal !== undefined && currVal !== null && currVal !== false && currVal !== '') {
+                if (Array.isArray(currVal)) {
+                    newObjs.push(...currVal)
+                } else if (typeof currVal === 'object') {
+                    newObjs.push(currVal)
                 } else {
-                    newObjs.push(currentObj[key])
+                    primitives.push(currVal)
                 }
             }
+        }
+
+        if (primitives.length > 0) {
+            return primitives[0];
         }
 
         if (newObjs.length === 0) {
@@ -274,7 +282,7 @@ function getMultikey(mapping, keyString) {
     }
 
     for (const obj of currentObjs) {
-        if (obj.hasOwnProperty('#text') && obj['#text']) {
+        if (obj['#text']) {
             return obj['#text']
         } else if (obj) {
             return obj

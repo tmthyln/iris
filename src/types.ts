@@ -25,7 +25,7 @@ export interface FeedItemPreview {
     season: number | null
     episode: number | null
     title: string
-    description: string
+    description: string | null
     link: string
     date: string | null
     enclosure_url: string | null

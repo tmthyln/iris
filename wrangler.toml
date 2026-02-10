@@ -2,21 +2,25 @@ name = "iris"
 route = { pattern = "iris.timothylin.me", custom_domain = true }
 main = "src/service.ts"
 compatibility_date = "2025-01-09"
-assets = { directory = "./dist" }
+assets = { directory = "./dist", not_found_handling = "single-page-application" }
 
 [observability]
 enabled = true
 
-[dev]
-port = 8345
-
 
 [env.staging]
+route = { pattern = "staging.iris.timothylin.me", custom_domain = true }
 d1_databases = [
     { binding = "DB", database_name = "iris-db-staging", database_id = "6dc72db6-7c48-4049-ba75-ac83ae139b6f" }
 ]
 r2_buckets = [
     { binding = "RSS_CACHE_BUCKET", bucket_name = "iris-rss-cache-staging" }
+]
+durable_objects.bindings = [
+    { name = "ITEM_QUEUE", class_name = "ItemQueue" }
+]
+migrations = [
+    { tag = "v1", new_sqlite_classes = ["ItemQueue"] }
 ]
 
 [env.staging.queues]
@@ -37,6 +41,12 @@ d1_databases = [
 ]
 r2_buckets = [
     { binding = "RSS_CACHE_BUCKET", bucket_name = "iris-rss-cache-prod" }
+]
+durable_objects.bindings = [
+    { name = "ITEM_QUEUE", class_name = "ItemQueue" }
+]
+migrations = [
+    { tag = "v1", new_sqlite_classes = ["ItemQueue"] }
 ]
 
 [env.prod.queues]

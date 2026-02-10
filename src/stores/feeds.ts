@@ -1,7 +1,7 @@
 import {defineStore} from "pinia";
 import type {Feed, LoadingState} from "../types.ts";
 
-type FeedLoadedCallback = () => any
+type FeedLoadedCallback = () => unknown
 
 export const useFeedStore = defineStore('feeds', {
     state: () => ({
@@ -12,7 +12,7 @@ export const useFeedStore = defineStore('feeds', {
     getters: {
         feedsByCategory: (state) => state.feeds.reduce((map, feed) => {
             feed.categories.forEach(category => {
-                if (map.hasOwnProperty(category)) {
+                if (Object.prototype.hasOwnProperty.call(map, category)) {
                     map[category].push(feed)
                 } else {
                     map[category] = [feed]
@@ -20,7 +20,7 @@ export const useFeedStore = defineStore('feeds', {
             })
 
             if (feed.categories.length === 0) {
-                if (map.hasOwnProperty('Uncategorized')) {
+                if (Object.prototype.hasOwnProperty.call(map, 'Uncategorized')) {
                     map['Uncategorized'].push(feed)
                 } else {
                     map['Uncategorized'] = [feed]
@@ -28,7 +28,7 @@ export const useFeedStore = defineStore('feeds', {
             }
 
             return map
-        }, {}),
+        }, {} as {[category: string]: Feed[]}),
     },
     actions: {
         async loadFeeds() {
@@ -42,7 +42,9 @@ export const useFeedStore = defineStore('feeds', {
                 const data = await response.json();
 
                 this.feeds.length = 0;
-                this.feeds.push(...data);
+                this.feeds.push(...(data as Feed[]).sort((a, b) =>
+                    new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime()
+                ));
 
                 this.feedsLoadState = 'loaded'
 

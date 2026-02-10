@@ -18,8 +18,8 @@ export function asStringList(input: string | string[]): string[] {
     }
 }
 
-function isDate(unknown: any): unknown is Date {
-    return unknown instanceof Date
+function isDate(input: unknown): input is Date {
+    return input instanceof Date
 }
 
 export function asDate(input: string | number | Date): Date {

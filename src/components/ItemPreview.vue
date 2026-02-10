@@ -2,9 +2,10 @@
 import {FeedItemPreview} from "../types.ts";
 import {useTimeAgo} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
-import {computed} from "vue";
+import {computed, toRef} from "vue";
 import {useUnescapedHTML} from "../htmlproc.ts";
-import Controls from "./Controls.vue";
+import {usePlaceholderImage} from "../placeholderImage.ts";
+import AudioControls from "./AudioControls.vue";
 
 const props = defineProps<{
     feedItem: FeedItemPreview,
@@ -13,13 +14,19 @@ const props = defineProps<{
 const feedStore = useFeedStore()
 const feed = computed(() => feedStore.getFeedById(props.feedItem.source_feed))
 const formattedPubDate = useTimeAgo(props.feedItem.date)
+
+const {resolvedSrc, onImageError} = usePlaceholderImage(
+    toRef(() => feed.value.image_src),
+    toRef(() => feed.value.title),
+    64
+)
 </script>
 
 <template>
   <div>
     <div class="is-flex is-align-items-center mb-4">
-      <figure v-if="feed.image_src" class="image is-64x64 ml-3 mr-4">
-        <img :src="feed.image_src" :alt="feed.image_alt">
+      <figure class="image is-64x64 ml-3 mr-4">
+        <img :src="resolvedSrc" :alt="feed?.image_alt ?? undefined" @error="onImageError">
       </figure>
       <div class="is-inline-block">
         <small>Posted {{ formattedPubDate }}</small>
@@ -35,10 +42,10 @@ const formattedPubDate = useTimeAgo(props.feedItem.date)
       </div>
     </div>
 
-    <Controls :feed-item="feedItem"/>
+    <AudioControls :feed-item="feedItem"/>
 
     <!-- TODO: remove this injection vulnerability -->
-    <div class="content" v-html="feedItem.description">
+    <div v-if="feedItem.description" class="content" v-html="feedItem.description">
     </div>
   </div>
 </template>

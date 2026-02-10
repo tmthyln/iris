@@ -1,19 +1,24 @@
 <script setup lang="ts">
-import Sidebar from "./components/Sidebar.vue";
-import Navbar from "./components/Navbar.vue";
+import SidePanel from "./components/SidePanel.vue";
+import NavBar from "./components/NavBar.vue";
 import {useFeedStore} from "./stores/feeds.ts";
+import {useQueueStore} from "./stores/queue.ts";
 import {onMounted} from "vue";
 import AudioPlayer from "./components/AudioPlayer.vue";
 
 const feedStore = useFeedStore()
+const queueStore = useQueueStore()
 
-onMounted(feedStore.loadFeeds)
+onMounted(() => {
+    feedStore.loadFeeds()
+    queueStore.loadQueue()
+})
 </script>
 
 <template>
-  <Navbar/>
+  <NavBar/>
   <div class="columns">
-    <Sidebar class="column is-one-quarter is-narrow ml-4 mt-5"/>
+    <SidePanel class="column is-one-quarter is-narrow ml-4 mt-5"/>
     <RouterView class="column is-three-quarters container"/>
   </div>
   <AudioPlayer/>

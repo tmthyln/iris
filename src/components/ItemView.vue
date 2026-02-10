@@ -4,7 +4,7 @@ import {useTimeAgo} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
 import {Feed, FeedItem} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
-import Controls from "./Controls.vue";
+import AudioControls from "./AudioControls.vue";
 import client from '../client'
 
 const props = defineProps<{
@@ -23,8 +23,13 @@ async function fetchFeedItem() {
 
         isFetchingItem.value = false
 
-        await feedStore.afterFeedsLoaded(() => {
+        await feedStore.afterFeedsLoaded(async () => {
             feed.value = feedStore.getFeedById(data.source_feed)
+
+            if (feed.value?.type === 'blog' && !data.finished && feedItem.value) {
+                await client.modifyFeedItem(data.guid, { finished: true })
+                feedItem.value.finished = true
+            }
         })
     }
 }
@@ -57,7 +62,7 @@ onMounted(fetchFeedItem)
 
     <div class="mb-5">Published {{ useTimeAgo(feedItem?.date).value }}</div>
 
-    <Controls v-if="feedItem" :feed-item="feedItem"/>
+    <AudioControls v-if="feedItem" :feed-item="feedItem"/>
 
     <hr>
 
