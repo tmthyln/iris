@@ -20,9 +20,12 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
 const showFeedAdder = ref(false)
 const feedUrl = ref('')
 const feedUrlEl = ref<HTMLInputElement>()
+const opmlFileInput = ref<HTMLInputElement>()
+const opmlImportStatus = ref<{current: number, total: number, name: string} | null>(null)
 
 function openFeedAdder() {
     feedUrl.value = ''
+    opmlImportStatus.value = null
     showFeedAdder.value = true
     nextTick(() => feedUrlEl.value?.focus())
 }
@@ -47,6 +50,36 @@ async function submitFeedURL() {
     })
 
     closeFeedAdder()
+}
+
+async function importOpml(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0]
+    if (!file) return
+
+    const text = await file.text()
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(text, 'text/xml')
+    const outlines = doc.querySelectorAll('outline[xmlUrl]')
+
+    const feeds = Array.from(outlines).map(el => ({
+        url: el.getAttribute('xmlUrl')!,
+        name: el.getAttribute('text') ?? el.getAttribute('xmlUrl')!,
+    }))
+
+    for (let i = 0; i < feeds.length; i++) {
+        opmlImportStatus.value = {current: i + 1, total: feeds.length, name: feeds[i].name}
+        await fetch('/api/feed', {
+            method: 'POST',
+            body: JSON.stringify({url: feeds[i].url}),
+        })
+    }
+
+    opmlImportStatus.value = null
+    closeFeedAdder()
+    feedStore.loadFeeds()
+
+    // reset file input so the same file can be re-imported
+    if (opmlFileInput.value) opmlFileInput.value.value = ''
 }
 </script>
 
@@ -110,7 +143,17 @@ async function submitFeedURL() {
         <footer class="modal-card-foot is-gap-2">
           <button class="button is-success" @click="submitFeedURL">Submit</button>
           <button class="button" @click="closeFeedAdder">Cancel</button>
+          <div class="ml-auto">
+            <input ref="opmlFileInput" type="file" accept=".opml,.xml" class="is-hidden" @change="importOpml">
+            <button class="button is-small is-text" @click="opmlFileInput?.click()">Import OPML</button>
+          </div>
         </footer>
+        <div v-if="opmlImportStatus" class="px-4 py-3">
+          <progress class="progress is-small is-info" :value="opmlImportStatus.current" :max="opmlImportStatus.total"></progress>
+          <p class="is-size-7 has-text-grey">
+            Importing {{ opmlImportStatus.current }}/{{ opmlImportStatus.total }}: {{ opmlImportStatus.name }}
+          </p>
+        </div>
       </div>
     </div>
   </div>

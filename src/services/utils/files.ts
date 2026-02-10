@@ -128,7 +128,7 @@ export interface ChannelItemData {
     season: number | null
     episode: number | null
     title: string
-    description: string
+    description: string | null
     link: string
     date: string
     enclosure_url: string | null
@@ -160,15 +160,15 @@ export function parseRssText(rawText: string): ParsedFeedData {
     
     const channel = {
         guid: coalesce(channelData, 'guid', 'podcast:guid', 'id', 'title'),
-        source_url: coalesce(channelData, 'atom:link.@_href', 'itunes:new-feed-url'),
+        source_url: coalesce(channelData, 'atom:link.@_href', 'itunes:new-feed-url', 'link') ?? '',
         title: coalesce(channelData, 'title'),
         description: coalesce(channelData, 'description', 'itunes:summary') ?? '',
         author: coalesce(channelData, 'author', 'itunes:author', 'itunes:owner.itunes:name') ?? '',
         type: determineChannelType(channelData),
         image_src: coalesce(channelData, 'image.url', 'itunes:image.@_href'),
         image_alt: coalesce(channelData, 'image.title'),
-        last_updated: coalesce(channelData, 'pubDate', 'lastBuildDate'),
-        link: coalesce(channelData, 'link', 'image.link'),
+        last_updated: coalesce(channelData, 'pubDate', 'lastBuildDate') ?? new Date().toISOString(),
+        link: coalesce(channelData, 'link', 'image.link') ?? '',
         categories: '',
     }
 
@@ -185,7 +185,7 @@ function processChannelItem(item: object) {
         episode: coalesce(item, 'episode', 'itunes:episode', 'podcast:episode'),
         title: coalesce(item, 'title', 'itunes:title'),
         description: coalesce(item, 'description', 'itunes:summary', 'itunes:subtitle'),
-        link: coalesce(item, 'link'),
+        link: coalesce(item, 'link') ?? '',
         date: coalesce(item, 'pubDate'),
         enclosure_url: coalesce(item, 'enclosure.@_url'),
         enclosure_length: coalesce(item, 'enclosure.@_length'),

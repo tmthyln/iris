@@ -45,7 +45,7 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
     <AudioControls :feed-item="feedItem"/>
 
     <!-- TODO: remove this injection vulnerability -->
-    <div class="content" v-html="feedItem.description">
+    <div v-if="feedItem.description" class="content" v-html="feedItem.description">
     </div>
   </div>
 </template>

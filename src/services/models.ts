@@ -9,7 +9,7 @@ interface PersistOptions {
 interface IncludeForTextSearchInput {
     title: string
     alias?: string
-    description: string
+    description: string | null
     author?: string
     content?: string
     categories?: string[]
@@ -83,7 +83,7 @@ abstract class ServerEntity {
         const {
             title,
             alias= '',
-            description,
+            description = '',
             author = '',
             content = '',
             categories = [],
@@ -415,7 +415,7 @@ export interface RawFeedItem {
     season: number | null
     episode: number | null
     title: string
-    description: string
+    description: string | null
     link: string
     date: string | Date | null
     enclosure_url: string | null
@@ -436,7 +436,7 @@ export class ServerFeedItem extends ServerEntity {
     season: number | null;
     episode: number | null;
     title: string;
-    description: string;
+    description: string | null;
     link: string;
     date: Date | null;
     enclosure_url: string | null;
@@ -517,7 +517,7 @@ export class ClientFeedItemPreview {
     season: number | null;
     episode: number | null;
     title: string;
-    description: string;
+    description: string | null;
     link: string;
     date: Date | null;
     enclosure_url: string | null;
