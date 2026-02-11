@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
-import {computed, ref} from "vue";
-import {useFetch} from "@vueuse/core";
+import {computed, ref, watch} from "vue";
+import {useIntersectionObserver} from "@vueuse/core";
 import {useUnescapedHTML} from "../htmlproc.ts";
+import type {FeedItem} from "../types.ts";
 
 const props = defineProps<{
     guid: string,
@@ -72,8 +73,47 @@ async function removeCategory(category: string) {
     if (!feed.value) return
     await feedStore.updateFeedCategories(props.guid, feed.value.categories.filter(c => c !== category))
 }
-const feedItemsUrl = computed(() => `/api/feed/${props.guid}/feeditem?include_finished=${showFinished.value}&sort_order=${sortAscending.value ? 'asc' : 'desc'}`)
-const {isFetching, data: feedItems} = useFetch(feedItemsUrl, {refetch: true}).json()
+const PAGE_SIZE = 20
+const feedItems = ref<FeedItem[]>([])
+const isFetching = ref(false)
+const hasMore = ref(true)
+
+async function fetchPage(offset: number) {
+    isFetching.value = true
+    const params = new URLSearchParams({
+        include_finished: String(showFinished.value),
+        sort_order: sortAscending.value ? 'asc' : 'desc',
+        limit: String(PAGE_SIZE),
+        offset: String(offset),
+    })
+    const response = await fetch(`/api/feed/${props.guid}/feeditem?${params}`)
+    isFetching.value = false
+    if (response.ok) {
+        const data: FeedItem[] = await response.json()
+        hasMore.value = data.length >= PAGE_SIZE
+        return data
+    }
+    return []
+}
+
+async function loadInitialPage() {
+    feedItems.value = []
+    hasMore.value = true
+    feedItems.value = await fetchPage(0)
+}
+
+async function loadMore() {
+    if (isFetching.value || !hasMore.value) return
+    const data = await fetchPage(feedItems.value.length)
+    feedItems.value.push(...data)
+}
+
+watch([showFinished, sortAscending], loadInitialPage, {immediate: true})
+
+const loadMoreSentinel = ref<HTMLElement>()
+useIntersectionObserver(loadMoreSentinel, ([entry]) => {
+    if (entry.isIntersecting) loadMore()
+})
 </script>
 
 <template>
@@ -154,6 +194,9 @@ const {isFetching, data: feedItems} = useFetch(feedItemsUrl, {refetch: true}).js
           v-for="feedItem in feedItems" :key="feedItem.guid"
           :feed-item="feedItem"
           class="mb-6"/>
+      <div v-if="hasMore" ref="loadMoreSentinel" class="has-text-centered py-4">
+        <span v-if="isFetching" class="has-text-grey">Loading...</span>
+      </div>
     </section>
   </div>
 </template>
