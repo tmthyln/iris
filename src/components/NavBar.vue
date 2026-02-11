@@ -124,7 +124,7 @@ function closeSearch() {
     <div class="navbar-menu">
       <div class="navbar-end">
         <div class="navbar-item">
-          <input class="input" type="search" placeholder="Search posts and podcasts" readonly @click="openSearch">
+          <input class="input" type="search" placeholder="Search posts and podcasts" readonly @click="openSearch()">
         </div>
       </div>
     </div>
