@@ -10,9 +10,11 @@ import {FetchSuccessFileResult} from "./types";
 export async function getFeeds(db: D1Database) {
     const { results } = await db
         .prepare(`
-            SELECT * FROM feed 
-            WHERE active = TRUE 
-            ORDER BY last_updated DESC`)
+            SELECT feed.* FROM feed
+            LEFT JOIN feed_item ON feed_item.source_feed = feed.guid
+            WHERE feed.active = TRUE
+            GROUP BY feed.guid
+            ORDER BY MAX(feed_item.date) DESC`)
         .all<RawFeed>()
 
     return results.map(item => new ServerFeed(item))
