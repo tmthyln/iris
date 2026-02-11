@@ -14,6 +14,64 @@ const feed = computed(() => feedStore.getFeedById(props.guid))
 
 const showFinished = ref(false);
 const sortAscending = ref(false);
+
+const newCategory = ref('');
+const showSuggestions = ref(false);
+const highlightedIndex = ref(-1);
+const suggestedCategories = computed(() =>
+    feedStore.allCategories.filter(c => !feed.value?.categories.includes(c))
+)
+const filteredSuggestions = computed(() => {
+    const query = newCategory.value.trim().toLowerCase()
+    const results = !query
+        ? suggestedCategories.value
+        : suggestedCategories.value.filter(c => c.toLowerCase().includes(query))
+    highlightedIndex.value = -1
+    return results
+})
+function sanitizeCategoryInput() {
+    newCategory.value = newCategory.value.replace(/,/g, '')
+}
+function onKeydown(e: KeyboardEvent) {
+    const len = filteredSuggestions.value.length
+    if (!showSuggestions.value || len === 0) return
+    if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        highlightedIndex.value = (highlightedIndex.value + 1) % len
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        highlightedIndex.value = highlightedIndex.value <= 0 ? -1 : highlightedIndex.value - 1
+    }
+}
+function onEnter() {
+    if (highlightedIndex.value >= 0 && highlightedIndex.value < filteredSuggestions.value.length) {
+        selectSuggestion(filteredSuggestions.value[highlightedIndex.value])
+    } else {
+        addCategory()
+    }
+}
+function selectSuggestion(category: string) {
+    newCategory.value = category
+    showSuggestions.value = false
+    highlightedIndex.value = -1
+    addCategory()
+}
+async function addCategory() {
+    const value = newCategory.value.trim()
+    if (!value || !feed.value) return
+    showSuggestions.value = false
+    highlightedIndex.value = -1
+    if (feed.value.categories.includes(value)) {
+        newCategory.value = ''
+        return
+    }
+    await feedStore.updateFeedCategories(props.guid, [...feed.value.categories, value])
+    newCategory.value = ''
+}
+async function removeCategory(category: string) {
+    if (!feed.value) return
+    await feedStore.updateFeedCategories(props.guid, feed.value.categories.filter(c => c !== category))
+}
 const feedItemsUrl = computed(() => `/api/feed/${props.guid}/feeditem?include_finished=${showFinished.value}&sort_order=${sortAscending.value ? 'asc' : 'desc'}`)
 const {isFetching, data: feedItems} = useFetch(feedItemsUrl, {refetch: true}).json()
 </script>
@@ -29,6 +87,41 @@ const {isFetching, data: feedItems} = useFetch(feedItemsUrl, {refetch: true}).js
     <small class="subtitle">{{ useUnescapedHTML(feed.author).value }}</small>
 
     <div class="mt-4">{{ feed.description }}</div>
+
+    <div class="mt-4 is-flex is-align-items-center is-flex-wrap-wrap" style="gap: 0.5rem">
+      <span v-for="category in feed.categories" :key="category" class="tag is-info is-medium">
+        {{ category }}
+        <button class="delete is-small" @click="removeCategory(category)"></button>
+      </span>
+      <div class="category-input-wrapper">
+        <div class="field has-addons mb-0">
+          <div class="control">
+            <input
+                v-model="newCategory"
+                class="input is-small"
+                type="text"
+                placeholder="Add category"
+                @input="sanitizeCategoryInput"
+                @focus="showSuggestions = true"
+                @blur="showSuggestions = false"
+                @keydown="onKeydown"
+                @keydown.enter.prevent="onEnter">
+          </div>
+          <div class="control">
+            <button class="button is-small is-info" @click="addCategory">+</button>
+          </div>
+        </div>
+        <div v-if="showSuggestions && filteredSuggestions.length > 0" class="category-suggestions">
+          <div
+              v-for="(cat, index) in filteredSuggestions" :key="cat"
+              class="category-suggestion"
+              :class="{ 'is-active': index === highlightedIndex }"
+              @mousedown.prevent="selectSuggestion(cat)">
+            {{ cat }}
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="mt-5">
       <em>
@@ -66,4 +159,33 @@ const {isFetching, data: feedItems} = useFetch(feedItemsUrl, {refetch: true}).js
 </template>
 
 <style scoped>
+.category-input-wrapper {
+  position: relative;
+}
+
+.category-suggestions {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  background: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), var(--bulma-scheme-main-bis-l));
+  color: hsl(var(--bulma-text-h), var(--bulma-text-s), var(--bulma-text-l));
+  border: 1px solid hsl(var(--bulma-border-h), var(--bulma-border-s), var(--bulma-border-l));
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  max-height: 12rem;
+  overflow-y: auto;
+  min-width: 100%;
+}
+
+.category-suggestion {
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.category-suggestion:hover,
+.category-suggestion.is-active {
+  background: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), var(--bulma-background-l));
+}
 </style>

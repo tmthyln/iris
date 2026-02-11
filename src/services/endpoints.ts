@@ -107,6 +107,36 @@ app.get('/feed/:guid', async (c) => {
 
     return feedItem ? Response.json(new ClientFeed(feedItem)) : new Response(null, {status: 404, statusText: `No feed found with guid: ${feedGuid}`})
 })
+app.patch('/feed/:guid', async (c) => {
+    const data = await c.req.json()
+    const feedGuid = c.req.param('guid')
+    const db = c.env.DB
+
+    for (const key of Object.keys(data)) {
+        if (!['categories'].includes(key)) {
+            return Response.json(null, {status: 422, statusText: `Cannot update the feed field: ${key}`})
+        }
+    }
+
+    const updateData: Record<string, unknown> = {}
+    if ('categories' in data) {
+        const categories = data.categories as string[]
+        if (categories.some(c => c.includes(','))) {
+            return Response.json(null, {status: 422, statusText: 'Category names cannot contain commas'})
+        }
+        updateData.categories = categories.join(',')
+    }
+
+    await db
+        .prepare(`
+            UPDATE feed
+            SET ${Object.keys(updateData).map(key => `${key} = ?`).join(', ')}
+            WHERE guid = ?`)
+        .bind(...Object.values(updateData), feedGuid)
+        .run()
+
+    return new Response()
+})
 app.get('/feed/:guid/feeditem', async (c) => {
     const feedGuid = c.req.param('guid')
     const {

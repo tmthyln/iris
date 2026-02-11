@@ -18,7 +18,7 @@ onMounted(feedItemStore.loadBookmarkedItems)
     </div>
 
     <template v-for="(catFeeds, category) in feedStore.feedsByCategory" :key="category">
-      <p class="menu-label has-text-info">{{ category }}</p>
+      <p v-if="category !== 'Uncategorized'" class="menu-label has-text-info">{{ category }}</p>
 
       <ul class="menu-list">
         <li v-for="feed in catFeeds" :key="feed.guid">

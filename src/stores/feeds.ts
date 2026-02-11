@@ -1,5 +1,6 @@
 import {defineStore} from "pinia";
 import type {Feed, LoadingState} from "../types.ts";
+import client from "../client.ts";
 
 type FeedLoadedCallback = () => unknown
 
@@ -10,25 +11,27 @@ export const useFeedStore = defineStore('feeds', {
         feedLoadedCallbacks: [] as FeedLoadedCallback[],
     }),
     getters: {
-        feedsByCategory: (state) => state.feeds.reduce((map, feed) => {
-            feed.categories.forEach(category => {
-                if (Object.prototype.hasOwnProperty.call(map, category)) {
-                    map[category].push(feed)
-                } else {
-                    map[category] = [feed]
-                }
-            })
-
-            if (feed.categories.length === 0) {
-                if (Object.prototype.hasOwnProperty.call(map, 'Uncategorized')) {
+        allCategories: (state) => [...new Set(state.feeds.flatMap(feed => feed.categories))].sort(),
+        feedsByCategory: (state) => {
+            const map: {[category: string]: Feed[]} = {'Uncategorized': []}
+            for (const feed of state.feeds) {
+                if (feed.categories.length === 0) {
                     map['Uncategorized'].push(feed)
                 } else {
-                    map['Uncategorized'] = [feed]
+                    feed.categories.forEach(category => {
+                        if (Object.prototype.hasOwnProperty.call(map, category)) {
+                            map[category].push(feed)
+                        } else {
+                            map[category] = [feed]
+                        }
+                    })
                 }
             }
-
+            if (map['Uncategorized'].length === 0) {
+                delete map['Uncategorized']
+            }
             return map
-        }, {} as {[category: string]: Feed[]}),
+        },
     },
     actions: {
         async loadFeeds() {
@@ -42,9 +45,7 @@ export const useFeedStore = defineStore('feeds', {
                 const data = await response.json();
 
                 this.feeds.length = 0;
-                this.feeds.push(...(data as Feed[]).sort((a, b) =>
-                    new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime()
-                ));
+                this.feeds.push(...(data as Feed[]));
 
                 this.feedsLoadState = 'loaded'
 
@@ -66,6 +67,16 @@ export const useFeedStore = defineStore('feeds', {
         },
         getFeedById(guid: string) {
             return this.feeds.find(feed => feed.guid === guid) ?? null;
+        },
+        async updateFeedCategories(guid: string, categories: string[]) {
+            const success = await client.modifyFeed(guid, {categories})
+            if (success) {
+                const feed = this.feeds.find(f => f.guid === guid)
+                if (feed) {
+                    feed.categories = categories
+                }
+            }
+            return success
         },
     },
 })
