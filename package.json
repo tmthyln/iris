@@ -18,10 +18,10 @@
     "@vueuse/core": "^10.9.0",
     "@vueuse/integrations": "^14.2.0",
     "bulma": "^1.0.0",
-    "pinia": "^2.1.7",
+    "pinia": "^3.0.4",
     "sortablejs": "^1.15.6",
-    "vue": "^3.4.21",
-    "vue-router": "^4.5.0"
+    "vue": "^3.5.28",
+    "vue-router": "^5.0.2"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.24.0",
@@ -44,7 +44,7 @@
     "vite-plugin-pwa": "^1.0.0",
     "vite-plugin-vue-devtools": "^7.7.0",
     "vitest": "^3.1.4",
-    "vue-tsc": "^2.2.10",
+    "vue-tsc": "^3.2.4",
     "wrangler": "^4.64.0"
   }
 }
