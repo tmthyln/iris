@@ -194,6 +194,11 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
           v-for="feedItem in feedItems" :key="feedItem.guid"
           :feed-item="feedItem"
           class="mb-6"/>
+      <div v-if="!hasMore && !isFetching && feedItems.length === 0">
+        {{ showFinished
+            ? `This feed doesn't have any ${feed?.type === 'podcast' ? 'episodes' : 'posts'} yet.`
+            : `No unseen ${feed?.type === 'podcast' ? 'episodes' : 'posts'}. You're all caught up!` }}
+      </div>
       <div v-if="hasMore" ref="loadMoreSentinel" class="has-text-centered py-4">
         <span v-if="isFetching" class="has-text-grey">Loading...</span>
       </div>
