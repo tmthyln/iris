@@ -2,7 +2,7 @@
 import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
 import {computed, ref, watch} from "vue";
-import {useIntersectionObserver} from "@vueuse/core";
+import {useIntersectionObserver, useSessionStorage} from "@vueuse/core";
 import {useUnescapedHTML} from "../htmlproc.ts";
 import type {FeedItem} from "../types.ts";
 
@@ -13,8 +13,8 @@ const props = defineProps<{
 const feedStore = useFeedStore();
 const feed = computed(() => feedStore.getFeedById(props.guid))
 
-const showFinished = ref(false);
-const sortAscending = ref(false);
+const showFinished = useSessionStorage('feedView:showFinished', false);
+const sortAscending = useSessionStorage('feedView:sortAscending', false);
 
 const newCategory = ref('');
 const showSuggestions = ref(false);
