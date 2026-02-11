@@ -10,7 +10,10 @@ onMounted(feedItemStore.loadBookmarkedItems)
 
 <template>
   <aside class="menu">
-    <div v-if="feedStore.feeds.length === 0">
+    <div v-if="feedStore.feedsLoadState !== 'loaded'">
+      Loading feeds...
+    </div>
+    <div v-else-if="feedStore.feeds.length === 0">
       No feeds! Add a feed to get started.
     </div>
     <div v-else-if="Object.keys(feedStore.feedsByCategory).length <= 1">
@@ -33,7 +36,10 @@ onMounted(feedItemStore.loadBookmarkedItems)
 
     <p class="menu-label has-text-primary">Bookmarked Items</p>
 
-    <div v-if="feedItemStore.bookmarkedItems.length === 0">
+    <div v-if="feedItemStore.bookmarkedLoadState !== 'loaded'">
+      Loading bookmarks...
+    </div>
+    <div v-else-if="feedItemStore.bookmarkedItems.length === 0">
       No bookmarks! Bookmark an item to access them quickly here.
     </div>
     <ul class="menu-list">
