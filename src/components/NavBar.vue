@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import {ref, computed, nextTick, watch, onMounted, onUnmounted} from "vue";
 
+const sidebarOpen = defineModel<boolean>('sidebarOpen', {default: false})
+
 const showSearch = ref(false)
 const searchInput = ref('')
 const searchInputEl = ref<HTMLInputElement>()
@@ -119,6 +121,18 @@ function closeSearch() {
         <img class="mr-2" src="/logo.svg" height="28" alt="logo">
         <span class="title is-4">Iris Aggregator</span>
       </router-link>
+      <a
+          role="button"
+          class="navbar-burger is-hidden-tablet"
+          :class="{'is-active': sidebarOpen}"
+          aria-label="menu"
+          :aria-expanded="sidebarOpen"
+          @click="sidebarOpen = !sidebarOpen">
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </a>
     </div>
 
     <div class="navbar-menu">
