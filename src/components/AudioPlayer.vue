@@ -323,8 +323,11 @@ input[type="range"].playback-progress {
     z-index: 10;
 
     @media screen and (max-width: 768px) {
+        position: fixed;
+        bottom: 100px;
         width: 90vw;
-        right: -2rem;
+        left: 5vw;
+        right: 5vw;
     }
 }
 
