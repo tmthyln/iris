@@ -10,3 +10,7 @@ $blue: #4c6ffc;
     $warning: $orange,
     $danger: $red,
 );
+
+body {
+    overflow-x: clip;
+}

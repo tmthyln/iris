@@ -129,13 +129,17 @@ function clearQueue() {
           :min="0" :max="duration"
           :value="currentTime" @input="setPlaybackPosition"
           :style="{background: `linear-gradient(to right, #aced32 ${Math.floor(100*currentTime/duration)}%, #ccc ${Math.floor(100*currentTime/duration)}%)`}">
-      <div class="level p-4 is-flex-grow-1">
+      <div class="player-layout p-4 is-flex-grow-1">
         <audio ref="audio"></audio>
 
-        <div class="level-left">
+        <div class="player-left">
           {{ currentItem?.title }}
         </div>
-        <div class="level-item is-gap-1">
+        <div class="player-center">
+
+          <button class="tag button" @click="cyclePlaybackRate">
+            {{ rate }}x
+          </button>
 
           <button class="button is-rounded px-2 control-button" title="Rewind 10 seconds" @click="fastRewind">
             <span class="material-symbols-outlined">fast_rewind</span>
@@ -158,22 +162,19 @@ function clearQueue() {
             <span class="material-symbols-outlined">skip_next</span>
           </button>
 
-          <button class="tag button" @click="cyclePlaybackRate">
-            {{ rate }}x
-          </button>
-
         </div>
-        <div class="level-right" style="position: relative;">
+        <div class="player-right">
           <span>{{ useDurationFormat(currentTime).value }} / {{ useDurationFormat(duration).value }}</span>
-          <button
-              class="button is-rounded px-2 control-button queue-toggle-button"
-              :class="{'has-text-info': showQueue}"
-              title="Show queue and what's up next"
-              @click="showQueue = !showQueue">
-            <span class="material-symbols-outlined">playlist_play</span>
-          </button>
+          <div class="queue-toggle-wrapper">
+            <button
+                class="button is-rounded px-2 control-button queue-toggle-button"
+                :class="{'has-text-info': showQueue}"
+                title="Show queue and what's up next"
+                @click="showQueue = !showQueue">
+              <span class="material-symbols-outlined">playlist_play</span>
+            </button>
 
-          <div v-if="showQueue" ref="queuePopover" class="queue-popover box p-0">
+            <div v-if="showQueue" ref="queuePopover" class="queue-popover box p-0">
             <div class="queue-popover-header px-4 py-3 is-flex is-align-items-center is-justify-content-space-between">
               <strong>Up Next</strong>
               <button
@@ -212,6 +213,7 @@ function clearQueue() {
             </div>
           </div>
         </div>
+        </div>
       </div>
     </footer>
   </template>
@@ -223,14 +225,69 @@ function clearQueue() {
     left: 0;
     right: 0;
     bottom: 0;
-    height: 100px;
-    margin-top: 100px;
+    z-index: 20;
 }
 .footer-placeholder {
     height: 100px;
 }
 .control-button {
     border: none;
+}
+
+.player-layout {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.player-left {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.player-center {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.player-right {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    white-space: nowrap;
+}
+
+.queue-toggle-wrapper {
+    position: relative;
+}
+
+@media screen and (max-width: 768px) {
+    .player-layout {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .player-left {
+        flex-basis: 100%;
+        text-align: center;
+        font-size: 0.85rem;
+    }
+
+    .player-center {
+        order: 0;
+    }
+
+    .player-right {
+        flex-basis: 100%;
+        justify-content: center;
+        font-size: 0.85rem;
+    }
 }
 
 input[type="range"].playback-progress {
@@ -264,6 +321,11 @@ input[type="range"].playback-progress {
     overflow-y: auto;
     margin-bottom: 8px;
     z-index: 10;
+
+    @media screen and (max-width: 768px) {
+        width: 90vw;
+        right: -2rem;
+    }
 }
 
 .queue-popover-header {
