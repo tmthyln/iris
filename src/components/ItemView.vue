@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import {onMounted, ref, watch} from "vue";
-import {useTimeAgo} from "@vueuse/core";
+import {computed, onMounted, ref, watch} from "vue";
+import {useTimeAgo, useTitle} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
 import {Feed, FeedItem} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
@@ -16,6 +16,7 @@ const feedStore = useFeedStore()
 const feedItem = ref<FeedItem | null>(null)
 const feed = ref<Feed | null>(null)
 const isFetchingItem = ref(true)
+useTitle(computed(() => feedItem.value ? `${feedItem.value.title} — Iris` : 'Iris'))
 async function fetchFeedItem() {
     const data = await client.getFeedItem(props.guid)
     if (data) {

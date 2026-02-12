@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import SubscriptionPreview from "./SubscriptionPreview.vue";
 import {nextTick, onMounted, ref} from "vue";
-import {useIntersectionObserver} from "@vueuse/core";
+import {useIntersectionObserver, useTitle} from "@vueuse/core";
 import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
@@ -9,6 +9,7 @@ import {useFeedItemStore} from "../stores/feeditems.ts";
 const feedStore = useFeedStore()
 const feedItemStore = useFeedItemStore()
 onMounted(feedItemStore.loadRecentUnreadItems)
+useTitle('Iris')
 
 const loadMoreSentinel = ref<HTMLElement>()
 useIntersectionObserver(loadMoreSentinel, ([entry]) => {
