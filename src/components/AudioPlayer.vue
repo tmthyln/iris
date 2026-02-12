@@ -5,10 +5,12 @@ import {useSortable} from "@vueuse/integrations/useSortable";
 import {useDurationFormat} from "../format.ts";
 import {useQueueStore} from "../stores/queue.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
+import {useFeedStore} from "../stores/feeds.ts";
 import type {FeedItemPreview} from "../types.ts";
 
 const queueStore = useQueueStore()
 const feedItemStore = useFeedItemStore()
+const feedStore = useFeedStore()
 
 const currentItem = computed(() => queueStore.currentlyPlaying)
 const upcomingItems = computed(() => queueStore.items.slice(1))
@@ -83,6 +85,30 @@ watch(ended, async () => {
         }
     }
 })
+
+/* Media Session */
+watch(currentItem, (item) => {
+    if (!('mediaSession' in navigator)) return
+    if (!item) {
+        navigator.mediaSession.metadata = null
+        return
+    }
+    const feed = feedStore.getFeedById(item.source_feed)
+    navigator.mediaSession.metadata = new MediaMetadata({
+        title: item.title,
+        artist: feed?.author,
+        album: feed?.title,
+        artwork: feed?.image_src ? [{src: feed.image_src}] : [],
+    })
+}, {immediate: true})
+
+if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('play', () => { playing.value = true })
+    navigator.mediaSession.setActionHandler('pause', () => { playing.value = false })
+    navigator.mediaSession.setActionHandler('seekbackward', () => fastRewind())
+    navigator.mediaSession.setActionHandler('seekforward', () => fastForward())
+    navigator.mediaSession.setActionHandler('nexttrack', () => skipNext())
+}
 
 /* Queue popover */
 const showQueue = ref(false)
