@@ -66,9 +66,12 @@ useIntervalFn(() => {
         feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
     }
 }, 5000)
-watch(ended, () => {
+watch(ended, async () => {
     if (ended.value && currentItem.value) {
-        feedItemStore.updateItemProgress(currentItem.value, 1)
+        await feedItemStore.updateItemProgress(currentItem.value, 1)
+        if (upcomingItems.value.length > 0) {
+            await queueStore.removeItem(currentItem.value)
+        }
     }
 })
 
