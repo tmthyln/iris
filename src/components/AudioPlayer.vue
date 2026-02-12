@@ -26,6 +26,12 @@ const {
     src,
 })
 
+watch(duration, (newDuration) => {
+    if (newDuration > 0 && currentItem.value && currentItem.value.progress > 0 && currentItem.value.progress < 1) {
+        currentTime.value = currentItem.value.progress * newDuration
+    }
+})
+
 watch(() => queueStore.paused, (paused) => {
     playing.value = !paused
 })
@@ -39,6 +45,9 @@ watch(playing, (isPlaying) => {
 function setPlaybackPosition(event: Event) {
     const target = event.currentTarget as HTMLInputElement
     currentTime.value = Number(target.value)
+    if (currentItem.value && duration.value > 0) {
+        feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+    }
 }
 function fastRewind() {
     currentTime.value = Math.max(0, currentTime.value - 10)
