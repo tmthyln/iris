@@ -41,10 +41,17 @@ function setPlaybackPosition(event: Event) {
     currentTime.value = Number(target.value)
 }
 function fastRewind() {
-    currentTime.value = Math.max(0, currentTime.value - 15)
+    currentTime.value = Math.max(0, currentTime.value - 10)
 }
 function fastForward() {
     currentTime.value = Math.min(duration.value, currentTime.value + 30)
+}
+async function skipNext() {
+    if (!currentItem.value || upcomingItems.value.length === 0) return
+    if (duration.value > 0) {
+        await feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+    }
+    await queueStore.removeItem(currentItem.value)
 }
 
 const playbackRates = [1, 1.25, 1.5, 1.75, 2, 0.25, 0.5]
@@ -118,11 +125,7 @@ function clearQueue() {
         </div>
         <div class="level-item is-gap-1">
 
-          <button class="button is-rounded px-2 control-button">
-            <span class="material-symbols-outlined">skip_previous</span>
-          </button>
-
-          <button class="button is-rounded px-2 control-button" @click="fastRewind">
+          <button class="button is-rounded px-2 control-button" title="Rewind 10 seconds" @click="fastRewind">
             <span class="material-symbols-outlined">fast_rewind</span>
           </button>
 
@@ -131,11 +134,15 @@ function clearQueue() {
             <span v-else class="material-symbols-outlined">pause</span>
           </button>
 
-          <button class="button is-rounded px-2 control-button" @click="fastForward">
+          <button class="button is-rounded px-2 control-button" title="Skip forward 30 seconds" @click="fastForward">
             <span class="material-symbols-outlined">fast_forward</span>
           </button>
 
-          <button class="button is-rounded px-2 control-button">
+          <button
+              class="button is-rounded px-2 control-button"
+              title="Skip to next in queue"
+              :disabled="upcomingItems.length === 0"
+              @click="skipNext">
             <span class="material-symbols-outlined">skip_next</span>
           </button>
 
