@@ -29,7 +29,7 @@ export async function refreshFeed(feedGuid: string, env: Env) {
         const feedFile = await createFeedFile(feedSource, fetchResult)
         await feedFile.persistTo(db, cache_bucket)
 
-        const {channel, items} = parseRssText(fetchResult.content)
+        const {items} = parseRssText(fetchResult.content)
 
         // TODO update feed metadata, description, etc from channel
 

@@ -25,11 +25,12 @@ const suggestedCategories = computed(() =>
 )
 const filteredSuggestions = computed(() => {
     const query = newCategory.value.trim().toLowerCase()
-    const results = !query
+    return !query
         ? suggestedCategories.value
         : suggestedCategories.value.filter(c => c.toLowerCase().includes(query))
+})
+watch(filteredSuggestions, () => {
     highlightedIndex.value = -1
-    return results
 })
 function sanitizeCategoryInput() {
     newCategory.value = newCategory.value.replace(/,/g, '')
