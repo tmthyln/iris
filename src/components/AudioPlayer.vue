@@ -122,6 +122,8 @@ const queueListEl = ref<HTMLElement>()
 useSortable(queueListEl, upcomingItems, {
     handle: '.drag-handle',
     animation: 150,
+    delay: 100,
+    delayOnTouchOnly: true,
     onEnd(event) {
         if (event.oldIndex != null && event.newIndex != null && event.oldIndex !== event.newIndex) {
             const item = upcomingItems.value[event.oldIndex]
@@ -219,7 +221,7 @@ function clearQueue() {
                   v-for="item in upcomingItems"
                   :key="item.guid"
                   class="queue-item is-flex is-align-items-center px-3 py-2 is-gap-2">
-                <span class="material-symbols-outlined drag-handle has-text-grey" style="cursor: grab;">
+                <span class="material-symbols-outlined drag-handle has-text-grey" style="cursor: grab; touch-action: none;">
                   drag_indicator
                 </span>
                 <span class="is-flex-grow-1 is-size-7 queue-item-title">{{ item.title }}</span>
