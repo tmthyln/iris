@@ -28,9 +28,17 @@ const {
     src,
 })
 
+const autoPlayNext = ref(false)
+
 watch(duration, (newDuration) => {
-    if (newDuration > 0 && currentItem.value && currentItem.value.progress > 0 && currentItem.value.progress < 1) {
-        currentTime.value = currentItem.value.progress * newDuration
+    if (newDuration > 0 && currentItem.value) {
+        if (currentItem.value.progress > 0 && currentItem.value.progress < 1) {
+            currentTime.value = currentItem.value.progress * newDuration
+        }
+        if (autoPlayNext.value) {
+            playing.value = true
+            autoPlayNext.value = false
+        }
     }
 })
 
@@ -59,6 +67,7 @@ function fastForward() {
 }
 async function skipNext() {
     if (!currentItem.value || upcomingItems.value.length === 0) return
+    autoPlayNext.value = playing.value
     if (duration.value > 0) {
         await feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
     }
@@ -81,6 +90,7 @@ watch(ended, async () => {
     if (ended.value && currentItem.value) {
         await feedItemStore.updateItemProgress(currentItem.value, 1)
         if (upcomingItems.value.length > 0) {
+            autoPlayNext.value = true
             await queueStore.removeItem(currentItem.value)
         }
     }
