@@ -288,6 +288,7 @@ export interface RawFeed {
     update_frequency: number
     link: string
     categories: string
+    has_unread?: number | boolean
 }
 
 export class ServerFeed extends ServerEntity {
@@ -307,6 +308,7 @@ export class ServerFeed extends ServerEntity {
     update_frequency: number;
     link: string;
     categories: string[];
+    has_unread: boolean;
 
     constructor(data: RawFeed) {
         super('feed', {
@@ -330,6 +332,7 @@ export class ServerFeed extends ServerEntity {
         this.update_frequency = data.update_frequency
         this.link = data.link ?? ''
         this.categories = asStringList(data.categories)
+        this.has_unread = asBoolean(data.has_unread ?? 0)
     }
 
     async persistTo(db: D1Database) {
@@ -389,6 +392,7 @@ export class ClientFeed {
     update_frequency: number;
     link: string;
     categories: string[];
+    has_unread: boolean;
 
     constructor(data: ServerFeed) {
         this.guid = data.guid
@@ -406,6 +410,7 @@ export class ClientFeed {
         this.update_frequency = data.update_frequency
         this.link = data.link
         this.categories = data.categories
+        this.has_unread = data.has_unread
     }
 }
 

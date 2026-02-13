@@ -95,7 +95,7 @@ async function importOpml(event: Event) {
 
       <div class="is-flex subscriptions-list">
         <SubscriptionPreview
-            v-for="feed in feedStore.feeds" :key="feed.guid"
+            v-for="feed in feedStore.feeds.filter(f => f.has_unread)" :key="feed.guid"
             :feed="feed"
             class="mr-4"/>
         <div v-if="feedStore.feedsLoadState !== 'loaded'">

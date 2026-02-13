@@ -17,6 +17,7 @@ export interface Feed {
     update_frequency: number
     link: string
     categories: string[]
+    has_unread: boolean
 }
 
 export interface FeedItemPreview {

@@ -25,7 +25,9 @@ onMounted(feedItemStore.loadBookmarkedItems)
 
       <ul class="menu-list">
         <li v-for="feed in catFeeds" :key="feed.guid">
-          <router-link :to="{name: 'subscription', params: {guid: feed.guid}}">
+          <router-link
+              :to="{name: 'subscription', params: {guid: feed.guid}}"
+              :class="{'has-text-grey': !feed.has_unread}">
             {{ feed.title }}
           </router-link>
         </li>

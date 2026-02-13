@@ -10,7 +10,9 @@ import {FetchSuccessFileResult} from "./types";
 export async function getFeeds(db: D1Database) {
     const { results } = await db
         .prepare(`
-            SELECT feed.* FROM feed
+            SELECT feed.*,
+                   MAX(CASE WHEN feed_item.finished = FALSE THEN 1 ELSE 0 END) AS has_unread
+            FROM feed
             LEFT JOIN feed_item ON feed_item.source_feed = feed.guid
             WHERE feed.active = TRUE
             GROUP BY feed.guid
