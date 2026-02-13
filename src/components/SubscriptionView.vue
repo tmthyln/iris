@@ -109,7 +109,7 @@ async function loadMore() {
     feedItems.value.push(...data)
 }
 
-watch([showFinished, sortAscending], loadInitialPage, {immediate: true})
+watch([() => props.guid, showFinished, sortAscending], loadInitialPage, {immediate: true})
 
 const loadMoreSentinel = ref<HTMLElement>()
 useIntersectionObserver(loadMoreSentinel, ([entry]) => {
