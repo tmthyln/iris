@@ -55,7 +55,7 @@ Frontend and backend share `src/` but are **separated by TypeScript project refe
 
 ### Frontend
 - **Framework:** Vue 3 with Composition API
-- **State Management:** Pinia stores in `src/stores/` (feeds, feeditems, queue) — all use composition API style with `LoadingState` tracking ('unloaded' | 'loading' | 'loaded')
+- **State Management:** Pinia stores in `src/stores/` (feeds, feeditems, queue, downloads) — mix of options and composition API styles, with `LoadingState` tracking ('unloaded' | 'loading' | 'loaded')
 - **Routing:** Vue Router in `src/router/`
 - **Styling:** Bulma CSS framework with SASS
 - **API Client:** `src/client.ts` — pure data fetching layer using fetch API, returns typed data or `null` on error
@@ -114,7 +114,7 @@ POST   /api/command/refresh-all-feeds - Trigger manual refresh
 
 ## Key Patterns
 
-- Unused variables should be prefixed with `_` (ESLint rule)
+- Unused variables should be prefixed with `_` (ESLint rule) — but this does not apply to destructured bindings; omit them instead
 - Short-circuit expressions allowed (`x && doSomething()`)
 - Vitest supports in-source testing via `import.meta.vitest`
 - Shared conversion utilities live in `src/lib/` (not `src/services/utils/`)
