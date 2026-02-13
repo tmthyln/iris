@@ -130,10 +130,12 @@ onClickOutside(queuePopover, () => {
 
 const queueListEl = ref<HTMLElement>()
 useSortable(queueListEl, upcomingItems, {
+    watchElement: true, // required: queue list is inside a v-if and may not exist at mount time
     handle: '.drag-handle',
     animation: 150,
     delay: 100,
     delayOnTouchOnly: true,
+    onUpdate() {}, // suppress default which tries to write to the readonly computed
     onEnd(event) {
         if (event.oldIndex != null && event.newIndex != null && event.oldIndex !== event.newIndex) {
             const item = upcomingItems.value[event.oldIndex]
