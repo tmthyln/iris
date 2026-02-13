@@ -171,7 +171,7 @@ const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(re
           type="range"
           :min="0" :max="duration"
           :value="currentTime" @input="setPlaybackPosition"
-          :style="{background: `linear-gradient(to right, #aced32 ${Math.floor(100*currentTime/duration)}%, #ccc ${Math.floor(100*currentTime/duration)}%)`}">
+          :style="{'--progress': `${100*currentTime/duration}%`}">
       <div class="player-layout p-4 is-flex-grow-1">
         <audio ref="audio"></audio>
 
@@ -344,18 +344,40 @@ input[type="range"].playback-progress {
     height: 5px;
     outline: none;
     cursor: pointer;
+    background: transparent;
 
-    background: gray;
+    &::-webkit-slider-runnable-track {
+      height: 5px;
+      background: linear-gradient(to right, var(--bulma-info) var(--progress), var(--bulma-border) var(--progress));
+    }
+
+    &::-moz-range-track {
+      height: 5px;
+      background: var(--bulma-border);
+    }
+
+    &::-moz-range-progress {
+      height: 5px;
+      background: var(--bulma-info);
+    }
 
     &::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
       height: 15px;
       width: 15px;
-      background-color: #aced32;
+      background-color: var(--bulma-info);
       border-radius: 50%;
-      border: 2px solid #aced32;
-      transition: .2s ease-in-out;
+      border: 2px solid var(--bulma-info);
+      margin-top: -5px;
+    }
+
+    &::-moz-range-thumb {
+      height: 15px;
+      width: 15px;
+      background-color: var(--bulma-info);
+      border-radius: 50%;
+      border: 2px solid var(--bulma-info);
     }
 }
 
@@ -379,11 +401,11 @@ input[type="range"].playback-progress {
 }
 
 .queue-popover-header {
-    border-bottom: 1px solid hsl(0, 0%, 90%);
+    border-bottom: 1px solid var(--bulma-border);
 }
 
 .queue-item {
-    border-bottom: 1px solid hsl(0, 0%, 95%);
+    border-bottom: 1px solid var(--bulma-border-weak);
     transition: transform 0.2s, opacity 0.2s;
 
     &:last-child {
@@ -391,7 +413,7 @@ input[type="range"].playback-progress {
     }
 
     &:hover {
-        background-color: hsl(0, 0%, 96%);
+        background-color: var(--bulma-background);
     }
 }
 
