@@ -3,16 +3,19 @@ import SidePanel from "./components/SidePanel.vue";
 import NavBar from "./components/NavBar.vue";
 import {useFeedStore} from "./stores/feeds.ts";
 import {useQueueStore} from "./stores/queue.ts";
+import {useDownloadStore} from "./stores/downloads.ts";
 import {onMounted, ref} from "vue";
 import {useRouter} from "vue-router";
 import AudioPlayer from "./components/AudioPlayer.vue";
 
 const feedStore = useFeedStore()
 const queueStore = useQueueStore()
+const downloadStore = useDownloadStore()
 
 onMounted(() => {
     feedStore.loadFeeds()
     queueStore.loadQueue()
+    downloadStore.init()
 })
 
 const sidebarOpen = ref(false)

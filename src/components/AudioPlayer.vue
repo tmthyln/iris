@@ -1,22 +1,40 @@
 <script setup lang="ts">
-import {computed, ref, watch} from "vue";
+import {computed, ref, watch, watchEffect} from "vue";
 import {useIntervalFn, useMediaControls, onClickOutside} from "@vueuse/core";
 import {useSortable} from "@vueuse/integrations/useSortable";
 import {useDurationFormat} from "../format.ts";
 import {useQueueStore} from "../stores/queue.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
 import {useFeedStore} from "../stores/feeds.ts";
+import {useDownloadStore} from "../stores/downloads.ts";
 import type {FeedItemPreview} from "../types.ts";
 import {useSwipeToDismiss} from "../swipe.ts";
 
 const queueStore = useQueueStore()
 const feedItemStore = useFeedItemStore()
 const feedStore = useFeedStore()
+const downloadStore = useDownloadStore()
 
 const currentItem = computed(() => queueStore.currentlyPlaying)
 const upcomingItems = computed(() => queueStore.items.slice(1))
 
-const src = computed(() => currentItem.value?.enclosure_url ?? '')
+const resolvedSrc = ref('')
+
+watchEffect(async () => {
+    const item = currentItem.value
+    if (!item?.enclosure_url) {
+        resolvedSrc.value = ''
+        return
+    }
+    if (downloadStore.isDownloaded(item.guid)) {
+        const localUrl = await downloadStore.getLocalUrl(item.guid)
+        if (localUrl && currentItem.value?.guid === item.guid) {
+            resolvedSrc.value = localUrl
+            return
+        }
+    }
+    resolvedSrc.value = item.enclosure_url
+})
 
 const audio = ref<HTMLAudioElement>()
 const {
@@ -26,7 +44,7 @@ const {
     duration,
     ended,
 } = useMediaControls(audio, {
-    src,
+    src: resolvedSrc,
 })
 
 const autoPlayNext = ref(false)

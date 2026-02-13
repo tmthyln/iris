@@ -5,6 +5,7 @@ import {useElementHover} from "@vueuse/core";
 import {useQueueStore} from "../stores/queue.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
 import {useFeedStore} from "../stores/feeds.ts";
+import {useDownloadStore} from "../stores/downloads.ts";
 
 const props = defineProps<{
     feedItem: FeedItemPreview,
@@ -12,6 +13,7 @@ const props = defineProps<{
 
 const feedItemStore = useFeedItemStore()
 const feedStore = useFeedStore()
+const downloadStore = useDownloadStore()
 
 const feed = feedStore.getFeedById(props.feedItem.source_feed)
 
@@ -80,6 +82,30 @@ function toggleBookmark() {
         feedItemStore.unbookmarkItem(props.feedItem)
     } else {
         feedItemStore.bookmarkItem(props.feedItem)
+    }
+}
+
+/* Downloading */
+const toggleDownloadButton = ref<HTMLButtonElement>()
+const isHoveredDownloadButton = useElementHover(toggleDownloadButton)
+
+const downloadStatus = computed(() => downloadStore.getStatus(props.feedItem.guid))
+
+const downloadProgress = computed(() => {
+    const s = downloadStatus.value
+    return typeof s === 'object' && s.state === 'downloading'
+        ? Math.round(s.progress * 100)
+        : 0
+})
+
+function toggleDownload() {
+    const s = downloadStatus.value
+    if (typeof s === 'object' && s.state === 'downloading') {
+        downloadStore.cancelDownload(props.feedItem.guid)
+    } else if (typeof s === 'object' && s.state === 'downloaded') {
+        downloadStore.deleteDownload(props.feedItem.guid)
+    } else {
+        downloadStore.downloadItem(props.feedItem)
     }
 }
 </script>
@@ -180,9 +206,51 @@ function toggleBookmark() {
         bookmark_add
       </span>
     </button>
+
+    <button
+        v-if="feed.type === 'podcast' && feedItem.enclosure_url"
+        ref="toggleDownloadButton"
+        class="button is-small px-0 py-1" style="border: none;"
+        @click="toggleDownload">
+      <span
+          v-if="typeof downloadStatus === 'object' && downloadStatus.state === 'downloading'"
+          class="material-symbols-outlined has-text-info download-pulse"
+          :title="`Downloading: ${downloadProgress}%`">
+        downloading
+      </span>
+      <span
+          v-else-if="typeof downloadStatus === 'object' && downloadStatus.state === 'error'"
+          class="material-symbols-outlined has-text-danger"
+          :title="`Download failed: ${downloadStatus.message}. Click to retry`">
+        error
+      </span>
+      <span
+          v-else-if="isHoveredDownloadButton && typeof downloadStatus === 'object' && downloadStatus.state === 'downloaded'"
+          class="material-symbols-outlined has-text-warning"
+          title="Remove downloaded audio">
+        download_done
+      </span>
+      <span
+          v-else-if="typeof downloadStatus === 'object' && downloadStatus.state === 'downloaded'"
+          class="material-symbols-outlined has-text-success">
+        download_done
+      </span>
+      <span
+          v-else
+          class="material-symbols-outlined" :class="{'has-text-success': isHoveredDownloadButton}"
+          title="Download for offline playback">
+        download
+      </span>
+    </button>
   </div>
 </template>
 
 <style scoped>
-
+.download-pulse {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
 </style>

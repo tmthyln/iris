@@ -55,12 +55,11 @@ export class ItemQueue extends DurableObject<Env> {
 
     insertItem(itemGuid: string, index: number): string[] {
         this.removeItem(itemGuid, false)
-        index = Math.max(0, Math.min(index, this._getNextOrder()))
-
-        this.sql.exec(`UPDATE queue_item SET queue_order = queue_order + 1 WHERE queue_order >= ?;`, index)
-        this.sql.exec(`INSERT INTO queue_item (queue_order, feed_item_guid) VALUES (?, ?);`, index, itemGuid)
-
-        this._compactItems()
+        const allGuids = this.getItems()
+        index = Math.max(0, Math.min(index, allGuids.length))
+        allGuids.splice(index, 0, itemGuid)
+        this.clearQueue()
+        allGuids.forEach(guid => this.enqueueItem(guid))
         return this.getItems()
     }
 
