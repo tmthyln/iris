@@ -7,6 +7,7 @@ import {useQueueStore} from "../stores/queue.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
 import {useFeedStore} from "../stores/feeds.ts";
 import type {FeedItemPreview} from "../types.ts";
+import {useSwipeToDismiss} from "../swipe.ts";
 
 const queueStore = useQueueStore()
 const feedItemStore = useFeedItemStore()
@@ -157,6 +158,8 @@ function clearQueue() {
     const keepFirst = !queueStore.paused
     queueStore.clearQueue(keepFirst)
 }
+
+const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(removeFromQueue)
 </script>
 
 <template>
@@ -232,7 +235,11 @@ function clearQueue() {
               <div
                   v-for="item in upcomingItems"
                   :key="item.guid"
-                  class="queue-item is-flex is-align-items-center px-3 py-2 is-gap-2">
+                  class="queue-item is-flex is-align-items-center px-3 py-2 is-gap-2"
+                  :style="swipeStyle(item)"
+                  @touchstart="onTouchStart(item, $event)"
+                  @touchmove="onTouchMove"
+                  @touchend="onTouchEnd(item)">
                 <span class="material-symbols-outlined drag-handle has-text-grey" style="cursor: grab; touch-action: none;">
                   drag_indicator
                 </span>
@@ -244,7 +251,7 @@ function clearQueue() {
                   <span class="material-symbols-outlined is-size-6">play_arrow</span>
                 </button>
                 <button
-                    class="button is-small px-1 control-button"
+                    class="button is-small px-1 control-button is-hidden-mobile"
                     title="Remove from queue"
                     @click="removeFromQueue(item)">
                   <span class="material-symbols-outlined is-size-6">close</span>
@@ -377,6 +384,7 @@ input[type="range"].playback-progress {
 
 .queue-item {
     border-bottom: 1px solid hsl(0, 0%, 95%);
+    transition: transform 0.2s, opacity 0.2s;
 
     &:last-child {
         border-bottom: none;
