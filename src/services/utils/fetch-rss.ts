@@ -1,8 +1,7 @@
 import {XMLParser} from "fast-xml-parser";
 import {FetchFileResult} from "../types";
 import {sha256Encode} from "./crypto";
-
-const FETCH_USER_AGENT = 'Mozilla/5.0 (compatible; Iris/1.0; +https://github.com/tmthyln/iris)'
+import {FETCH_USER_AGENT} from "./files";
 
 const RSS_ACCEPT_MIMES = [
     'application/rss+xml',

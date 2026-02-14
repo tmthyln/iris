@@ -1,3 +1,5 @@
+import {FETCH_USER_AGENT} from "./files";
+
 /**
  * Fetch a list of archived snapshots for a URL from the wayback machine.
  * Docs: https://github.com/internetarchive/wayback/tree/master/wayback-cdx-server
@@ -6,19 +8,11 @@
  */
 export async function fetchArchiveList(url: string) {
     const currentYear = new Date().getFullYear()
-    const queryParams = new URLSearchParams([
-        ['url', url],
-        ['matchType', 'prefix'],
-        ['output', 'json'],
-        ['fl', 'timestamp,original,digest'],
-        ['from', String(currentYear - 15)],
-        ['filter', 'statuscode:200'],
-        ['collapse', 'timestamp:8'],
-        ['collapse', 'digest'],
-    ])
-    const response = await fetch(`https://web.archive.org/cdx/search/cdx?${queryParams}`, {
+    const encodedUrl = encodeURIComponent(url)
+    const requestUrl = `https://web.archive.org/cdx/search/cdx?url=${encodedUrl}&matchType=prefix&output=json&fl=timestamp,original,digest&from=${currentYear - 15}&filter=statuscode:200&collapse=timestamp:8&collapse=digest`
+    const response = await fetch(requestUrl, {
         headers: {
-            'Accept': 'application/json',
+            'User-Agent': FETCH_USER_AGENT,
         },
     })
 

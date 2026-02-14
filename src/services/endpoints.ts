@@ -65,6 +65,11 @@ app.post('/feed', async (c) => {
             feedGuid: existingFeedSource.referenced_feed,
         } satisfies RefreshFeedTask)
 
+        await queue.send({
+            type: 'plan-feed-archives',
+            feedGuid: existingFeedSource.referenced_feed,
+        } satisfies PlanFeedArchivesTask)
+
         return new Response(null, {status: 202, statusText: 'Feed already exists, refreshing feed...'})
     }
 
