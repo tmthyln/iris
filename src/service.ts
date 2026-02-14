@@ -1,6 +1,6 @@
 import { app } from './services/endpoints'
 import {FeedProcessingTask, RefreshFeedTask} from "./services/types";
-import {refreshFeed} from "./services/flows";
+import {refreshFeed, planFeedArchives, fetchArchiveSnapshot} from "./services/flows";
 import {getFeeds} from "./services/crud";
 export {ItemQueue} from "./services/queue";
 
@@ -17,9 +17,13 @@ export default {
                     console.log('Received request to refresh feed')
                     await refreshFeed(task.feedGuid, env)
                     break
-                case 'load-feed-source-archives':
-                    console.log('Received request to load archives for feed source')
-                    // TODO load archives for feed source
+                case 'plan-feed-archives':
+                    console.log('Received request to plan archives for feed')
+                    await planFeedArchives(task.feedGuid, env)
+                    break
+                case 'fetch-archive-snapshot':
+                    console.log('Received request to fetch archive snapshot')
+                    await fetchArchiveSnapshot(task, env)
                     break
             }
 

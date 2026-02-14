@@ -19,7 +19,7 @@ import {
     getFeedItems,
     createFeedFile
 } from './crud'
-import type { RefreshFeedTask, LoadFeedSourceArchivesTask } from "./types";
+import type { RefreshFeedTask, PlanFeedArchivesTask } from "./types";
 import {fetchRssFile, parseRssText} from "./utils/files";
 import {getQueue} from "./queue";
 import {refreshFeed} from "./flows";
@@ -77,11 +77,6 @@ app.post('/feed', async (c) => {
         const existingFeed = await ServerFeed.get(db, existingFeedFile.referenced_feed) as ServerFeed
         const newFeedSource = createFeedSource(existingFeed, channel, fetchResult)
         await newFeedSource.persistTo(db)
-
-        queue.send({
-            type: 'load-feed-source-archives',
-            feedSourceUrl: metadata.requestUrl,
-        } satisfies LoadFeedSourceArchivesTask)
     }
 
     // resolve feed
@@ -102,9 +97,9 @@ app.post('/feed', async (c) => {
     ))
 
     await queue.send({
-        type: 'load-feed-source-archives',
-        feedSourceUrl: feedSource.feed_url,
-    } satisfies LoadFeedSourceArchivesTask)
+        type: 'plan-feed-archives',
+        feedGuid: feed.guid,
+    } satisfies PlanFeedArchivesTask)
 
     return new Response(null, {status: 200, statusText: 'Feed loaded.'})
 })

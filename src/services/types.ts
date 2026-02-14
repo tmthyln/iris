@@ -4,12 +4,20 @@ export interface RefreshFeedTask {
     readonly feedGuid: string
 }
 
-export interface LoadFeedSourceArchivesTask {
-    readonly type: 'load-feed-source-archives'
-    readonly feedSourceUrl: string
+export interface PlanFeedArchivesTask {
+    readonly type: 'plan-feed-archives'
+    readonly feedGuid: string
 }
 
-export type FeedProcessingTask = RefreshFeedTask | LoadFeedSourceArchivesTask
+export interface FetchArchiveSnapshotTask {
+    readonly type: 'fetch-archive-snapshot'
+    readonly feedSourceUrl: string
+    readonly feedGuid: string
+    readonly timestamp: number
+    readonly snapshotUrl: string
+}
+
+export type FeedProcessingTask = RefreshFeedTask | PlanFeedArchivesTask | FetchArchiveSnapshotTask
 
 export interface FetchSuccessFileResult {
     readonly status: 'success'

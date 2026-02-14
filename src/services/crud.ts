@@ -1,5 +1,5 @@
 import type {D1Database} from "@cloudflare/workers-types";
-import {RawFeed, RawFeedItem, RawFeedSource, ServerFeed, ServerFeedFile, ServerFeedItem, ServerFeedSource} from "./models";
+import {RawFeed, RawFeedFile, RawFeedItem, RawFeedSource, ServerFeed, ServerFeedFile, ServerFeedItem, ServerFeedSource} from "./models";
 import {ChannelData, ChannelItemData, sha256Encode} from "./utils/files";
 import {FetchSuccessFileResult} from "./types";
 
@@ -58,6 +58,37 @@ export async function getFeedItems(db: D1Database, options: GetFeedItemsOptions 
         .all<RawFeedItem>()
 
     return results.map(item => new ServerFeedItem(item))
+}
+
+export async function getFeedFilesForFeed(db: D1Database, feedGuid: string) {
+    const { results } = await db
+        .prepare(`
+            SELECT * FROM feed_file
+            WHERE referenced_feed = ?
+            ORDER BY fetched_at ASC
+        `)
+        .bind(feedGuid)
+        .all<RawFeedFile>()
+
+    return results.map(item => new ServerFeedFile(item))
+}
+
+export async function getFeedItemDateRange(db: D1Database, feedGuid: string) {
+    const result = await db
+        .prepare(`
+            SELECT MIN(date) AS earliest, MAX(date) AS latest
+            FROM feed_item
+            WHERE source_feed = ? AND date IS NOT NULL
+        `)
+        .bind(feedGuid)
+        .first<{ earliest: string | null, latest: string | null }>()
+
+    if (!result?.earliest || !result?.latest) return null
+
+    return {
+        earliest: new Date(result.earliest),
+        latest: new Date(result.latest),
+    }
 }
 
 export async function getBookmarkedFeedItems(db: D1Database) {
