@@ -150,17 +150,16 @@ function isBotChallengePage(html: string): boolean {
  */
 export async function fetchArchiveList(url: string) {
     const currentYear = new Date().getFullYear()
-    const queryParams = [
-        `url=${encodeURIComponent(url)}`,
-        `matchType=prefix`,
-        `output=json`,
-        `fl=timestamp,mimetype,statuscode,digest,length`,
-        `from=${currentYear - 15}`,
-        `filter=statuscode:200`,
-        `filter=!mimetype:text/html`,
-        `collapse=timestamp:8`,
-        `collapse=digest`,
-    ].join('&')
+    const queryParams = new URLSearchParams([
+        ['url', url],
+        ['matchType', 'prefix'],
+        ['output', 'json'],
+        ['fl', 'timestamp,original,digest'],
+        ['from', String(currentYear - 15)],
+        ['filter', 'statuscode:200'],
+        ['collapse', 'timestamp:8'],
+        ['collapse', 'digest'],
+    ])
     const response = await fetch(`https://web.archive.org/cdx/search/cdx?${queryParams}`, {
         headers: {
             'Accept': 'application/json',
@@ -168,17 +167,19 @@ export async function fetchArchiveList(url: string) {
     })
 
     if (response.ok) {
-        const data = await response.json()
-        return data.map(row => ({
+        const data = await response.json() as [string, string, string][]
+        return data.slice(1).map(row => ({
             timestamp: parseInt(row[0]),
-            mimetype: row[1],
-            statuscode: parseInt(row[2]),
-            digest: row[3],
-            length: parseInt(row[4]),
+            original: row[1],
+            digest: row[2],
         }))
     } else {
         return []
     }
+}
+
+export function waybackSnapshotUrl(timestamp: number, original: string) {
+    return `https://web.archive.org/web/${timestamp}id_/${original}`
 }
 
 /******************************************************************************
