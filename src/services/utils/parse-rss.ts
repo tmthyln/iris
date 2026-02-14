@@ -187,12 +187,53 @@ function getMultikey(mapping, keyString: string) {
  *****************************************************************************/
 
 if (import.meta.vitest) {
-    const {it, expect} = import.meta.vitest
+    const {it, expect, describe} = import.meta.vitest
 
-    it('coalesce with simple mapping', () => {
-        expect(coalesce({a: 1, b: 2, c: 3}, 'a')).toBe(1)
-        expect(coalesce({a: 1, b: 2, c: 3}, 'a', 'b')).toBe(1)
-        expect(coalesce({a: 1, b: 2, c: 3}, 'b')).toBe(2)
-        expect(coalesce({a: 1, b: 2, c: 3}, 'b', 'a', 'c', 'nonexistent')).toBe(2)
+    describe('coalesce', () => {
+        it('returns first matching key value', () => {
+            expect(coalesce({a: 1, b: 2, c: 3}, 'a')).toBe(1)
+            expect(coalesce({a: 1, b: 2, c: 3}, 'a', 'b')).toBe(1)
+            expect(coalesce({a: 1, b: 2, c: 3}, 'b')).toBe(2)
+            expect(coalesce({a: 1, b: 2, c: 3}, 'b', 'a', 'c', 'nonexistent')).toBe(2)
+        })
+
+        it('returns null when no keys match', () => {
+            expect(coalesce({a: 1}, 'x', 'y')).toBeNull()
+            expect(coalesce({}, 'a')).toBeNull()
+        })
+
+        it('skips null, undefined, false, and empty string values', () => {
+            expect(coalesce({a: null, b: 'real'}, 'a', 'b')).toBe('real')
+            expect(coalesce({a: undefined, b: 42}, 'a', 'b')).toBe(42)
+            expect(coalesce({a: false, b: 'yes'}, 'a', 'b')).toBe('yes')
+            expect(coalesce({a: '', b: 'nonempty'}, 'a', 'b')).toBe('nonempty')
+        })
+
+        it('resolves dotted keys for nested objects', () => {
+            expect(coalesce({image: {url: 'pic.jpg'}}, 'image.url')).toBe('pic.jpg')
+            expect(coalesce({a: {b: {c: 'deep'}}}, 'a.b.c')).toBe('deep')
+        })
+
+        it('falls back through dotted keys', () => {
+            expect(coalesce({x: {}}, 'x.missing', 'x.also_missing')).toBeNull()
+            expect(coalesce({x: {a: 1}}, 'x.missing', 'x.a')).toBe(1)
+        })
+
+        it('extracts #text from objects (XML text nodes)', () => {
+            expect(coalesce({guid: {'#text': 'abc', '@_isPermaLink': 'false'}}, 'guid')).toBe('abc')
+        })
+
+        it('traverses into arrays', () => {
+            const data = {link: [{href: 'first'}, {href: 'second'}]}
+            expect(coalesce(data, 'link.href')).toBe('first')
+        })
+
+        it('handles XML attribute keys', () => {
+            expect(coalesce({'itunes:image': {'@_href': 'img.png'}}, 'itunes:image.@_href')).toBe('img.png')
+        })
+
+        it('returns 0 as a valid value (truthy check does not skip 0)', () => {
+            expect(coalesce({episode: 0}, 'episode')).toBe(0)
+        })
     })
 }
