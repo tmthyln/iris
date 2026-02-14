@@ -13,7 +13,7 @@ export default defineConfig({
     },
     plugins: [
         vue(),
-        cloudflare(),
+        !process.env.VITEST && cloudflare(),
         vueDevTools(),
         vitePWA({
             registerType: 'autoUpdate',

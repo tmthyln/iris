@@ -75,10 +75,10 @@ export async function getBookmarkedFeedItems(db: D1Database) {
  * CUD (modifying queries)
  *****************************************************************************/
 
-export function createFeed(channelData: ChannelData, fetchResult: FetchSuccessFileResult) {
+export function createFeed(channelData: ChannelData, fetchResult: FetchSuccessFileResult, inputUrl: string) {
     return new ServerFeed({
         guid: channelData.guid,
-        input_url: fetchResult.metadata.inputUrl,
+        input_url: inputUrl,
         source_url: channelData.source_url,
         title: channelData.title,
         alias: '',

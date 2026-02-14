@@ -16,7 +16,6 @@ export interface FetchSuccessFileResult {
     readonly content: string
     readonly metadata: {
         readonly timestamp: string
-        readonly inputUrl: string
         readonly requestUrl: string
         readonly sha256Hash: string
     }
@@ -25,9 +24,7 @@ export interface FetchSuccessFileResult {
 export interface FetchFailureFileResult {
     readonly status: 'error'
     readonly content: null
-    readonly metadata: {
-        readonly inputUrl: string
-    }
+    readonly reason: string
 }
 
 export type FetchFileResult = FetchSuccessFileResult | FetchFailureFileResult

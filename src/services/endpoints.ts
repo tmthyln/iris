@@ -44,10 +44,18 @@ app.post('/feed', async (c) => {
 
     // fetch live content from input url
     const fetchResult = await fetchRssFile(inputUrl)
-    const {content, status, metadata} = fetchResult
-    if (status === 'error') {
-        return new Response(null, {status: 502, statusText: 'Provided URL was not accessible.'})
+    if (fetchResult.status === 'error') {
+        const messages: Record<string, string> = {
+            'blocked-by-bot-protection': 'URL is protected by bot detection. Try providing the direct RSS feed URL instead.',
+            'no-rss-link-found': 'No RSS feed found at the provided URL.',
+        }
+        const message = messages[fetchResult.reason] ?? 'Provided URL was not accessible.'
+        return new Response(JSON.stringify({error: message}), {
+            status: 502,
+            headers: {'Content-Type': 'application/json'},
+        })
     }
+    const {content, metadata} = fetchResult
 
     // look up feed source by URL,
     const existingFeedSource = await ServerFeedSource.get(db, metadata.requestUrl)
@@ -78,7 +86,7 @@ app.post('/feed', async (c) => {
 
     // resolve feed
     const feed = await ServerFeed.get(db, channel.guid)
-        ?? await createFeed(channel, fetchResult).persistTo(db)
+        ?? await createFeed(channel, fetchResult, inputUrl).persistTo(db)
 
     // new feed source
     const feedSource = createFeedSource(feed, channel, fetchResult)
