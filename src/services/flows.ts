@@ -68,11 +68,11 @@ export async function planFeedArchives(feedGuid: string, env: Env) {
         for (let i = 1; i < timestamps.length; i++) {
             totalGap += timestamps[i] - timestamps[i - 1]
         }
-        intervalMs = totalGap / (timestamps.length - 1)
+        intervalMs = totalGap / (timestamps.length - 1) / 2
     } else {
         const dateRange = await getFeedItemDateRange(db, feedGuid)
         intervalMs = dateRange
-            ? dateRange.latest.getTime() - dateRange.earliest.getTime()
+            ? (dateRange.latest.getTime() - dateRange.earliest.getTime()) / 2
             : THIRTY_DAYS_MS
     }
 
