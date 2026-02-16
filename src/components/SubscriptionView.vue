@@ -142,9 +142,10 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
 <template>
   <div class="section">
 
+    <template v-if="feed">
     <h1 class="title is-1">
-      <component :is="feed?.link ? 'a' : 'span'" :href="feed?.link">
-        {{ feed?.title ?? 'Loading subscription...' }}
+      <component :is="feed.link ? 'a' : 'span'" :href="feed.link">
+        {{ feed.title }}
       </component>
     </h1>
     <small class="subtitle">{{ useUnescapedHTML(feed.author).value }}</small>
@@ -250,6 +251,8 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
         <span v-if="isFetching" class="has-text-grey">Loading...</span>
       </div>
     </section>
+    </template>
+    <h1 v-else class="title is-1">Loading subscription...</h1>
   </div>
 </template>
 
