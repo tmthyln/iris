@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
-import {computed, ref, watch} from "vue";
+import {computed, nextTick, ref, watch} from "vue";
 import {useIntersectionObserver, useSessionStorage, useTitle} from "@vueuse/core";
 import {useUnescapedHTML} from "../htmlproc.ts";
 import type {FeedItem} from "../types.ts";
@@ -12,7 +12,8 @@ const props = defineProps<{
 
 const feedStore = useFeedStore();
 const feed = computed(() => feedStore.getFeedById(props.guid))
-useTitle(computed(() => feed.value ? `${feed.value.title} — Iris` : 'Iris'))
+const displayName = computed(() => feed.value ? (feed.value.alias || feed.value.title) : '')
+useTitle(computed(() => feed.value ? `${displayName.value} — Iris` : 'Iris'))
 
 const showFinished = useSessionStorage('feedView:showFinished', false);
 const sortAscending = useSessionStorage('feedView:sortAscending', false);
@@ -75,6 +76,31 @@ async function removeCategory(category: string) {
     if (!feed.value) return
     await feedStore.updateFeedCategories(props.guid, feed.value.categories.filter(c => c !== category))
 }
+const editingAlias = ref(false)
+const aliasInput = ref('')
+const aliasInputEl = ref<HTMLInputElement>()
+
+async function startEditingAlias() {
+    aliasInput.value = feed.value?.alias || feed.value?.title || ''
+    editingAlias.value = true
+    await nextTick()
+    aliasInputEl.value?.select()
+}
+
+async function saveAlias() {
+    editingAlias.value = false
+    if (!feed.value) return
+    const newAlias = aliasInput.value.trim()
+    const effectiveAlias = newAlias === feed.value.title ? '' : newAlias
+    if (effectiveAlias !== feed.value.alias) {
+        await feedStore.updateFeedAlias(props.guid, effectiveAlias)
+    }
+}
+
+function cancelAlias() {
+    editingAlias.value = false
+}
+
 const menuOpen = ref(false)
 const menuLoading = ref(false)
 
@@ -144,9 +170,28 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
 
     <template v-if="feed">
     <h1 class="title is-1">
-      <component :is="feed.link ? 'a' : 'span'" :href="feed.link">
-        {{ feed.title }}
-      </component>
+      <template v-if="editingAlias">
+        <input
+            ref="aliasInputEl"
+            v-model="aliasInput"
+            class="input is-large"
+            type="text"
+            placeholder="Feed name"
+            @keydown.enter="saveAlias"
+            @keydown.escape="cancelAlias"
+            @blur="saveAlias">
+      </template>
+      <template v-else>
+        <component :is="feed.link ? 'a' : 'span'" :href="feed.link">
+          {{ displayName }}
+        </component>
+        <span
+            class="icon edit-alias-icon ml-2"
+            title="Edit feed name"
+            @click="startEditingAlias">
+          <span class="material-symbols-outlined">edit</span>
+        </span>
+      </template>
     </h1>
     <small class="subtitle">{{ useUnescapedHTML(feed.author).value }}</small>
 
@@ -285,6 +330,17 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
 .category-suggestion:hover,
 .category-suggestion.is-active {
   background: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), var(--bulma-background-l));
+}
+
+.edit-alias-icon {
+  cursor: pointer;
+  opacity: 0.3;
+  font-size: 0.5em;
+  vertical-align: middle;
+}
+
+.edit-alias-icon:hover {
+  opacity: 0.7;
 }
 
 .menu-backdrop {

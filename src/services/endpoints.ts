@@ -121,7 +121,7 @@ app.patch('/feed/:guid', async (c) => {
     const db = c.env.DB
 
     for (const key of Object.keys(data)) {
-        if (!['categories'].includes(key)) {
+        if (!['categories', 'alias'].includes(key)) {
             return Response.json(null, {status: 422, statusText: `Cannot update the feed field: ${key}`})
         }
     }
@@ -133,6 +133,9 @@ app.patch('/feed/:guid', async (c) => {
             return Response.json(null, {status: 422, statusText: 'Category names cannot contain commas'})
         }
         updateData.categories = categories.join(',')
+    }
+    if ('alias' in data) {
+        updateData.alias = String(data.alias ?? '')
     }
 
     await db

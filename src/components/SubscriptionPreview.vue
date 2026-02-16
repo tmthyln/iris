@@ -28,7 +28,7 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
         </div>
 
         <figcaption class="mt-2">
-          <div>{{ useUnescapedHTML(feed.title).value }}</div>
+          <div>{{ feed.alias || useUnescapedHTML(feed.title).value }}</div>
           <small>{{ useUnescapedHTML(feed.author).value }}</small>
         </figcaption>
 

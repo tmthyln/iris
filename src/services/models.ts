@@ -315,7 +315,7 @@ export class ServerFeed extends ServerEntity {
     constructor(data: RawFeed) {
         super('feed', {
             onConflict: 'update',
-            updateExcludeFields: ['guid', 'input_url', 'alias', 'active', 'categories'],
+            updateExcludeFields: ['guid', 'input_url', 'active', 'categories'],
         });
 
         this.guid = data.guid;

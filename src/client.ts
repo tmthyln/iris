@@ -54,7 +54,7 @@ export default {
 
         return null
     },
-    async modifyFeed(feedGuid: string, updateData: { categories?: string[] }) {
+    async modifyFeed(feedGuid: string, updateData: { categories?: string[], alias?: string }) {
         const response = await fetch(`/api/feed/${encodeURIComponent(feedGuid)}`, {
             method: 'PATCH',
             body: JSON.stringify(updateData),

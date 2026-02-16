@@ -78,6 +78,16 @@ export const useFeedStore = defineStore('feeds', {
                 feed.has_archives = true
             }
         },
+        async updateFeedAlias(guid: string, alias: string) {
+            const success = await client.modifyFeed(guid, {alias})
+            if (success) {
+                const feed = this.feeds.find(f => f.guid === guid)
+                if (feed) {
+                    feed.alias = alias
+                }
+            }
+            return success
+        },
         async updateFeedCategories(guid: string, categories: string[]) {
             const success = await client.modifyFeed(guid, {categories})
             if (success) {

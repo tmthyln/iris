@@ -28,7 +28,7 @@ onMounted(feedItemStore.loadBookmarkedItems)
           <router-link
               :to="{name: 'subscription', params: {guid: feed.guid}}"
               :class="{'has-text-grey': !feed.has_unread}">
-            {{ feed.title }}
+            {{ feed.alias || feed.title }}
           </router-link>
         </li>
       </ul>

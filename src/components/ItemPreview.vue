@@ -37,7 +37,7 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
           </router-link>
         </h3>
         <div class="subtitle">
-          From <router-link :to="{name: 'subscription', params: {guid: feed.guid}}"><em>{{ feed.title }}</em></router-link>
+          From <router-link :to="{name: 'subscription', params: {guid: feed.guid}}"><em>{{ feed.alias || feed.title }}</em></router-link>
         </div>
       </div>
     </div>
