@@ -29,7 +29,7 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
         <img :src="resolvedSrc" :alt="feed?.image_alt ?? undefined" @error="onImageError">
       </figure>
       <div class="is-inline-block">
-        <small>Posted {{ formattedPubDate }}</small>
+        <small :title="feedItem.date ? new Date(feedItem.date).toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'}) : ''">Posted {{ formattedPubDate }}</small>
 
         <h3 class="title is-3">
           <router-link :to="{name: 'item', params: {guid: feedItem.guid}}">

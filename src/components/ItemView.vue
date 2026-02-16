@@ -61,7 +61,7 @@ onMounted(fetchFeedItem)
       </span>
     </div>
 
-    <div class="mb-5">Published {{ useTimeAgo(feedItem?.date).value }}</div>
+    <div class="mb-5" :title="feedItem?.date ? new Date(feedItem.date).toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'}) : ''">Published {{ useTimeAgo(feedItem?.date).value }}</div>
 
     <AudioControls v-if="feedItem" :feed-item="feedItem"/>
 
