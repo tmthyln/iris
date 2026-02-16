@@ -18,6 +18,7 @@ export interface Feed {
     link: string
     categories: string[]
     has_unread: boolean
+    has_archives: boolean
 }
 
 export interface FeedItemPreview {

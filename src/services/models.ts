@@ -289,6 +289,7 @@ export interface RawFeed {
     link: string
     categories: string
     has_unread?: number | boolean
+    has_archives?: number | boolean
 }
 
 export class ServerFeed extends ServerEntity {
@@ -309,6 +310,7 @@ export class ServerFeed extends ServerEntity {
     link: string;
     categories: string[];
     has_unread: boolean;
+    has_archives: boolean;
 
     constructor(data: RawFeed) {
         super('feed', {
@@ -333,6 +335,7 @@ export class ServerFeed extends ServerEntity {
         this.link = data.link ?? ''
         this.categories = asStringList(data.categories)
         this.has_unread = asBoolean(data.has_unread ?? 0)
+        this.has_archives = asBoolean(data.has_archives ?? 0)
     }
 
     async persistTo(db: D1Database) {
@@ -368,7 +371,10 @@ export class ServerFeed extends ServerEntity {
     }
 
     static async get(db: D1Database, guid: string) {
-        const rawFeed = await db.prepare('SELECT * FROM feed WHERE guid = ?')
+        const rawFeed = await db.prepare(`
+            SELECT feed.*,
+                   EXISTS(SELECT 1 FROM feed_source WHERE referenced_feed = feed.guid AND archive = TRUE) AS has_archives
+            FROM feed WHERE guid = ?`)
             .bind(guid)
             .first<RawFeed>()
 
@@ -393,6 +399,7 @@ export class ClientFeed {
     link: string;
     categories: string[];
     has_unread: boolean;
+    has_archives: boolean;
 
     constructor(data: ServerFeed) {
         this.guid = data.guid
@@ -411,6 +418,7 @@ export class ClientFeed {
         this.link = data.link
         this.categories = data.categories
         this.has_unread = data.has_unread
+        this.has_archives = data.has_archives
     }
 }
 

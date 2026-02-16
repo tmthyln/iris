@@ -111,9 +111,9 @@ app.post('/feed', async (c) => {
 app.get('/feed/:guid', async (c) => {
     const feedGuid = c.req.param('guid')
 
-    const feedItem = await ServerFeed.get(c.env.DB, feedGuid)
+    const feed = await ServerFeed.get(c.env.DB, feedGuid)
 
-    return feedItem ? Response.json(new ClientFeed(feedItem)) : new Response(null, {status: 404, statusText: `No feed found with guid: ${feedGuid}`})
+    return feed ? Response.json(new ClientFeed(feed)) : new Response(null, {status: 404, statusText: `No feed found with guid: ${feedGuid}`})
 })
 app.patch('/feed/:guid', async (c) => {
     const data = await c.req.json()
@@ -305,6 +305,36 @@ app.delete('/queue', async (c) => {
 /******************************************************************************
  * Command endpoints
  *****************************************************************************/
+
+app.post('/command/refresh-feed/:guid', async (c) => {
+    const feedGuid = c.req.param('guid')
+    const db = c.env.DB
+
+    const feed = await ServerFeed.get(db, feedGuid)
+    if (!feed) return new Response(null, {status: 404, statusText: `No feed found with guid: ${feedGuid}`})
+
+    await c.env.FEED_PROCESSING_QUEUE.send({
+        type: 'refresh-feed',
+        feedGuid,
+    } satisfies RefreshFeedTask)
+
+    return new Response(null, {status: 202})
+})
+
+app.post('/command/plan-feed-archives/:guid', async (c) => {
+    const feedGuid = c.req.param('guid')
+    const db = c.env.DB
+
+    const feed = await ServerFeed.get(db, feedGuid)
+    if (!feed) return new Response(null, {status: 404, statusText: `No feed found with guid: ${feedGuid}`})
+
+    await c.env.FEED_PROCESSING_QUEUE.send({
+        type: 'plan-feed-archives',
+        feedGuid,
+    } satisfies PlanFeedArchivesTask)
+
+    return new Response(null, {status: 202})
+})
 
 app.post('/command/refresh-all-feeds', async (c) => {
     const feeds = await getFeeds(c.env.DB)

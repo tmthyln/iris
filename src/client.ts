@@ -117,6 +117,18 @@ export default {
         }
         return null
     },
+    async refreshFeed(feedGuid: string) {
+        const response = await fetch(`/api/command/refresh-feed/${encodeURIComponent(feedGuid)}`, {
+            method: 'POST',
+        })
+        return response.ok
+    },
+    async planFeedArchives(feedGuid: string) {
+        const response = await fetch(`/api/command/plan-feed-archives/${encodeURIComponent(feedGuid)}`, {
+            method: 'POST',
+        })
+        return response.ok
+    },
     async getQueue(): Promise<FeedItemPreview[] | null> {
         const response = await fetch('/api/queue')
         if (response.ok) {

@@ -11,7 +11,8 @@ export async function getFeeds(db: D1Database) {
     const { results } = await db
         .prepare(`
             SELECT feed.*,
-                   MAX(CASE WHEN feed_item.finished = FALSE THEN 1 ELSE 0 END) AS has_unread
+                   MAX(CASE WHEN feed_item.finished = FALSE THEN 1 ELSE 0 END) AS has_unread,
+                   EXISTS(SELECT 1 FROM feed_source WHERE referenced_feed = feed.guid AND archive = TRUE) AS has_archives
             FROM feed
             LEFT JOIN feed_item ON feed_item.source_feed = feed.guid
             WHERE feed.active = TRUE

@@ -75,6 +75,27 @@ async function removeCategory(category: string) {
     if (!feed.value) return
     await feedStore.updateFeedCategories(props.guid, feed.value.categories.filter(c => c !== category))
 }
+const menuOpen = ref(false)
+const menuLoading = ref(false)
+
+function closeMenu() {
+    menuOpen.value = false
+}
+
+async function handleRefreshFeed() {
+    menuLoading.value = true
+    await feedStore.refreshFeed(props.guid)
+    menuLoading.value = false
+    menuOpen.value = false
+}
+
+async function handleFetchArchives() {
+    menuLoading.value = true
+    await feedStore.planFeedArchives(props.guid)
+    menuLoading.value = false
+    menuOpen.value = false
+}
+
 const PAGE_SIZE = 20
 const feedItems = ref<FeedItem[]>([])
 const isFetching = ref(false)
@@ -183,12 +204,36 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
           <span class="material-symbols-outlined">swap_vert</span>
         </span>
         <span
-            class="button icon py-4 is-outlined"
+            class="button icon py-4 mr-2 is-outlined"
             :class="{'is-primary': showFinished, 'is-info': !showFinished, 'is-loading': isFetching}"
             :title="showFinished ? 'Hide finished items' : 'Show finished items'"
             @click="showFinished = !showFinished">
           <span class="material-symbols-outlined">{{ showFinished ? 'check_circle' : 'done' }}</span>
         </span>
+        <div class="dropdown is-right" :class="{'is-active': menuOpen}">
+          <div class="dropdown-trigger">
+            <span
+                class="button icon py-4 is-outlined is-info"
+                :class="{'is-loading': menuLoading}"
+                title="Feed actions"
+                @click="menuOpen = !menuOpen">
+              <span class="material-symbols-outlined">more_horiz</span>
+            </span>
+          </div>
+          <div class="dropdown-menu" role="menu">
+            <div class="dropdown-content">
+              <a class="dropdown-item" @click="handleRefreshFeed">
+                <span class="material-symbols-outlined mr-2" style="vertical-align: middle; font-size: 1.2em;">refresh</span>
+                Refresh Feed
+              </a>
+              <a v-if="!feed?.has_archives" class="dropdown-item" @click="handleFetchArchives">
+                <span class="material-symbols-outlined mr-2" style="vertical-align: middle; font-size: 1.2em;">archive</span>
+                Fetch Archives
+              </a>
+            </div>
+          </div>
+        </div>
+        <div v-if="menuOpen" class="menu-backdrop" @click="closeMenu"></div>
       </div>
 
 
@@ -237,5 +282,14 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
 .category-suggestion:hover,
 .category-suggestion.is-active {
   background: hsl(var(--bulma-scheme-h), var(--bulma-scheme-s), var(--bulma-background-l));
+}
+
+.menu-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
 }
 </style>

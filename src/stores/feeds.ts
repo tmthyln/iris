@@ -68,6 +68,16 @@ export const useFeedStore = defineStore('feeds', {
         getFeedById(guid: string) {
             return this.feeds.find(feed => feed.guid === guid) ?? null;
         },
+        async refreshFeed(guid: string) {
+            await client.refreshFeed(guid)
+        },
+        async planFeedArchives(guid: string) {
+            await client.planFeedArchives(guid)
+            const feed = this.feeds.find(f => f.guid === guid)
+            if (feed) {
+                feed.has_archives = true
+            }
+        },
         async updateFeedCategories(guid: string, categories: string[]) {
             const success = await client.modifyFeed(guid, {categories})
             if (success) {
