@@ -36,7 +36,7 @@ export async function refreshFeed(feedGuid: string, env: Env) {
         // TODO update feed metadata, description, etc from channel
 
         // non-duplicate feed items
-        await Promise.all(items.map(async item =>
+        await Promise.allSettled(items.map(async item =>
             await createFeedItem(feed, item).persistTo(db)
         ))
     }
@@ -217,7 +217,7 @@ export async function fetchArchiveSnapshot(task: FetchArchiveSnapshotTask, env: 
     await feedFile.persistTo(db, cache_bucket)
 
     // persist feed items (duplicates handled by ON CONFLICT)
-    await Promise.all(parsed.items.map(async item =>
+    await Promise.allSettled(parsed.items.map(async item =>
         await createFeedItem(feed, item).defer().persistTo(db)
     ))
 }

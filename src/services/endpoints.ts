@@ -97,7 +97,7 @@ app.post('/feed', async (c) => {
     await feedFile.persistTo(db, cache_bucket)
 
     // non-duplicate feed items
-    await Promise.all(items.map(async item =>
+    await Promise.allSettled(items.map(async item =>
         await createFeedItem(feed, item).persistTo(db)
     ))
 
