@@ -21,16 +21,28 @@ onMounted(() => {
 const sidebarOpen = ref(false)
 const router = useRouter()
 router.afterEach(() => { sidebarOpen.value = false })
+
+function handleExternalLinks(e: MouseEvent) {
+    const anchor = (e.target as HTMLElement).closest('a')
+    if (!anchor || !anchor.href) return
+    const url = new URL(anchor.href, location.href)
+    if (url.origin !== location.origin) {
+        e.preventDefault()
+        window.open(anchor.href, '_blank', 'noopener')
+    }
+}
 </script>
 
 <template>
-  <NavBar v-model:sidebar-open="sidebarOpen"/>
-  <div class="sidebar-backdrop is-hidden-tablet" v-if="sidebarOpen" @click="sidebarOpen = false"/>
-  <div class="columns">
-    <SidePanel class="column is-one-quarter is-narrow ml-4 mt-5 sidebar" :class="{'is-hidden-mobile': !sidebarOpen}"/>
-    <RouterView class="column is-three-quarters container"/>
+  <div @click="handleExternalLinks">
+    <NavBar v-model:sidebar-open="sidebarOpen"/>
+    <div class="sidebar-backdrop is-hidden-tablet" v-if="sidebarOpen" @click="sidebarOpen = false"/>
+    <div class="columns">
+      <SidePanel class="column is-one-quarter is-narrow ml-4 mt-5 sidebar" :class="{'is-hidden-mobile': !sidebarOpen}"/>
+      <RouterView class="column is-three-quarters container"/>
+    </div>
+    <AudioPlayer/>
   </div>
-  <AudioPlayer/>
 </template>
 
 <style scoped>
