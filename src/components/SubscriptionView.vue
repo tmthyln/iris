@@ -124,6 +124,9 @@ async function handleFetchArchives() {
 
 const PAGE_SIZE = 20
 const feedItems = ref<FeedItem[]>([])
+const visibleFeedItems = computed(() =>
+    showFinished.value ? feedItems.value : feedItems.value.filter(item => !item.finished)
+)
 const isFetching = ref(false)
 const hasMore = ref(true)
 
@@ -284,10 +287,10 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
 
 
       <ItemPreview
-          v-for="feedItem in feedItems" :key="feedItem.guid"
+          v-for="feedItem in visibleFeedItems" :key="feedItem.guid"
           :feed-item="feedItem"
           class="mb-6"/>
-      <div v-if="!hasMore && !isFetching && feedItems.length === 0">
+      <div v-if="!hasMore && !isFetching && visibleFeedItems.length === 0">
         {{ showFinished
             ? `This feed doesn't have any ${feed?.type === 'podcast' ? 'episodes' : 'posts'} yet.`
             : `No unseen ${feed?.type === 'podcast' ? 'episodes' : 'posts'}. You're all caught up!` }}
