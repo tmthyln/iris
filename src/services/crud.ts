@@ -10,8 +10,8 @@ export interface SearchFeedItemsOptions {
 
 export async function searchFeedItems(db: D1Database, query: string, options: SearchFeedItemsOptions = {}) {
     const { limit = 20, offset = 0 } = options
-    // Wrap in double quotes for FTS5 phrase/substring search; escape embedded quotes
-    const ftsQuery = '"' + query.replace(/"/g, '""') + '"'
+    // Restrict to relevant columns; wrap in quotes for phrase/substring search
+    const ftsQuery = '{title alias description author content} : "' + query.replace(/"/g, '""') + '"'
 
     const { results } = await db
         .prepare(`
