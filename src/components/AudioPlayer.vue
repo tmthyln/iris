@@ -108,10 +108,8 @@ useIntervalFn(() => {
 watch(ended, async () => {
     if (ended.value && currentItem.value) {
         await feedItemStore.updateItemProgress(currentItem.value, 1)
-        if (upcomingItems.value.length > 0) {
-            autoPlayNext.value = true
-            await queueStore.removeItem(currentItem.value)
-        }
+        autoPlayNext.value = upcomingItems.value.length > 0
+        await queueStore.removeItem(currentItem.value)
     }
 })
 
