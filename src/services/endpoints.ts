@@ -17,7 +17,8 @@ import {
     getFeeds,
     getBookmarkedFeedItems,
     getFeedItems,
-    createFeedFile
+    createFeedFile,
+    searchFeedItems
 } from './crud'
 import type { RefreshFeedTask, PlanFeedArchivesTask } from "./types";
 import {fetchRssFile, parseRssText} from "./utils/files";
@@ -25,6 +26,24 @@ import {getQueue} from "./queue";
 import {refreshFeed} from "./flows";
 
 export const app = new Hono<{Bindings: Env}>().basePath('/api');
+
+/******************************************************************************
+ * Search endpoint
+ *****************************************************************************/
+
+app.get('/search', async (c) => {
+    const query = c.req.query('q')?.trim() ?? ''
+    if (query.length < 3) {
+        return Response.json([])
+    }
+
+    const limit = parseInt(c.req.query('limit') ?? '20')
+    const offset = parseInt(c.req.query('offset') ?? '0')
+
+    const results = await searchFeedItems(c.env.DB, query, { limit, offset })
+
+    return Response.json(results.map(item => new ClientFeedItemPreview(item)))
+})
 
 /******************************************************************************
  * Feed endpoints

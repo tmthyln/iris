@@ -3,6 +3,31 @@ import {RawFeed, RawFeedFile, RawFeedItem, RawFeedSource, ServerFeed, ServerFeed
 import {ChannelData, ChannelItemData, sha256Encode} from "./utils/files";
 import {FetchSuccessFileResult} from "./types";
 
+export interface SearchFeedItemsOptions {
+    limit?: number
+    offset?: number
+}
+
+export async function searchFeedItems(db: D1Database, query: string, options: SearchFeedItemsOptions = {}) {
+    const { limit = 20, offset = 0 } = options
+    // Wrap in double quotes for FTS5 phrase/substring search; escape embedded quotes
+    const ftsQuery = '"' + query.replace(/"/g, '""') + '"'
+
+    const { results } = await db
+        .prepare(`
+            SELECT fi.*
+            FROM text_search
+            JOIN feed_item fi ON text_search.guid = fi.guid
+            WHERE text_search MATCH ?
+            ORDER BY rank
+            LIMIT ? OFFSET ?
+        `)
+        .bind(ftsQuery, limit, offset)
+        .all<RawFeedItem>()
+
+    return results.map(item => new ServerFeedItem(item))
+}
+
 /******************************************************************************
  * Read-only queries
  *****************************************************************************/

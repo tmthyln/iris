@@ -1,5 +1,10 @@
 import {FeedItem, FeedItemPreview} from "./types.ts";
 
+interface SearchOptions {
+    limit?: number
+    offset?: number
+}
+
 interface GetFeedItemsOptionsBase {
     offset?: number
     limit?: number
@@ -122,6 +127,19 @@ export default {
             method: 'POST',
         })
         return response.ok
+    },
+    async searchFeedItems(query: string, options: SearchOptions = {}): Promise<FeedItemPreview[] | null> {
+        const { limit, offset = 0 } = options
+        const queryParams = new URLSearchParams()
+        queryParams.set('q', query)
+        queryParams.set('offset', String(offset))
+        limit && queryParams.set('limit', String(limit))
+
+        const response = await fetch(`/api/search?${queryParams}`)
+        if (response.ok) {
+            return await response.json()
+        }
+        return null
     },
     async planFeedArchives(feedGuid: string) {
         const response = await fetch(`/api/command/plan-feed-archives/${encodeURIComponent(feedGuid)}`, {
