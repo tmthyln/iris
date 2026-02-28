@@ -33,7 +33,7 @@
     "@vitejs/plugin-vue": "^6.0.4",
     "eslint": "~9.27.0",
     "eslint-plugin-vue": "^10.7.0",
-    "fast-xml-parser": "^5.2.3",
+    "fast-xml-parser": "^5.3.8",
     "globals": "^17.3.0",
     "hono": "^4.11.10",
     "sass": "^1.85.0",
