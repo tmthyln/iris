@@ -1,6 +1,18 @@
 import {defineStore} from "pinia";
 import {FeedItemPreview} from "../types.ts";
 import client from "../client.ts";
+import {useDownloadStore} from "./downloads.ts";
+
+function ensureDownloaded(items: FeedItemPreview[]) {
+    const downloadStore = useDownloadStore()
+    for (const item of items) {
+        if (!item.enclosure_url) continue
+        const status = downloadStore.getStatus(item.guid)
+        if (status === 'idle' || (typeof status === 'object' && status.state === 'error')) {
+            downloadStore.downloadItem(item)
+        }
+    }
+}
 
 export const useQueueStore = defineStore('queue', {
     state() {
@@ -17,6 +29,7 @@ export const useQueueStore = defineStore('queue', {
             const items = await client.getQueue()
             if (items) {
                 this.items = items
+                ensureDownloaded(items)
             }
         },
         itemPlaying(item: FeedItemPreview) {
@@ -32,6 +45,7 @@ export const useQueueStore = defineStore('queue', {
             const items = await client.queueFeedItem(item.guid, position)
             if (items) {
                 this.items = items
+                ensureDownloaded([item])
             }
             return items !== null
         },

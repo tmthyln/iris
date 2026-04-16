@@ -107,9 +107,13 @@ useIntervalFn(() => {
 }, 5000)
 watch(ended, async () => {
     if (ended.value && currentItem.value) {
+        const completedGuid = currentItem.value.guid
         await feedItemStore.updateItemProgress(currentItem.value, 1)
         autoPlayNext.value = upcomingItems.value.length > 0
         await queueStore.removeItem(currentItem.value)
+        if (downloadStore.isDownloaded(completedGuid)) {
+            downloadStore.scheduleDelete(completedGuid, 60_000)
+        }
     }
 })
 

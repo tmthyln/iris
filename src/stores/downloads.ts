@@ -19,19 +19,30 @@ interface DownloadRecord {
     downloaded_at: string
 }
 
+interface DeletionRecord {
+    guid: string
+    delete_after: string  // ISO timestamp
+}
+
 /* ── IndexedDB helpers ── */
 
 const DB_NAME = 'iris-downloads'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE_NAME = 'audio'
+const DELETION_STORE_NAME = 'pending_deletions'
 
 function openDb(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION)
         request.onupgradeneeded = () => {
             const db = request.result
+            // v1: audio blob cache
             if (!db.objectStoreNames.contains(STORE_NAME)) {
                 db.createObjectStore(STORE_NAME, {keyPath: 'guid'})
+            }
+            // v2: persistent deletion schedule for post-playback cleanup
+            if (!db.objectStoreNames.contains(DELETION_STORE_NAME)) {
+                db.createObjectStore(DELETION_STORE_NAME, {keyPath: 'guid'})
             }
         }
         request.onsuccess = () => resolve(request.result)
@@ -87,6 +98,33 @@ function dbGetAllMeta(db: IDBDatabase): Promise<{ guid: string; size: number; do
     })
 }
 
+function dbPutDeletion(db: IDBDatabase, record: DeletionRecord): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(DELETION_STORE_NAME, 'readwrite')
+        tx.objectStore(DELETION_STORE_NAME).put(record)
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+    })
+}
+
+function dbDeleteDeletion(db: IDBDatabase, guid: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(DELETION_STORE_NAME, 'readwrite')
+        tx.objectStore(DELETION_STORE_NAME).delete(guid)
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+    })
+}
+
+function dbGetAllDeletions(db: IDBDatabase): Promise<DeletionRecord[]> {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(DELETION_STORE_NAME, 'readonly')
+        const request = tx.objectStore(DELETION_STORE_NAME).getAll()
+        request.onsuccess = () => resolve(request.result as DeletionRecord[])
+        request.onerror = () => reject(request.error)
+    })
+}
+
 /* ── Pinia Store ── */
 
 export const useDownloadStore = defineStore('downloads', () => {
@@ -107,6 +145,17 @@ export const useDownloadStore = defineStore('downloads', () => {
             }
             totalStorageUsed.value = total
             navigator.storage?.persist?.()
+
+            // Process any deletions that were scheduled before the page was closed
+            const pendingDeletions = await dbGetAllDeletions(db)
+            for (const record of pendingDeletions) {
+                const remainingMs = new Date(record.delete_after).getTime() - Date.now()
+                if (remainingMs <= 0) {
+                    deleteDownload(record.guid)
+                } else {
+                    setTimeout(() => deleteDownload(record.guid), remainingMs)
+                }
+            }
         } catch (_err) {
             console.error('Failed to initialize download store:', _err)
         }
@@ -195,6 +244,7 @@ export const useDownloadStore = defineStore('downloads', () => {
                 totalStorageUsed.value -= status.size
             }
             await dbDelete(db, guid)
+            await dbDeleteDeletion(db, guid)
             if (blobUrls[guid]) {
                 URL.revokeObjectURL(blobUrls[guid])
                 delete blobUrls[guid]
@@ -203,6 +253,13 @@ export const useDownloadStore = defineStore('downloads', () => {
         } catch (_err) {
             console.error('Failed to delete download:', _err)
         }
+    }
+
+    async function scheduleDelete(guid: string, delayMs: number) {
+        if (!db) return
+        const deleteAfter = new Date(Date.now() + delayMs).toISOString()
+        await dbPutDeletion(db, {guid, delete_after: deleteAfter})
+        setTimeout(() => deleteDownload(guid), delayMs)
     }
 
     async function getLocalUrl(guid: string): Promise<string | null> {
@@ -232,6 +289,7 @@ export const useDownloadStore = defineStore('downloads', () => {
         downloadItem,
         cancelDownload,
         deleteDownload,
+        scheduleDelete,
         getLocalUrl,
         isDownloaded,
         getStatus,
