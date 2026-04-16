@@ -18,7 +18,8 @@ import {
     getBookmarkedFeedItems,
     getFeedItems,
     createFeedFile,
-    searchFeedItems
+    searchFeedItems,
+    getAdjacentFeedItems,
 } from './crud'
 import type { RefreshFeedTask, PlanFeedArchivesTask } from "./types";
 import {fetchRssFile, parseRssText} from "./utils/files";
@@ -215,6 +216,15 @@ app.get('/feeditem/:guid', async (c) => {
 
     return feedItem ? Response.json(new ClientFeedItem(feedItem)) : new Response(null, {status: 404, statusText: `No feed item found with guid: ${guid}`})
 })
+app.get('/feeditem/:guid/adjacent', async (c) => {
+    const guid = c.req.param('guid')
+    const {prev, next} = await getAdjacentFeedItems(c.env.DB, guid)
+    return Response.json({
+        prev: prev ? new ClientFeedItemPreview(prev) : null,
+        next: next ? new ClientFeedItemPreview(next) : null,
+    })
+})
+
 app.patch('/feeditem/:guid', async (c) => {
     const data = await c.req.json()
     const feedItemGuid = c.req.param('guid')

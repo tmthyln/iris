@@ -1,4 +1,4 @@
-import {FeedItem, FeedItemPreview} from "./types.ts";
+import {AdjacentFeedItems, FeedItem, FeedItemPreview} from "./types.ts";
 
 interface SearchOptions {
     limit?: number
@@ -37,6 +37,13 @@ export default {
             return data
         }
 
+        return null
+    },
+    async getAdjacentFeedItems(itemGuid: string): Promise<AdjacentFeedItems | null> {
+        const response = await fetch(`/api/feeditem/${encodeURIComponent(itemGuid)}/adjacent`)
+        if (response.ok) {
+            return await response.json()
+        }
         return null
     },
     async getFeedItems(options: GetFeedItemsOptions = {}) {

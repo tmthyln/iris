@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import {computed, onMounted, ref, watch} from "vue";
 import {useTimeAgo, useTitle} from "@vueuse/core";
+import {useRouter} from "vue-router";
 import {useFeedStore} from "../stores/feeds.ts";
-import {Feed, FeedItem} from "../types.ts";
+import {AdjacentFeedItems, Feed, FeedItem} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
 import AudioControls from "./AudioControls.vue";
 import client from '../client'
@@ -11,17 +12,21 @@ const props = defineProps<{
     guid: string,
 }>()
 
+const router = useRouter()
 const feedStore = useFeedStore()
 
 const feedItem = ref<FeedItem | null>(null)
 const feed = ref<Feed | null>(null)
 const isFetchingItem = ref(true)
+const adjacent = ref<AdjacentFeedItems>({ prev: null, next: null })
 useTitle(computed(() => feedItem.value ? `${feedItem.value.title} — Iris` : 'Iris'))
 async function fetchFeedItem() {
-    const data = await client.getFeedItem(props.guid)
+    const [data, adjacentData] = await Promise.all([
+        client.getFeedItem(props.guid),
+        client.getAdjacentFeedItems(props.guid),
+    ])
     if (data) {
         feedItem.value = data;
-
         isFetchingItem.value = false
 
         await feedStore.afterFeedsLoaded(async () => {
@@ -33,8 +38,17 @@ async function fetchFeedItem() {
             }
         })
     }
+    if (adjacentData) {
+        adjacent.value = adjacentData
+    }
 }
-watch(() => props.guid, fetchFeedItem)
+function navigateTo(guid: string) {
+    router.push({ name: 'item', params: { guid } })
+}
+watch(() => props.guid, () => {
+    window.scrollTo(0, 0)
+    fetchFeedItem()
+})
 onMounted(fetchFeedItem)
 </script>
 
@@ -74,10 +88,22 @@ onMounted(fetchFeedItem)
 
     <div class="level px-4">
       <div class="level-left">
-        <button class="button">Previous</button>
+        <button
+            class="button"
+            :disabled="!adjacent.prev"
+            @click="adjacent.prev && navigateTo(adjacent.prev.guid)"
+        >
+          &larr; {{ adjacent.prev ? useUnescapedHTML(adjacent.prev.title).value : 'Previous' }}
+        </button>
       </div>
       <div class="level-right">
-        <button class="button">Next</button>
+        <button
+            class="button"
+            :disabled="!adjacent.next"
+            @click="adjacent.next && navigateTo(adjacent.next.guid)"
+        >
+          {{ adjacent.next ? useUnescapedHTML(adjacent.next.title).value : 'Next' }} &rarr;
+        </button>
       </div>
     </div>
 

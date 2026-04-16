@@ -3,6 +3,29 @@ import {RawFeed, RawFeedFile, RawFeedItem, RawFeedSource, ServerFeed, ServerFeed
 import {ChannelData, ChannelItemData, sha256Encode} from "./utils/files";
 import {FetchSuccessFileResult} from "./types";
 
+export async function getAdjacentFeedItems(db: D1Database, guid: string) {
+    const current = await db
+        .prepare('SELECT source_feed, date FROM feed_item WHERE guid = ?')
+        .bind(guid)
+        .first<{source_feed: string, date: string | null}>()
+
+    if (!current?.date) return {prev: null, next: null}
+
+    const [prevRaw, nextRaw] = await Promise.all([
+        db.prepare('SELECT * FROM feed_item WHERE source_feed = ? AND date < ? ORDER BY date DESC LIMIT 1')
+            .bind(current.source_feed, current.date)
+            .first<RawFeedItem>(),
+        db.prepare('SELECT * FROM feed_item WHERE source_feed = ? AND date > ? ORDER BY date ASC LIMIT 1')
+            .bind(current.source_feed, current.date)
+            .first<RawFeedItem>(),
+    ])
+
+    return {
+        prev: prevRaw ? new ServerFeedItem(prevRaw) : null,
+        next: nextRaw ? new ServerFeedItem(nextRaw) : null,
+    }
+}
+
 export interface SearchFeedItemsOptions {
     limit?: number
     offset?: number

@@ -44,3 +44,8 @@ export interface FeedItemPreview {
 export interface FeedItem extends FeedItemPreview {
     encoded_content: string | null
 }
+
+export interface AdjacentFeedItems {
+    prev: FeedItemPreview | null
+    next: FeedItemPreview | null
+}
