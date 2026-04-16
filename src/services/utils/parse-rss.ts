@@ -51,7 +51,7 @@ export function parseRssText(rawText: string): ParsedFeedData {
 
     const channel = {
         guid: coalesce(channelData, 'guid', 'podcast:guid', 'id', 'title'),
-        source_url: coalesce(channelData, 'link', 'atom:link.@_href', 'itunes:new-feed-url') ?? '',
+        source_url: coalesce(channelData, 'atom:link.@_href', 'itunes:new-feed-url', 'link') ?? '',
         title: coalesce(channelData, 'title', 'image.title'),
         description: coalesce(channelData, 'description', 'itunes:summary') ?? '',
         author: coalesce(channelData, 'author', 'itunes:author', 'itunes:owner.itunes:name') ?? '',
