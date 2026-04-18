@@ -1,5 +1,5 @@
 import {defineStore} from "pinia";
-import type {Feed, LoadingState} from "../types.ts";
+import type {LoadingState} from "../types.ts";
 import client from "../client.ts";
 
 type FeedLoadedCallback = () => unknown
@@ -40,12 +40,10 @@ export const useFeedStore = defineStore('feeds', {
 
             this.feedsLoadState = 'loading'
 
-            const response = await fetch('/api/feed')
-            if (response.ok) {
-                const data = await response.json();
-
+            const data = await client.getFeeds()
+            if (data) {
                 this.feeds.length = 0;
-                this.feeds.push(...(data as Feed[]));
+                this.feeds.push(...data);
 
                 this.feedsLoadState = 'loaded'
 

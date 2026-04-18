@@ -15,5 +15,9 @@ export default [
         path: '/subscriptions/item/:guid',
         component: () => import('../components/ItemView.vue'),
         props: true,
+    }, {
+        name: 'downloads',
+        path: '/downloads',
+        component: () => import('../components/DownloadsView.vue'),
     },
 ]

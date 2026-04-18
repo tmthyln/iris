@@ -3,6 +3,25 @@ import {FeedItemPreview} from "../types.ts";
 import client from "../client.ts";
 import {useDownloadStore} from "./downloads.ts";
 
+const STORAGE_KEY = 'iris-queue'
+
+function saveQueueToStorage(items: FeedItemPreview[]) {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
+    } catch {
+        // Ignore storage errors
+    }
+}
+
+function loadQueueFromStorage(): FeedItemPreview[] {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY)
+        return raw ? JSON.parse(raw) : []
+    } catch {
+        return []
+    }
+}
+
 function ensureDownloaded(items: FeedItemPreview[]) {
     const downloadStore = useDownloadStore()
     for (const item of items) {
@@ -29,7 +48,14 @@ export const useQueueStore = defineStore('queue', {
             const items = await client.getQueue()
             if (items) {
                 this.items = items
+                saveQueueToStorage(items)
                 ensureDownloaded(items)
+            } else {
+                const saved = loadQueueFromStorage()
+                if (saved.length) {
+                    this.items = saved
+                    ensureDownloaded(saved)
+                }
             }
         },
         itemPlaying(item: FeedItemPreview) {
@@ -42,33 +68,56 @@ export const useQueueStore = defineStore('queue', {
             return this.items.some(i => i.guid === item.guid)
         },
         async addItem(item: FeedItemPreview, position?: number) {
-            const items = await client.queueFeedItem(item.guid, position)
-            if (items) {
-                this.items = items
-                ensureDownloaded([item])
+            const optimistic = position !== undefined
+                ? [...this.items.slice(0, position), item, ...this.items.slice(position)]
+                : [...this.items, item]
+            this.items = optimistic
+            saveQueueToStorage(optimistic)
+            ensureDownloaded([item])
+
+            const serverItems = await client.queueFeedItem(item.guid, position)
+            if (serverItems) {
+                this.items = serverItems
+                saveQueueToStorage(serverItems)
             }
-            return items !== null
+            return true
         },
         async removeItem(item: FeedItemPreview) {
-            const items = await client.removeQueueItem(item.guid)
-            if (items) {
-                this.items = items
+            const optimistic = this.items.filter(i => i.guid !== item.guid)
+            this.items = optimistic
+            saveQueueToStorage(optimistic)
+
+            const serverItems = await client.removeQueueItem(item.guid)
+            if (serverItems) {
+                this.items = serverItems
+                saveQueueToStorage(serverItems)
             }
-            return items !== null
+            return true
         },
         async clearQueue(keepFirst: boolean) {
-            const items = await client.clearQueue(keepFirst)
-            if (items) {
-                this.items = items
+            const optimistic = keepFirst ? this.items.slice(0, 1) : []
+            this.items = optimistic
+            saveQueueToStorage(optimistic)
+
+            const serverItems = await client.clearQueue(keepFirst)
+            if (serverItems) {
+                this.items = serverItems
+                saveQueueToStorage(serverItems)
             }
-            return items !== null
+            return true
         },
         async moveItem(item: FeedItemPreview, position: number) {
-            const items = await client.moveQueueItem(item.guid, position)
-            if (items) {
-                this.items = items
+            const without = this.items.filter(i => i.guid !== item.guid)
+            without.splice(position, 0, item)
+            this.items = without
+            saveQueueToStorage(without)
+
+            const serverItems = await client.moveQueueItem(item.guid, position)
+            if (serverItems) {
+                this.items = serverItems
+                saveQueueToStorage(serverItems)
             }
-            return items !== null
+            return true
         },
         togglePaused() {
             this.paused = !this.paused

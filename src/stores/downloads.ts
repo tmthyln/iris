@@ -17,6 +17,7 @@ interface DownloadRecord {
     enclosure_type: string | null
     size: number
     downloaded_at: string
+    item_data?: FeedItemPreview  // added in v3; absent on records created before the upgrade
 }
 
 interface DeletionRecord {
@@ -27,7 +28,7 @@ interface DeletionRecord {
 /* ── IndexedDB helpers ── */
 
 const DB_NAME = 'iris-downloads'
-const DB_VERSION = 2
+const DB_VERSION = 3
 const STORE_NAME = 'audio'
 const DELETION_STORE_NAME = 'pending_deletions'
 
@@ -78,17 +79,17 @@ function dbDelete(db: IDBDatabase, guid: string): Promise<void> {
 }
 
 /** Read all records' metadata without loading blobs into memory. */
-function dbGetAllMeta(db: IDBDatabase): Promise<{ guid: string; size: number; downloadedAt: string }[]> {
+function dbGetAllMeta(db: IDBDatabase): Promise<{ guid: string; size: number; downloadedAt: string; itemData?: FeedItemPreview }[]> {
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readonly')
         const store = tx.objectStore(STORE_NAME)
         const request = store.openCursor()
-        const results: { guid: string; size: number; downloadedAt: string }[] = []
+        const results: { guid: string; size: number; downloadedAt: string; itemData?: FeedItemPreview }[] = []
         request.onsuccess = () => {
             const cursor = request.result
             if (cursor) {
-                const {guid, size, downloaded_at} = cursor.value as DownloadRecord
-                results.push({guid, size, downloadedAt: downloaded_at})
+                const {guid, size, downloaded_at, item_data} = cursor.value as DownloadRecord
+                results.push({guid, size, downloadedAt: downloaded_at, itemData: item_data})
                 cursor.continue()
             } else {
                 resolve(results)
@@ -130,6 +131,7 @@ function dbGetAllDeletions(db: IDBDatabase): Promise<DeletionRecord[]> {
 export const useDownloadStore = defineStore('downloads', () => {
     const statuses = reactive<Record<string, DownloadStatus>>({})
     const blobUrls = reactive<Record<string, string>>({})
+    const downloadedItems = reactive<Record<string, FeedItemPreview>>({})
     const totalStorageUsed = ref(0)
 
     let db: IDBDatabase | null = null
@@ -142,6 +144,9 @@ export const useDownloadStore = defineStore('downloads', () => {
             for (const meta of metas) {
                 statuses[meta.guid] = {state: 'downloaded', size: meta.size, downloadedAt: meta.downloadedAt}
                 total += meta.size
+                if (meta.itemData) {
+                    downloadedItems[meta.guid] = meta.itemData
+                }
             }
             totalStorageUsed.value = total
             navigator.storage?.persist?.()
@@ -213,10 +218,12 @@ export const useDownloadStore = defineStore('downloads', () => {
                 enclosure_type: item.enclosure_type,
                 size: blob.size,
                 downloaded_at: now,
+                item_data: item,
             })
 
             statuses[item.guid] = {state: 'downloaded', size: blob.size, downloadedAt: now}
             totalStorageUsed.value += blob.size
+            downloadedItems[item.guid] = item
 
             // Pre-create the blob URL
             blobUrls[item.guid] = URL.createObjectURL(blob)
@@ -250,6 +257,7 @@ export const useDownloadStore = defineStore('downloads', () => {
                 delete blobUrls[guid]
             }
             statuses[guid] = 'idle'
+            delete downloadedItems[guid]
         } catch (_err) {
             console.error('Failed to delete download:', _err)
         }
@@ -284,6 +292,7 @@ export const useDownloadStore = defineStore('downloads', () => {
     return {
         statuses,
         blobUrls,
+        downloadedItems,
         totalStorageUsed,
         init,
         downloadItem,

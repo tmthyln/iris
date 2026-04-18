@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import {useFeedStore} from "../stores/feeds.ts";
-import {onMounted} from "vue";
+import {computed, onMounted} from "vue";
 import {useFeedItemStore} from "../stores/feeditems.ts";
+import {useDownloadStore} from "../stores/downloads.ts";
 
 const feedStore = useFeedStore()
 const feedItemStore = useFeedItemStore()
+const downloadStore = useDownloadStore()
 onMounted(feedItemStore.loadBookmarkedItems)
+
+const downloadCount = computed(() => Object.keys(downloadStore.downloadedItems).length)
 </script>
 
 <template>
   <aside class="menu">
-    <div v-if="feedStore.feedsLoadState !== 'loaded'">
+    <div v-if="feedStore.feedsLoadState === 'loading'">
       Loading feeds...
     </div>
     <div v-else-if="feedStore.feeds.length === 0">
@@ -36,9 +40,20 @@ onMounted(feedItemStore.loadBookmarkedItems)
 
     <hr>
 
+    <ul class="menu-list">
+      <li>
+        <router-link :to="{name: 'downloads'}">
+          Downloads
+          <span v-if="downloadCount > 0" class="tag is-dark ml-2">{{ downloadCount }}</span>
+        </router-link>
+      </li>
+    </ul>
+
+    <hr>
+
     <p class="menu-label has-text-primary">Bookmarked Items</p>
 
-    <div v-if="feedItemStore.bookmarkedLoadState !== 'loaded'">
+    <div v-if="feedItemStore.bookmarkedLoadState === 'loading'">
       Loading bookmarks...
     </div>
     <div v-else-if="feedItemStore.bookmarkedItems.length === 0">

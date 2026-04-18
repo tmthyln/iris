@@ -98,7 +98,7 @@ async function importOpml(event: Event) {
             v-for="feed in feedStore.feeds.filter(f => f.has_unread)" :key="feed.guid"
             :feed="feed"
             class="mr-4"/>
-        <div v-if="feedStore.feedsLoadState !== 'loaded'">
+        <div v-if="feedStore.feedsLoadState === 'loading'">
           Loading feeds...
         </div>
         <div v-else-if="feedStore.feeds.length === 0">

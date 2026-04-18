@@ -6,7 +6,10 @@ import {useQueueStore} from "./stores/queue.ts";
 import {useDownloadStore} from "./stores/downloads.ts";
 import {onMounted, ref} from "vue";
 import {useRouter} from "vue-router";
+import {useOnline} from "@vueuse/core";
 import AudioPlayer from "./components/AudioPlayer.vue";
+
+const isOnline = useOnline()
 
 const feedStore = useFeedStore()
 const queueStore = useQueueStore()
@@ -35,6 +38,9 @@ function handleExternalLinks(e: MouseEvent) {
 
 <template>
   <div @click="handleExternalLinks">
+    <div v-if="!isOnline" class="offline-banner">
+      You're offline — queue and downloaded items are still available
+    </div>
     <NavBar v-model:sidebar-open="sidebarOpen"/>
     <div class="sidebar-backdrop is-hidden-tablet" v-if="sidebarOpen" @click="sidebarOpen = false"/>
     <div class="columns">
@@ -46,6 +52,17 @@ function handleExternalLinks(e: MouseEvent) {
 </template>
 
 <style scoped>
+.offline-banner {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: hsl(var(--bulma-warning-h), var(--bulma-warning-s), var(--bulma-warning-l));
+  color: hsl(var(--bulma-warning-on-scheme-h), var(--bulma-warning-on-scheme-s), var(--bulma-warning-on-scheme-l));
+  text-align: center;
+  padding: 0.4rem 1rem;
+  font-size: 0.875rem;
+}
+
 .sidebar-backdrop {
   position: fixed;
   top: var(--bulma-navbar-height);
