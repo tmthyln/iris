@@ -94,29 +94,69 @@ onMounted(fetchFeedItem)
 
     <hr class="my-6">
 
-    <div class="level px-4">
-      <div class="level-left">
-        <button
-            class="button"
-            :disabled="!adjacent.prev"
-            @click="adjacent.prev && navigateTo(adjacent.prev.guid)"
-        >
-          &larr; {{ adjacent.prev ? useUnescapedHTML(adjacent.prev.title).value : 'Previous' }}
-        </button>
-      </div>
-      <div class="level-right">
-        <button
-            class="button"
-            :disabled="!adjacent.next"
-            @click="adjacent.next && navigateTo(adjacent.next.guid)"
-        >
-          {{ adjacent.next ? useUnescapedHTML(adjacent.next.title).value : 'Next' }} &rarr;
-        </button>
-      </div>
+    <div class="adjacent-nav px-4">
+      <button
+          class="button adjacent-button adjacent-prev"
+          :disabled="!adjacent.prev"
+          :title="adjacent.prev ? useUnescapedHTML(adjacent.prev.title).value : ''"
+          @click="adjacent.prev && navigateTo(adjacent.prev.guid)"
+      >
+        <span class="adjacent-arrow">&larr;</span>
+        <span class="adjacent-label">{{ adjacent.prev ? useUnescapedHTML(adjacent.prev.title).value : 'Previous' }}</span>
+      </button>
+      <button
+          class="button adjacent-button adjacent-next"
+          :disabled="!adjacent.next"
+          :title="adjacent.next ? useUnescapedHTML(adjacent.next.title).value : ''"
+          @click="adjacent.next && navigateTo(adjacent.next.guid)"
+      >
+        <span class="adjacent-label">{{ adjacent.next ? useUnescapedHTML(adjacent.next.title).value : 'Next' }}</span>
+        <span class="adjacent-arrow">&rarr;</span>
+      </button>
     </div>
 
   </div>
 </template>
 
 <style scoped>
+.adjacent-nav {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+.adjacent-button {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 100%;
+}
+.adjacent-prev {
+    justify-content: flex-start;
+}
+.adjacent-next {
+    justify-content: flex-end;
+}
+.adjacent-arrow {
+    flex: 0 0 auto;
+}
+.adjacent-prev .adjacent-arrow {
+    margin-right: 0.5rem;
+}
+.adjacent-next .adjacent-arrow {
+    margin-left: 0.5rem;
+}
+.adjacent-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+@media (max-width: 768px) {
+    .adjacent-nav {
+        flex-wrap: wrap;
+    }
+    .adjacent-button {
+        flex: 1 1 auto;
+    }
+}
 </style>

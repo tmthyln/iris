@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {toRef} from 'vue';
+import {computed, toRef} from 'vue';
 import {Feed} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
 import {usePlaceholderImage} from "../placeholderImage.ts";
@@ -7,6 +7,12 @@ import {usePlaceholderImage} from "../placeholderImage.ts";
 const props = defineProps<{
     feed: Feed,
 }>()
+
+const displayTitle = computed(() => props.feed.alias || useUnescapedHTML(props.feed.title).value)
+const displayAuthor = computed(() => useUnescapedHTML(props.feed.author).value)
+const showAuthor = computed(() =>
+    displayAuthor.value.trim() !== '' && displayAuthor.value.trim() !== displayTitle.value.trim()
+)
 
 const {resolvedSrc, onImageError} = usePlaceholderImage(
     toRef(() => props.feed.image_src),
@@ -28,8 +34,8 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
         </div>
 
         <figcaption class="mt-2">
-          <div>{{ feed.alias || useUnescapedHTML(feed.title).value }}</div>
-          <small>{{ useUnescapedHTML(feed.author).value }}</small>
+          <div class="clamp-2-lines" :title="displayTitle">{{ displayTitle }}</div>
+          <small v-if="showAuthor" class="clamp-2-lines" :title="displayAuthor">{{ displayAuthor }}</small>
         </figcaption>
 
       </figure>
@@ -44,5 +50,13 @@ figure {
 
 figcaption {
   word-wrap: break-word;
+}
+
+.clamp-2-lines {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 </style>
