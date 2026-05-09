@@ -1,5 +1,5 @@
 import {defineStore} from "pinia";
-import type {LoadingState} from "../types.ts";
+import type {Feed, LoadingState} from "../types.ts";
 import client from "../client.ts";
 
 type FeedLoadedCallback = () => unknown
@@ -30,7 +30,17 @@ export const useFeedStore = defineStore('feeds', {
             if (map['Uncategorized'].length === 0) {
                 delete map['Uncategorized']
             }
-            return map
+            const collator = new Intl.Collator(undefined, {sensitivity: 'base', numeric: true})
+            const displayName = (feed: Feed) => feed.alias || feed.title
+            const sorted: {[category: string]: Feed[]} = {}
+            const categoryNames = Object.keys(map)
+                .filter(name => name !== 'Uncategorized')
+                .sort((a, b) => collator.compare(a, b))
+            if ('Uncategorized' in map) categoryNames.unshift('Uncategorized')
+            for (const category of categoryNames) {
+                sorted[category] = [...map[category]].sort((a, b) => collator.compare(displayName(a), displayName(b)))
+            }
+            return sorted
         },
     },
     actions: {
