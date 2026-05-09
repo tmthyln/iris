@@ -3,6 +3,7 @@ import {computed, onMounted, ref, watch} from "vue";
 import {useTimeAgo, useTitle} from "@vueuse/core";
 import {useRouter} from "vue-router";
 import {useFeedStore} from "../stores/feeds.ts";
+import {useFeedItemStore} from "../stores/feeditems.ts";
 import {AdjacentFeedItems, Feed, FeedItem} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
 import AudioControls from "./AudioControls.vue";
@@ -14,6 +15,7 @@ const props = defineProps<{
 
 const router = useRouter()
 const feedStore = useFeedStore()
+const feedItemStore = useFeedItemStore()
 
 const feedItem = ref<FeedItem | null>(null)
 const feed = ref<Feed | null>(null)
@@ -21,10 +23,14 @@ const isFetchingItem = ref(true)
 const adjacent = ref<AdjacentFeedItems>({ prev: null, next: null })
 useTitle(computed(() => feedItem.value ? `${feedItem.value.title} — Iris` : 'Iris'))
 async function fetchFeedItem() {
+    const guid = props.guid
     const [data, adjacentData] = await Promise.all([
-        client.getFeedItem(props.guid),
-        client.getAdjacentFeedItems(props.guid),
+        feedItemStore.loadFullItem(guid),
+        feedItemStore.loadAdjacent(guid),
     ])
+    // Bail out if the user navigated away while we were loading.
+    if (guid !== props.guid) return
+
     if (data) {
         feedItem.value = data;
         isFetchingItem.value = false
@@ -40,6 +46,8 @@ async function fetchFeedItem() {
     }
     if (adjacentData) {
         adjacent.value = adjacentData
+        if (adjacentData.prev) feedItemStore.prefetchItem(adjacentData.prev.guid)
+        if (adjacentData.next) feedItemStore.prefetchItem(adjacentData.next.guid)
     }
 }
 function navigateTo(guid: string) {
