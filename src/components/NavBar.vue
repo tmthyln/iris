@@ -242,6 +242,15 @@ function makeSnippet(result: FeedItemPreview, query: string): string {
       </router-link>
       <a
           role="button"
+          class="navbar-item is-hidden-tablet mobile-search-button"
+          aria-label="search"
+          @click="openSearch()">
+        <span class="icon">
+          <span class="material-symbols-outlined">search</span>
+        </span>
+      </a>
+      <a
+          role="button"
           class="navbar-burger is-hidden-tablet"
           :class="{'is-active': sidebarOpen}"
           aria-label="menu"
@@ -393,5 +402,25 @@ function makeSnippet(result: FeedItemPreview, query: string): string {
     border-radius: 2px;
     font-weight: 600;
     padding: 0 1px;
+}
+
+.mobile-search-button {
+    margin-left: auto;
+}
+.mobile-search-button + .navbar-burger {
+    margin-left: 0;
+}
+
+@media screen and (max-width: 768px) {
+    .modal-card {
+        width: calc(100vw - 1rem);
+        margin: 0 0.5rem;
+    }
+    .modal-card-body {
+        padding: 1rem;
+    }
+    .search-results {
+        max-height: calc(100vh - 12rem);
+    }
 }
 </style>
