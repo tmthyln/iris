@@ -15,8 +15,8 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@vueuse/core": "^14.2.1",
-    "@vueuse/integrations": "^14.2.0",
+    "@vueuse/core": "^14.3.0",
+    "@vueuse/integrations": "^14.3.0",
     "bulma": "^1.0.0",
     "pinia": "^3.0.4",
     "sortablejs": "^1.15.6",
