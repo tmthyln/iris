@@ -37,7 +37,7 @@
     "globals": "^17.3.0",
     "hono": "^4.12.18",
     "sass": "^1.99.0",
-    "typescript": "^5.3.3",
+    "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.1",
     "vite": "^8.0.8",
     "vite-plugin-compression": "^0.5.1",
