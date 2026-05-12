@@ -179,7 +179,7 @@ function clearQueue() {
     queueStore.clearQueue(keepFirst)
 }
 
-const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(removeFromQueue)
+const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(removeFromQueue, 100, '.drag-handle')
 </script>
 
 <template>
