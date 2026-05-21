@@ -170,18 +170,23 @@ async function executeCommand(command: string) {
     }
 }
 
-function openSearch(initialText: string = '') {
+function openSearch(initialText?: string) {
     showSearch.value = true
-    searchInput.value = initialText
+    if (initialText !== undefined) {
+        searchInput.value = initialText
+        searchResults.value = []
+        searchOffset.value = 0
+        searchHasMore.value = false
+    }
     commandStatus.value = 'idle'
-    searchResults.value = []
-    nextTick(() => searchInputEl.value?.focus())
+    nextTick(() => {
+        searchInputEl.value?.focus()
+        searchInputEl.value?.select()
+    })
 }
 
 function closeSearch() {
     showSearch.value = false
-    searchInput.value = ''
-    searchResults.value = []
 }
 
 function clearInput() {
