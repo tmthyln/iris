@@ -17,8 +17,16 @@ export default defineConfig({
         vueDevTools(),
         vitePWA({
             registerType: 'autoUpdate',
-            workbox: {
+            strategies: 'injectManifest',
+            srcDir: 'src',
+            filename: 'sw.ts',
+            injectManifest: {
                 globPatterns: ['**/*.{js,css,html,svg}'],
+            },
+            devOptions: {
+                enabled: true,
+                type: 'module',
+                navigateFallback: 'index.html',
             },
             manifest: {
                 name: 'Iris Aggregator',

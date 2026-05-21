@@ -25,5 +25,5 @@
     ]
   },
   "include": ["src/**/*.ts", "src/**/*.vue"],
-  "exclude": ["src/services/*", "src/service.ts"]
+  "exclude": ["src/services/*", "src/service.ts", "src/sw.ts"]
 }

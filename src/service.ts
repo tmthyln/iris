@@ -8,14 +8,14 @@ export {ItemQueue} from "./services/queue";
 export default {
     fetch: app.fetch,
 
-    async queue(batch, env, _ctx): Promise<void> {
+    async queue(batch, env, ctx): Promise<void> {
         for (const msg of batch.messages) {
             const task = msg.body as FeedProcessingTask
 
             switch(task.type) {
                 case 'refresh-feed':
                     console.log('Received request to refresh feed')
-                    await refreshFeed(task.feedGuid, env)
+                    await refreshFeed(task.feedGuid, env, ctx)
                     break
                 case 'plan-feed-archives':
                     console.log('Received request to plan archives for feed')

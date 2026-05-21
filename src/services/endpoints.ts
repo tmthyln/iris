@@ -20,9 +20,17 @@ import {
     createFeedFile,
     searchFeedItems,
     getAdjacentFeedItems,
+    getNotifications,
+    getUnreadNotificationCount,
+    dismissNotification,
+    dismissAllNotifications,
+    upsertPushSubscription,
+    deletePushSubscription,
+    countPushSubscriptions,
 } from './crud'
 import type { RefreshFeedTask, PlanFeedArchivesTask } from "./types";
 import {fetchRssFile, parseRssText} from "./utils/files";
+import {fanOutPushWithContext, loadPushFanOutContext} from "./utils/push";
 import {getQueue} from "./queue";
 import {refreshFeed} from "./flows";
 
@@ -117,9 +125,10 @@ app.post('/feed', async (c) => {
     await feedFile.persistTo(db, cache_bucket)
 
     // non-duplicate feed items
-    await Promise.allSettled(items.map(async item =>
-        await createFeedItem(feed, item).persistTo(db)
-    ))
+    await Promise.allSettled(items.map(async item => {
+        const entity = await createFeedItem(feed, item)
+        return entity.persistTo(db)
+    }))
 
     await queue.send({
         type: 'plan-feed-archives',
@@ -141,7 +150,7 @@ app.patch('/feed/:guid', async (c) => {
     const db = c.env.DB
 
     for (const key of Object.keys(data)) {
-        if (!['categories', 'alias'].includes(key)) {
+        if (!['categories', 'alias', 'notify_enabled'].includes(key)) {
             return Response.json(null, {status: 422, statusText: `Cannot update the feed field: ${key}`})
         }
     }
@@ -156,6 +165,13 @@ app.patch('/feed/:guid', async (c) => {
     }
     if ('alias' in data) {
         updateData.alias = String(data.alias ?? '')
+    }
+    if ('notify_enabled' in data) {
+        updateData.notify_enabled = data.notify_enabled ? 1 : 0
+    }
+
+    if (Object.keys(updateData).length === 0) {
+        return new Response()
     }
 
     await db
@@ -377,4 +393,147 @@ app.post('/command/refresh-all-feeds', async (c) => {
     //await Promise.all(feeds.map(feed => refreshFeed(feed.guid, c.env)))
 
     return Response.json({refreshedCount: feeds.length})
+})
+
+/******************************************************************************
+ * Notification endpoints
+ *****************************************************************************/
+
+app.get('/notification', async (c) => {
+    const db = c.env.DB
+    const includeDismissed = c.req.query('include_dismissed') === 'true'
+    const requested = parseInt(c.req.query('limit') ?? '50')
+    const limit = Math.max(1, Math.min(200, Number.isFinite(requested) ? requested : 50))
+
+    const [items, unreadCount] = await Promise.all([
+        getNotifications(db, {limit, includeDismissed}),
+        getUnreadNotificationCount(db),
+    ])
+
+    return Response.json({items, unreadCount})
+})
+
+app.delete('/notification/:id', async (c) => {
+    const id = parseInt(c.req.param('id'))
+    if (!Number.isFinite(id)) {
+        return new Response(null, {status: 400, statusText: 'Invalid notification id'})
+    }
+    await dismissNotification(c.env.DB, id)
+    return new Response()
+})
+
+app.delete('/notification', async (c) => {
+    await dismissAllNotifications(c.env.DB)
+    return new Response()
+})
+
+/******************************************************************************
+ * Push subscription endpoints
+ *****************************************************************************/
+
+// Hosts of the major web-push services. Endpoints from any other host are
+// rejected to keep this open endpoint from being used to register
+// attacker-controlled URLs that the worker would later POST to.
+const PUSH_SERVICE_HOST_PATTERNS: RegExp[] = [
+    /(?:^|\.)push\.services\.mozilla\.com$/i, // Firefox / Mozilla autopush
+    /^fcm\.googleapis\.com$/i,                // Chrome / Edge (FCM)
+    /(?:^|\.)notify\.windows\.com$/i,         // Edge (WNS)
+    /(?:^|\.)push\.apple\.com$/i,             // Safari (APNs)
+    /(?:^|\.)pushservice\.google\.com$/i,     // legacy Chrome / GCM
+]
+
+const MAX_PUSH_SUBSCRIPTIONS = 50
+const MAX_PUSH_FIELD_LENGTH = 2048
+
+function validatePushEndpoint(endpoint: string): string | null {
+    if (endpoint.length > MAX_PUSH_FIELD_LENGTH) return 'endpoint is too long'
+    let url: URL
+    try {
+        url = new URL(endpoint)
+    } catch {
+        return 'endpoint is not a valid URL'
+    }
+    if (url.protocol !== 'https:') return 'endpoint must be https'
+    if (!PUSH_SERVICE_HOST_PATTERNS.some(re => re.test(url.hostname))) {
+        return 'endpoint host is not a recognized push service'
+    }
+    return null
+}
+
+app.get('/push/vapid-public-key', (c) => {
+    const env = c.env as unknown as {VAPID_PUBLIC_KEY?: string}
+    const key = env.VAPID_PUBLIC_KEY ?? ''
+    if (!key) {
+        return new Response(null, {status: 503, statusText: 'Push notifications not configured'})
+    }
+    return Response.json({key})
+})
+
+app.post('/push/subscription', async (c) => {
+    const data = await c.req.json().catch(() => null) as {endpoint?: string, keys?: {p256dh?: string, auth?: string}} | null
+    const endpoint = data?.endpoint
+    const keys = data?.keys
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+        return new Response(null, {status: 400, statusText: 'endpoint, keys.p256dh, and keys.auth are required'})
+    }
+    const endpointError = validatePushEndpoint(endpoint)
+    if (endpointError) {
+        return new Response(null, {status: 400, statusText: endpointError})
+    }
+    if (keys.p256dh.length > MAX_PUSH_FIELD_LENGTH || keys.auth.length > MAX_PUSH_FIELD_LENGTH) {
+        return new Response(null, {status: 400, statusText: 'subscription key is too long'})
+    }
+
+    // Cap the table to prevent unbounded growth from an unauthenticated endpoint.
+    // Existing rows can still be updated (re-subscription with the same endpoint).
+    const existing = await countPushSubscriptions(c.env.DB)
+    if (existing >= MAX_PUSH_SUBSCRIPTIONS) {
+        // Check whether this is an update to an existing row before rejecting.
+        const isUpdate = await c.env.DB
+            .prepare('SELECT 1 FROM push_subscription WHERE endpoint = ?')
+            .bind(endpoint)
+            .first()
+        if (!isUpdate) {
+            return new Response(null, {status: 429, statusText: 'subscription cap reached'})
+        }
+    }
+
+    await upsertPushSubscription(c.env.DB, endpoint, keys.p256dh, keys.auth)
+    return new Response(null, {status: 201})
+})
+
+app.delete('/push/subscription', async (c) => {
+    const data = await c.req.json().catch(() => ({})) as {endpoint?: string}
+    const endpoint = data.endpoint ?? c.req.query('endpoint')
+    if (!endpoint) {
+        return new Response(null, {status: 400, statusText: 'endpoint is required'})
+    }
+    await deletePushSubscription(c.env.DB, endpoint)
+    return new Response()
+})
+
+app.post('/push/test', async (c) => {
+    const data = await c.req.json().catch(() => null) as {endpoint?: string} | null
+
+    const context = await loadPushFanOutContext(c.env)
+    if (!context) {
+        return new Response(null, {status: 503, statusText: 'Push not configured or no subscribers'})
+    }
+
+    const subscriptions = data?.endpoint
+        ? context.subscriptions.filter(s => s.endpoint === data.endpoint)
+        : context.subscriptions
+    if (subscriptions.length === 0) {
+        return new Response(null, {status: 404, statusText: 'No matching subscription'})
+    }
+
+    await fanOutPushWithContext(c.env.DB, {...context, subscriptions}, {
+        type: 'new_item',
+        feed_guid: '',
+        feed_item_guid: '',
+        title: 'Iris',
+        body: 'Test notification — push is working.',
+        url: '/',
+    })
+    return new Response(null, {status: 204})
 })

@@ -288,6 +288,7 @@ export interface RawFeed {
     update_frequency: number
     link: string
     categories: string
+    notify_enabled: number | boolean
     has_unread?: number | boolean
     has_archives?: number | boolean
 }
@@ -309,13 +310,14 @@ export class ServerFeed extends ServerEntity {
     update_frequency: number;
     link: string;
     categories: string[];
+    notify_enabled: boolean;
     has_unread: boolean;
     has_archives: boolean;
 
     constructor(data: RawFeed) {
         super('feed', {
             onConflict: 'update',
-            updateExcludeFields: ['guid', 'input_url', 'active', 'categories'],
+            updateExcludeFields: ['guid', 'input_url', 'active', 'categories', 'notify_enabled'],
         });
 
         this.guid = data.guid;
@@ -334,6 +336,7 @@ export class ServerFeed extends ServerEntity {
         this.update_frequency = data.update_frequency
         this.link = data.link ?? ''
         this.categories = asStringList(data.categories)
+        this.notify_enabled = asBoolean(data.notify_enabled ?? 0)
         this.has_unread = asBoolean(data.has_unread ?? 0)
         this.has_archives = asBoolean(data.has_archives ?? 0)
     }
@@ -356,6 +359,7 @@ export class ServerFeed extends ServerEntity {
             update_frequency: this.update_frequency,
             link: this.link,
             categories: this.categories.join(','),
+            notify_enabled: this.notify_enabled,
         })
 
         return await super.includeForTextSearch(db, this)
@@ -398,6 +402,7 @@ export class ClientFeed {
     update_frequency: number;
     link: string;
     categories: string[];
+    notify_enabled: boolean;
     has_unread: boolean;
     has_archives: boolean;
 
@@ -417,6 +422,7 @@ export class ClientFeed {
         this.update_frequency = data.update_frequency
         this.link = data.link
         this.categories = data.categories
+        this.notify_enabled = data.notify_enabled
         this.has_unread = data.has_unread
         this.has_archives = data.has_archives
     }
@@ -441,6 +447,7 @@ export interface RawFeedItem {
     finished: number | boolean
     progress: number
     bookmarked?: number | boolean
+    content_hash?: string | null
 }
 
 export class ServerFeedItem extends ServerEntity {
@@ -462,6 +469,7 @@ export class ServerFeedItem extends ServerEntity {
     finished: boolean;
     progress: number;
     bookmarked: boolean;
+    content_hash: string | null;
 
     constructor(data: RawFeedItem) {
         super('feed_item', {
@@ -487,6 +495,7 @@ export class ServerFeedItem extends ServerEntity {
         this.finished = asBoolean(data.finished)
         this.progress = data.progress
         this.bookmarked = asBoolean(data.bookmarked ?? false)
+        this.content_hash = data.content_hash ?? null
     }
 
     async persistTo(db: D1Database) {
@@ -509,6 +518,7 @@ export class ServerFeedItem extends ServerEntity {
             finished: this.finished,
             progress: this.progress,
             bookmarked: this.bookmarked,
+            content_hash: this.content_hash,
         })
 
         return await super.includeForTextSearch(db, this)
@@ -571,5 +581,99 @@ export class ClientFeedItem extends ClientFeedItemPreview {
         super(data);
 
         this.encoded_content = data.encoded_content
+    }
+}
+
+export type NotificationType = 'new_item' | 'updated_item'
+
+export interface RawNotification {
+    id: number
+    type: NotificationType
+    feed_guid: string
+    feed_item_guid: string
+    created_at: string | Date
+    dismissed: number | boolean
+}
+
+export class ServerNotification extends ServerEntity {
+    id: number | null;
+    type: NotificationType;
+    feed_guid: string;
+    feed_item_guid: string;
+    created_at: Date;
+    dismissed: boolean;
+
+    constructor(data: Omit<RawNotification, 'id'> & {id?: number}) {
+        super('notification');
+
+        this.id = data.id ?? null
+        this.type = data.type
+        this.feed_guid = data.feed_guid
+        this.feed_item_guid = data.feed_item_guid
+        this.created_at = asDate(data.created_at)
+        this.dismissed = asBoolean(data.dismissed ?? 0)
+    }
+
+    async persistTo(db: D1Database) {
+        await super.persistTo(db, {
+            type: this.type,
+            feed_guid: this.feed_guid,
+            feed_item_guid: this.feed_item_guid,
+            created_at: this.created_at.toISOString(),
+            dismissed: this.dismissed,
+        })
+        return this
+    }
+}
+
+export interface ClientNotification {
+    id: number
+    type: NotificationType
+    feed_guid: string
+    feed_item_guid: string
+    feed_title: string | null
+    feed_alias: string | null
+    item_title: string | null
+    created_at: string
+    dismissed: boolean
+}
+
+export interface RawPushSubscription {
+    endpoint: string
+    p256dh: string
+    auth: string
+    created_at: string | Date
+    last_used_at: string | Date | null
+}
+
+export class ServerPushSubscription extends ServerEntity {
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+    created_at: Date;
+    last_used_at: Date | null;
+
+    constructor(data: RawPushSubscription) {
+        super('push_subscription', {
+            onConflict: 'update',
+            updateExcludeFields: ['endpoint', 'created_at'],
+        });
+
+        this.endpoint = data.endpoint
+        this.p256dh = data.p256dh
+        this.auth = data.auth
+        this.created_at = asDate(data.created_at)
+        this.last_used_at = data.last_used_at ? asDate(data.last_used_at) : null
+    }
+
+    async persistTo(db: D1Database) {
+        await super.persistTo(db, {
+            endpoint: this.endpoint,
+            p256dh: this.p256dh,
+            auth: this.auth,
+            created_at: this.created_at.toISOString(),
+            last_used_at: this.last_used_at ? this.last_used_at.toISOString() : null,
+        })
+        return this
     }
 }

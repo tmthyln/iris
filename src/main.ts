@@ -5,7 +5,9 @@ import {createPinia} from "pinia";
 
 import './assets/styles.scss'
 
-import 'virtual:pwa-register'
+import {registerSW} from 'virtual:pwa-register'
+
+registerSW({immediate: true})
 
 createApp(App)
     .use(createPinia())

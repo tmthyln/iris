@@ -1,6 +1,6 @@
 import type {D1Database} from "@cloudflare/workers-types";
-import {RawFeed, RawFeedFile, RawFeedItem, RawFeedSource, ServerFeed, ServerFeedFile, ServerFeedItem, ServerFeedSource} from "./models";
-import {ChannelData, ChannelItemData, sha256Encode} from "./utils/files";
+import {RawFeed, RawFeedFile, RawFeedItem, RawFeedSource, ServerFeed, ServerFeedFile, ServerFeedItem, ServerFeedSource, ServerNotification, ServerPushSubscription, RawNotification, RawPushSubscription, NotificationType, ClientNotification} from "./models";
+import {ChannelData, ChannelItemData, computeFeedItemContentHash, sha256Encode} from "./utils/files";
 import {FetchSuccessFileResult} from "./types";
 
 export async function getAdjacentFeedItems(db: D1Database, guid: string) {
@@ -122,6 +122,55 @@ export async function getFeedFilesForFeed(db: D1Database, feedGuid: string) {
     return results.map(item => new ServerFeedFile(item))
 }
 
+export interface FeedItemFingerprint {
+    date: Date | null
+    content_hash: string | null
+}
+
+/**
+ * Latest known item date for a feed; used as the cutoff for the "new" vs
+ * "backfill" classifier during refresh.
+ */
+export async function getFeedMaxItemDate(db: D1Database, feedGuid: string) {
+    const row = await db
+        .prepare(`SELECT MAX(date) AS latest FROM feed_item WHERE source_feed = ? AND date IS NOT NULL`)
+        .bind(feedGuid)
+        .first<{latest: string | null}>()
+    return row?.latest ? new Date(row.latest) : null
+}
+
+/**
+ * Fetch fingerprints for a specific batch of feed-item GUIDs. Returns only
+ * the GUIDs that already exist in the feed. Chunks the IN-list to stay under
+ * SQLite's parameter limit.
+ */
+export async function getFeedItemFingerprintsByGuids(
+    db: D1Database,
+    feedGuid: string,
+    guids: string[],
+) {
+    const fingerprints = new Map<string, FeedItemFingerprint>()
+    if (guids.length === 0) return fingerprints
+
+    const CHUNK = 100
+    for (let i = 0; i < guids.length; i += CHUNK) {
+        const chunk = guids.slice(i, i + CHUNK)
+        const placeholders = chunk.map(() => '?').join(',')
+        const {results} = await db
+            .prepare(`SELECT guid, date, content_hash FROM feed_item WHERE source_feed = ? AND guid IN (${placeholders})`)
+            .bind(feedGuid, ...chunk)
+            .all<{guid: string, date: string | null, content_hash: string | null}>()
+
+        for (const row of results) {
+            fingerprints.set(row.guid, {
+                date: row.date ? new Date(row.date) : null,
+                content_hash: row.content_hash,
+            })
+        }
+    }
+    return fingerprints
+}
+
 export async function getFeedItemDateRange(db: D1Database, feedGuid: string) {
     const result = await db
         .prepare(`
@@ -202,11 +251,135 @@ export async function createFeedFile(
     }, fetchResult.content)
 }
 
-export function createFeedItem(feed: ServerFeed, channelItemData: ChannelItemData) {
+export async function createFeedItem(feed: ServerFeed, channelItemData: ChannelItemData, contentHash?: string) {
+    const content_hash = contentHash ?? await computeFeedItemContentHash(channelItemData)
     return new ServerFeedItem({
         ...channelItemData,
         source_feed: feed.guid,
         finished: false,
         progress: 0,
+        content_hash,
     })
+}
+
+/******************************************************************************
+ * Notifications
+ *****************************************************************************/
+
+export async function createNotification(
+    db: D1Database,
+    type: NotificationType,
+    feedGuid: string,
+    feedItemGuid: string,
+) {
+    const notif = new ServerNotification({
+        type,
+        feed_guid: feedGuid,
+        feed_item_guid: feedItemGuid,
+        created_at: new Date().toISOString(),
+        dismissed: false,
+    })
+    return notif.persistTo(db)
+}
+
+interface GetNotificationsOptions {
+    limit?: number
+    includeDismissed?: boolean
+}
+
+export async function getNotifications(db: D1Database, options: GetNotificationsOptions = {}) {
+    const {limit = 50, includeDismissed = false} = options
+
+    const {results} = await db
+        .prepare(`
+            SELECT n.id, n.type, n.feed_guid, n.feed_item_guid, n.created_at, n.dismissed,
+                   f.title AS feed_title, f.alias AS feed_alias,
+                   fi.title AS item_title
+            FROM notification n
+            LEFT JOIN feed f ON n.feed_guid = f.guid
+            LEFT JOIN feed_item fi ON n.feed_item_guid = fi.guid
+            ${includeDismissed ? '' : 'WHERE n.dismissed = FALSE'}
+            ORDER BY n.created_at DESC
+            LIMIT ?
+        `)
+        .bind(limit)
+        .all<RawNotification & {feed_title: string | null, feed_alias: string | null, item_title: string | null}>()
+
+    return results.map<ClientNotification>(row => ({
+        id: row.id,
+        type: row.type,
+        feed_guid: row.feed_guid,
+        feed_item_guid: row.feed_item_guid,
+        feed_title: row.feed_title,
+        feed_alias: row.feed_alias,
+        item_title: row.item_title,
+        created_at: typeof row.created_at === 'string' ? row.created_at : row.created_at.toISOString(),
+        dismissed: Boolean(row.dismissed),
+    }))
+}
+
+export async function getUnreadNotificationCount(db: D1Database) {
+    const row = await db
+        .prepare('SELECT COUNT(*) AS count FROM notification WHERE dismissed = FALSE')
+        .first<{count: number}>()
+    return row?.count ?? 0
+}
+
+export async function dismissNotification(db: D1Database, id: number) {
+    await db
+        .prepare('UPDATE notification SET dismissed = TRUE WHERE id = ?')
+        .bind(id)
+        .run()
+}
+
+export async function dismissAllNotifications(db: D1Database) {
+    await db
+        .prepare('UPDATE notification SET dismissed = TRUE WHERE dismissed = FALSE')
+        .run()
+}
+
+/******************************************************************************
+ * Push subscriptions
+ *****************************************************************************/
+
+export async function countPushSubscriptions(db: D1Database) {
+    const row = await db
+        .prepare('SELECT COUNT(*) AS count FROM push_subscription')
+        .first<{count: number}>()
+    return row?.count ?? 0
+}
+
+export async function getAllPushSubscriptions(db: D1Database) {
+    const {results} = await db
+        .prepare('SELECT * FROM push_subscription')
+        .all<RawPushSubscription>()
+    return results.map(row => new ServerPushSubscription(row))
+}
+
+export async function upsertPushSubscription(
+    db: D1Database, endpoint: string, p256dh: string, auth: string,
+) {
+    const sub = new ServerPushSubscription({
+        endpoint,
+        p256dh,
+        auth,
+        created_at: new Date().toISOString(),
+        last_used_at: null,
+    })
+    await sub.persistTo(db)
+    return sub
+}
+
+export async function deletePushSubscription(db: D1Database, endpoint: string) {
+    await db
+        .prepare('DELETE FROM push_subscription WHERE endpoint = ?')
+        .bind(endpoint)
+        .run()
+}
+
+export async function touchPushSubscription(db: D1Database, endpoint: string) {
+    await db
+        .prepare('UPDATE push_subscription SET last_used_at = ? WHERE endpoint = ?')
+        .bind(new Date().toISOString(), endpoint)
+        .run()
 }

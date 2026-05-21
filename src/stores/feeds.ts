@@ -106,5 +106,15 @@ export const useFeedStore = defineStore('feeds', {
             }
             return success
         },
+        async setNotifyEnabled(guid: string, notify_enabled: boolean) {
+            const feed = this.feeds.find(f => f.guid === guid)
+            const previous = feed?.notify_enabled ?? false
+            if (feed) feed.notify_enabled = notify_enabled
+            const success = await client.modifyFeed(guid, {notify_enabled})
+            if (!success && feed) {
+                feed.notify_enabled = previous
+            }
+            return success
+        },
     },
 })

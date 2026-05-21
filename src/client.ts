@@ -1,4 +1,4 @@
-import {AdjacentFeedItems, Feed, FeedItem, FeedItemPreview} from "./types.ts";
+import {AdjacentFeedItems, Feed, FeedItem, FeedItemPreview, NotificationsResponse} from "./types.ts";
 
 interface SearchOptions {
     limit?: number
@@ -90,7 +90,7 @@ export default {
             return null
         }
     },
-    async modifyFeed(feedGuid: string, updateData: { categories?: string[], alias?: string }) {
+    async modifyFeed(feedGuid: string, updateData: { categories?: string[], alias?: string, notify_enabled?: boolean }) {
         try {
             const response = await fetchWithTimeout(`/api/feed/${encodeURIComponent(feedGuid)}`, {
                 method: 'PATCH',
@@ -216,6 +216,77 @@ export default {
             return null
         } catch {
             return null
+        }
+    },
+    async getNotifications(): Promise<NotificationsResponse | null> {
+        try {
+            const response = await fetchWithTimeout('/api/notification')
+            if (response.ok) return await response.json() as NotificationsResponse
+            return null
+        } catch {
+            return null
+        }
+    },
+    async dismissNotification(id: number) {
+        try {
+            const response = await fetchWithTimeout(`/api/notification/${id}`, {method: 'DELETE'})
+            return response.ok
+        } catch {
+            return false
+        }
+    },
+    async dismissAllNotifications() {
+        try {
+            const response = await fetchWithTimeout('/api/notification', {method: 'DELETE'})
+            return response.ok
+        } catch {
+            return false
+        }
+    },
+    async getVapidPublicKey(): Promise<string | null> {
+        try {
+            const response = await fetchWithTimeout('/api/push/vapid-public-key')
+            if (response.ok) {
+                const data = await response.json() as {key: string}
+                return data.key || null
+            }
+            return null
+        } catch {
+            return null
+        }
+    },
+    async registerPushSubscription(subscription: PushSubscriptionJSON) {
+        try {
+            const response = await fetchWithTimeout('/api/push/subscription', {
+                method: 'POST',
+                body: JSON.stringify(subscription),
+            })
+            return response.ok
+        } catch {
+            return false
+        }
+    },
+    async unregisterPushSubscription(endpoint: string) {
+        try {
+            const response = await fetchWithTimeout('/api/push/subscription', {
+                method: 'DELETE',
+                body: JSON.stringify({endpoint}),
+            })
+            return response.ok
+        } catch {
+            return false
+        }
+    },
+    async sendTestPushNotification(endpoint: string): Promise<{ok: true} | {ok: false, error: string}> {
+        try {
+            const response = await fetchWithTimeout('/api/push/test', {
+                method: 'POST',
+                body: JSON.stringify({endpoint}),
+            })
+            if (response.ok) return {ok: true}
+            return {ok: false, error: response.statusText || `Server returned ${response.status}`}
+        } catch (err) {
+            return {ok: false, error: err instanceof Error ? err.message : 'Request failed'}
         }
     },
 }

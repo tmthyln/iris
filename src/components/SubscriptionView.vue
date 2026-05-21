@@ -122,6 +122,10 @@ async function handleFetchArchives() {
     menuOpen.value = false
 }
 
+async function toggleNotifyEnabled(value: boolean) {
+    await feedStore.setNotifyEnabled(props.guid, value)
+}
+
 const PAGE_SIZE = 20
 const feedItems = ref<FeedItem[]>([])
 const visibleFeedItems = computed(() =>
@@ -240,6 +244,14 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
         Updates about once every {{ feed.update_frequency }} day{{ feed.update_frequency === 1 ? '' : 's' }}.
       </em>
     </div>
+
+    <label class="mt-4 is-flex is-align-items-center" style="gap: 0.5rem; cursor: pointer; user-select: none;">
+      <input
+          type="checkbox"
+          :checked="feed.notify_enabled"
+          @change="toggleNotifyEnabled(($event.target as HTMLInputElement).checked)">
+      <span>Notify me when new {{ feed.type === 'podcast' ? 'episodes' : 'posts' }} are published</span>
+    </label>
 
     <section class="mt-6">
       <div class="is-flex is-align-items-start">

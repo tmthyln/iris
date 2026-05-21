@@ -1,10 +1,53 @@
+import type {ExecutionContext} from "@cloudflare/workers-types";
 import {ServerFeed, ServerFeedFile, ServerFeedSource} from "./models";
-import {createFeedFile, createFeedItem, getFeedFilesForFeed, getFeedItemDateRange, getUpdatableFeedSources} from "./crud";
-import {fetchRssFile, parseRssText, sha256Encode} from "./utils/files";
+import {
+    createFeedFile,
+    createFeedItem,
+    createNotification,
+    getFeedFilesForFeed,
+    getFeedItemDateRange,
+    getFeedItemFingerprintsByGuids,
+    getFeedMaxItemDate,
+    getUpdatableFeedSources,
+    type FeedItemFingerprint,
+} from "./crud";
+import {computeFeedItemContentHash, fetchRssFile, parseRssText, sha256Encode} from "./utils/files";
 import {fetchArchiveList, waybackSnapshotUrl} from "./utils/wayback";
+import {fanOutPushWithContext, loadPushFanOutContext, type PushFanOutContext} from "./utils/push";
 import type {FetchArchiveSnapshotTask} from "./types";
 
-export async function refreshFeed(feedGuid: string, env: Env) {
+export type FeedItemClassification = 'new' | 'updated' | 'skip'
+
+/**
+ * Classify an incoming feed item relative to what's already in the database.
+ *  - 'new': not seen before and dated later than anything we currently store
+ *  - 'updated': previously stored, with a content hash that no longer matches
+ *  - 'skip': already known unchanged, or older than the current cutoff (backfill)
+ *
+ * `existing.content_hash === null` (legacy items pre-dating the content_hash
+ * column) is treated as 'skip' so the migration doesn't trigger a flood of
+ * spurious 'updated' notifications on the first refresh.
+ */
+export function classifyFeedItem(args: {
+    contentHash: string
+    itemDate: Date | null
+    existing: FeedItemFingerprint | undefined
+    maxDate: Date | null
+}): FeedItemClassification {
+    const {contentHash, itemDate, existing, maxDate} = args
+    if (!existing) {
+        if (itemDate && (!maxDate || itemDate.getTime() > maxDate.getTime())) {
+            return 'new'
+        }
+        return 'skip'
+    }
+    if (existing.content_hash !== null && existing.content_hash !== contentHash) {
+        return 'updated'
+    }
+    return 'skip'
+}
+
+export async function refreshFeed(feedGuid: string, env: Env, ctx?: ExecutionContext) {
     const db = env.DB
     const cache_bucket = env.RSS_CACHE_BUCKET
     const feed = await ServerFeed.get(db, feedGuid)
@@ -13,6 +56,14 @@ export async function refreshFeed(feedGuid: string, env: Env) {
     if (!feed) {
         return
     }
+
+    // Cutoff date for the new/backfill classifier. Raised in memory after each
+    // source so items persisted earlier in the same refresh aren't re-classified
+    // as 'new' by a later source.
+    let maxDate = await getFeedMaxItemDate(db, feedGuid)
+
+    // Fetched lazily on the first feed source that produces notifiable items.
+    let pushContext: PushFanOutContext | null | undefined
 
     for (const feedSource of feedSources) {
         const fetchResult = await fetchRssFile(feedSource.feed_url)
@@ -35,10 +86,67 @@ export async function refreshFeed(feedGuid: string, env: Env) {
 
         // TODO update feed metadata, description, etc from channel
 
-        // non-duplicate feed items
-        await Promise.allSettled(items.map(async item =>
-            await createFeedItem(feed, item).persistTo(db)
-        ))
+        const fingerprints = await getFeedItemFingerprintsByGuids(
+            db, feedGuid, items.map(i => i.guid),
+        )
+
+        // classify items (new / updated / backfill / unchanged) before persisting
+        const classified = await Promise.all(items.map(async item => {
+            const content_hash = await computeFeedItemContentHash(item)
+            const itemDate = item.date ? new Date(item.date) : null
+            const kind = classifyFeedItem({
+                contentHash: content_hash,
+                itemDate,
+                existing: fingerprints.get(item.guid),
+                maxDate,
+            })
+            return {item, content_hash, itemDate, kind}
+        }))
+
+        // persist items (existing behavior preserved)
+        await Promise.allSettled(classified.map(async ({item, content_hash}) => {
+            const entity = await createFeedItem(feed, item, content_hash)
+            return entity.persistTo(db)
+        }))
+
+        // raise the cutoff so a later source in the same refresh doesn't
+        // re-classify what we just persisted as 'new'
+        for (const {itemDate} of classified) {
+            if (itemDate && (!maxDate || itemDate.getTime() > maxDate.getTime())) {
+                maxDate = itemDate
+            }
+        }
+
+        if (!feed.notify_enabled) continue
+
+        const notifiable = classified.filter(c => c.kind !== 'skip')
+        if (notifiable.length === 0) continue
+
+        if (pushContext === undefined) {
+            pushContext = await loadPushFanOutContext(env)
+        }
+
+        for (const {item, kind} of notifiable) {
+            const type = kind === 'new' ? 'new_item' : 'updated_item'
+            await createNotification(db, type, feed.guid, item.guid)
+
+            if (!pushContext) continue
+
+            const payload = {
+                type,
+                feed_guid: feed.guid,
+                feed_item_guid: item.guid,
+                title: feed.alias || feed.title,
+                body: kind === 'new' ? item.title : `Updated: ${item.title}`,
+                url: `/feeditem/${encodeURIComponent(item.guid)}`,
+            }
+            const fanOut = fanOutPushWithContext(db, pushContext, payload)
+            if (ctx) {
+                ctx.waitUntil(fanOut)
+            } else {
+                await fanOut
+            }
+        }
     }
 }
 
@@ -217,7 +325,8 @@ export async function fetchArchiveSnapshot(task: FetchArchiveSnapshotTask, env: 
     await feedFile.persistTo(db, cache_bucket)
 
     // persist feed items (duplicates handled by ON CONFLICT)
-    await Promise.allSettled(parsed.items.map(async item =>
-        await createFeedItem(feed, item).defer().persistTo(db)
-    ))
+    await Promise.allSettled(parsed.items.map(async item => {
+        const entity = await createFeedItem(feed, item)
+        return entity.defer().persistTo(db)
+    }))
 }

@@ -2,6 +2,7 @@ name = "iris"
 route = { pattern = "iris.timothylin.me", custom_domain = true }
 main = "src/service.ts"
 compatibility_date = "2026-02-10"
+compatibility_flags = ["nodejs_compat"]
 assets = { directory = "./dist/", not_found_handling = "single-page-application" }
 
 [observability]
@@ -10,6 +11,7 @@ enabled = true
 
 [env.staging]
 route = { pattern = "staging.iris.timothylin.me", custom_domain = true }
+vars = { VAPID_PUBLIC_KEY = "BJvzRbZFRCGrzyQm--FcpBqLpsB9K2i9_yeIEemKETc7LwOela3ZCe4Yq534sc0TxbomT6bUQYkCFzVBzuP35Uk", VAPID_SUBJECT = "https://staging.iris.timothylin.me" }
 d1_databases = [
     { binding = "DB", database_name = "iris-db-staging", database_id = "6dc72db6-7c48-4049-ba75-ac83ae139b6f" }
 ]
@@ -36,6 +38,7 @@ crons = ["7 * * * *"]  # run every hour, 7 minutes past the hour
 
 
 [env.prod]
+vars = { VAPID_PUBLIC_KEY = "BOK1Re3FBQ61ST0DZBm_maYRzOjLseRYqdFroBEo6qxS58_QCYZT0twm-HT-OpbjuKEcaF1VYPWbrevWukSaOOw", VAPID_SUBJECT = "https://iris.timothylin.me" }
 d1_databases = [
     { binding = "DB", database_name = "iris-db-prod", database_id = "962886b7-e979-475d-9b74-c22f56a24eb6" }
 ]

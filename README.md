@@ -78,11 +78,37 @@ Iris is deployed as a Cloudflare Worker with static assets. The `wrangler.toml` 
    wrangler d1 migrations apply DB --env staging
    wrangler d1 migrations apply DB --env prod
    ```
-5. Deploy:
+5. To enable push notifications, generate a VAPID keypair (e.g. `npx web-push generate-vapid-keys`)
+   and configure it. `VAPID_PUBLIC_KEY` and `VAPID_SUBJECT` (`mailto:` URL or page URL) go in
+   `wrangler.toml` under each environment's `vars`. The private key must be set as a secret:
+   ```bash
+   wrangler secret put VAPID_PRIVATE_KEY --env staging
+   wrangler secret put VAPID_PRIVATE_KEY --env prod
+   ```
+   If any of the three are missing, the `/api/push/vapid-public-key` endpoint returns 503 and
+   push notifications stay disabled (the rest of the app is unaffected).
+6. Deploy:
    ```bash
    npm run deploy
    ```
-6. Optionally set up Cloudflare Zero Trust to restrict access.
+7. Optionally set up Cloudflare Zero Trust to restrict access.
+
+
+### Rotating the VAPID keypair
+
+If a private key is compromised or you want to invalidate all existing
+push subscribers, rotate the keypair:
+
+1. Generate a new pair: `npx web-push generate-vapid-keys --json`.
+2. Replace `VAPID_PUBLIC_KEY` in `wrangler.toml` for the affected environment.
+3. Push the new private key: `wrangler secret put VAPID_PRIVATE_KEY --env <env>`.
+4. Drop the now-orphaned subscriptions (they're signed against the old key
+   and would all fail with 401):
+   ```bash
+   wrangler d1 execute iris-db-<env> --env <env> --command "DELETE FROM push_subscription"
+   ```
+5. Redeploy. Each device needs to re-enable notifications from the bell menu
+   to subscribe under the new key.
 
 
 ## Hosting Cost

@@ -1,5 +1,5 @@
 import {describe, test, expect} from 'vitest'
-import {selectSnapshots, waybackTimestampToMs} from './flows'
+import {classifyFeedItem, selectSnapshots, waybackTimestampToMs} from './flows'
 
 describe('selectSnapshots', () => {
     test('returns empty for empty input', () => {
@@ -69,5 +69,71 @@ describe('waybackTimestampToMs', () => {
 
     test('parses end-of-day timestamp', () => {
         expect(waybackTimestampToMs(20231231235959)).toBe(Date.UTC(2023, 11, 31, 23, 59, 59))
+    })
+})
+
+describe('classifyFeedItem', () => {
+    const HASH_A = 'aaaa'
+    const HASH_B = 'bbbb'
+    const T0 = new Date('2024-01-01T00:00:00Z')
+    const T1 = new Date('2024-06-01T00:00:00Z')
+    const T2 = new Date('2024-12-01T00:00:00Z')
+
+    test("first item ever (no maxDate, no existing) is 'new'", () => {
+        expect(classifyFeedItem({
+            contentHash: HASH_A, itemDate: T1, existing: undefined, maxDate: null,
+        })).toBe('new')
+    })
+
+    test("unseen item newer than cutoff is 'new'", () => {
+        expect(classifyFeedItem({
+            contentHash: HASH_A, itemDate: T2, existing: undefined, maxDate: T1,
+        })).toBe('new')
+    })
+
+    test("unseen item older than cutoff is 'skip' (backfill)", () => {
+        expect(classifyFeedItem({
+            contentHash: HASH_A, itemDate: T0, existing: undefined, maxDate: T1,
+        })).toBe('skip')
+    })
+
+    test("unseen item with no date is 'skip'", () => {
+        expect(classifyFeedItem({
+            contentHash: HASH_A, itemDate: null, existing: undefined, maxDate: null,
+        })).toBe('skip')
+    })
+
+    test("known item with identical hash is 'skip'", () => {
+        expect(classifyFeedItem({
+            contentHash: HASH_A,
+            itemDate: T1,
+            existing: {date: T1, content_hash: HASH_A},
+            maxDate: T1,
+        })).toBe('skip')
+    })
+
+    test("known item with different hash is 'updated'", () => {
+        expect(classifyFeedItem({
+            contentHash: HASH_B,
+            itemDate: T1,
+            existing: {date: T1, content_hash: HASH_A},
+            maxDate: T1,
+        })).toBe('updated')
+    })
+
+    test("legacy item (existing hash is null) is 'skip' even if hashes differ", () => {
+        expect(classifyFeedItem({
+            contentHash: HASH_A,
+            itemDate: T1,
+            existing: {date: T1, content_hash: null},
+            maxDate: T1,
+        })).toBe('skip')
+    })
+
+    test("unseen item with itemDate exactly at maxDate is 'skip'", () => {
+        // strict > so equal counts as already-known
+        expect(classifyFeedItem({
+            contentHash: HASH_A, itemDate: T1, existing: undefined, maxDate: T1,
+        })).toBe('skip')
     })
 })

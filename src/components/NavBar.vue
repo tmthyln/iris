@@ -5,6 +5,7 @@ import {refDebounced, onKeyStroke, useIntersectionObserver} from "@vueuse/core";
 import client from "../client.ts";
 import type {FeedItemPreview} from "../types.ts";
 import {useLatestAsync} from "../composables/useLatestAsync.ts";
+import NotificationBell from "./NotificationBell.vue";
 
 const router = useRouter()
 const sidebarOpen = defineModel<boolean>('sidebarOpen', {default: false})
@@ -268,6 +269,7 @@ function makeSnippet(result: FeedItemPreview, query: string): string {
         <div class="navbar-item">
           <input class="input" type="search" placeholder="Search posts and podcasts" readonly @click="openSearch()">
         </div>
+        <NotificationBell/>
       </div>
     </div>
 
