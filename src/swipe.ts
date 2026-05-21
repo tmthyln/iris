@@ -4,10 +4,14 @@ interface SwipeItem {
     guid: string
 }
 
-export function useSwipeToDismiss(onDismiss: (item: SwipeItem) => void, threshold = 100) {
+export function useSwipeToDismiss(
+    onDismiss: (item: SwipeItem) => void,
+    {threshold = 100, ignoreSelector}: {threshold?: number, ignoreSelector?: string} = {},
+) {
     const swipeState = ref<{guid: string, startX: number, dx: number} | null>(null)
 
     function onTouchStart(item: SwipeItem, e: TouchEvent) {
+        if (ignoreSelector && e.target instanceof Element && e.target.closest(ignoreSelector)) return
         swipeState.value = {guid: item.guid, startX: e.touches[0].clientX, dx: 0}
     }
 
