@@ -47,6 +47,13 @@ const {
     src: resolvedSrc,
 })
 
+const currentItemReady = computed(() =>
+    !!currentItem.value && resolvedSrc.value !== '' && duration.value > 0 && isFinite(duration.value)
+)
+const isLoading = computed(() =>
+    queueStore.loadState === 'loading' || (!!currentItem.value && !currentItemReady.value)
+)
+
 const autoPlayNext = ref(false)
 
 watch(duration, (newDuration) => {
@@ -134,11 +141,11 @@ watch(currentItem, (item) => {
 }, {immediate: true})
 
 if ('mediaSession' in navigator) {
-    navigator.mediaSession.setActionHandler('play', () => { playing.value = true })
-    navigator.mediaSession.setActionHandler('pause', () => { playing.value = false })
-    navigator.mediaSession.setActionHandler('seekbackward', () => fastRewind())
-    navigator.mediaSession.setActionHandler('seekforward', () => fastForward())
-    navigator.mediaSession.setActionHandler('nexttrack', () => skipNext())
+    navigator.mediaSession.setActionHandler('play', () => { if (!isLoading.value) playing.value = true })
+    navigator.mediaSession.setActionHandler('pause', () => { if (!isLoading.value) playing.value = false })
+    navigator.mediaSession.setActionHandler('seekbackward', () => { if (!isLoading.value) fastRewind() })
+    navigator.mediaSession.setActionHandler('seekforward', () => { if (!isLoading.value) fastForward() })
+    navigator.mediaSession.setActionHandler('nexttrack', () => { if (!isLoading.value) skipNext() })
 }
 
 /* Queue popover */
@@ -191,6 +198,7 @@ const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(re
           type="range"
           :min="0" :max="duration"
           :value="currentTime" @input="setPlaybackPosition"
+          :disabled="isLoading"
           :style="{'--progress': `${100*currentTime/duration}%`}">
       <div class="player-layout p-4 is-flex-grow-1">
         <audio ref="audio"></audio>
@@ -200,27 +208,40 @@ const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(re
         </div>
         <div class="player-center">
 
-          <button class="tag button" @click="cyclePlaybackRate">
+          <button class="tag button" :disabled="isLoading" @click="cyclePlaybackRate">
             {{ rate }}x
           </button>
 
-          <button class="button is-rounded px-2 control-button" title="Rewind 10 seconds" @click="fastRewind">
+          <button
+              class="button is-rounded px-2 control-button"
+              title="Rewind 10 seconds"
+              :disabled="isLoading"
+              @click="fastRewind">
             <span class="material-symbols-outlined">fast_rewind</span>
           </button>
 
-          <button class="button is-rounded px-3 is-large control-button" @click="playing = !playing">
+          <button
+              class="button is-rounded px-3 is-large control-button"
+              :class="{'is-loading': isLoading}"
+              :disabled="isLoading"
+              :title="isLoading ? 'Loading...' : (playing ? 'Pause' : 'Play')"
+              @click="playing = !playing">
             <span v-if="!playing" class="material-symbols-outlined">play_arrow</span>
             <span v-else class="material-symbols-outlined">pause</span>
           </button>
 
-          <button class="button is-rounded px-2 control-button" title="Skip forward 30 seconds" @click="fastForward">
+          <button
+              class="button is-rounded px-2 control-button"
+              title="Skip forward 30 seconds"
+              :disabled="isLoading"
+              @click="fastForward">
             <span class="material-symbols-outlined">fast_forward</span>
           </button>
 
           <button
               class="button is-rounded px-2 control-button"
               title="Skip to next in queue"
-              :disabled="upcomingItems.length === 0"
+              :disabled="isLoading || upcomingItems.length === 0"
               @click="skipNext">
             <span class="material-symbols-outlined">skip_next</span>
           </button>

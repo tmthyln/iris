@@ -1,5 +1,5 @@
 import {defineStore} from "pinia";
-import {FeedItemPreview} from "../types.ts";
+import {FeedItemPreview, LoadingState} from "../types.ts";
 import client from "../client.ts";
 import {useDownloadStore} from "./downloads.ts";
 
@@ -38,6 +38,7 @@ export const useQueueStore = defineStore('queue', {
         return {
             items: [] as FeedItemPreview[],
             paused: true,
+            loadState: 'unloaded' as LoadingState,
         }
     },
     getters: {
@@ -45,17 +46,27 @@ export const useQueueStore = defineStore('queue', {
     },
     actions: {
         async loadQueue() {
-            const items = await client.getQueue()
-            if (items) {
-                this.items = items
-                saveQueueToStorage(items)
-                ensureDownloaded(items)
-            } else {
+            if (this.loadState === 'loading') return
+            this.loadState = 'loading'
+
+            // Hydrate from localStorage immediately so the player can render
+            // (in a loading state) while we await the network round-trip.
+            if (this.items.length === 0) {
                 const saved = loadQueueFromStorage()
                 if (saved.length) {
                     this.items = saved
                     ensureDownloaded(saved)
                 }
+            }
+
+            const items = await client.getQueue()
+            if (items) {
+                this.items = items
+                saveQueueToStorage(items)
+                ensureDownloaded(items)
+                this.loadState = 'loaded'
+            } else {
+                this.loadState = 'unloaded'
             }
         },
         itemPlaying(item: FeedItemPreview) {
