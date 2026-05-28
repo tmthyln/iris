@@ -29,7 +29,7 @@ import {
     countPushSubscriptions,
 } from './crud'
 import type { RefreshFeedTask, PlanFeedArchivesTask } from "./types";
-import {fetchRssFile, parseRssText} from "./utils/files";
+import {fetchRssFile, parseRssText, FETCH_USER_AGENT} from "./utils/files";
 import {fanOutPushWithContext, loadPushFanOutContext} from "./utils/push";
 import {getQueue} from "./queue";
 import {refreshFeed} from "./flows";
@@ -231,6 +231,38 @@ app.get('/feeditem/:guid', async (c) => {
     const feedItem = await ServerFeedItem.get(c.env.DB, guid)
 
     return feedItem ? Response.json(new ClientFeedItem(feedItem)) : new Response(null, {status: 404, statusText: `No feed item found with guid: ${guid}`})
+})
+app.get('/feeditem/:guid/media', async (c) => {
+    const guid = c.req.param('guid')
+    const feedItem = await ServerFeedItem.get(c.env.DB, guid)
+    if (!feedItem?.enclosure_url) {
+        return new Response(null, {status: 404})
+    }
+
+    let upstreamUrl: URL
+    try {
+        upstreamUrl = new URL(feedItem.enclosure_url)
+    } catch {
+        return new Response(null, {status: 502})
+    }
+    if (upstreamUrl.protocol !== 'http:' && upstreamUrl.protocol !== 'https:') {
+        return new Response(null, {status: 502})
+    }
+
+    const upstreamHeaders = new Headers()
+    upstreamHeaders.set('user-agent', FETCH_USER_AGENT)
+    const range = c.req.header('range')
+    if (range) upstreamHeaders.set('range', range)
+
+    const upstream = await fetch(upstreamUrl.toString(), {headers: upstreamHeaders})
+
+    const headers = new Headers()
+    for (const name of ['content-type', 'content-length', 'accept-ranges', 'content-range', 'last-modified', 'etag']) {
+        const value = upstream.headers.get(name)
+        if (value) headers.set(name, value)
+    }
+
+    return new Response(upstream.body, {status: upstream.status, headers})
 })
 app.get('/feeditem/:guid/adjacent', async (c) => {
     const guid = c.req.param('guid')

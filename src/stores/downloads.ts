@@ -186,7 +186,8 @@ export const useDownloadStore = defineStore('downloads', () => {
                 }
             }
 
-            const response = await fetch(item.enclosure_url, {signal: abortController.signal})
+            const proxiedUrl = `/api/feeditem/${encodeURIComponent(item.guid)}/media`
+            const response = await fetch(proxiedUrl, {signal: abortController.signal})
             if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
             const contentLength = Number(response.headers.get('content-length')) || 0
