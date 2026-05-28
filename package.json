@@ -32,7 +32,7 @@
     "@types/sortablejs": "^1.15.9",
     "@types/web-push": "^3.6.4",
     "@vite-pwa/assets-generator": "^1.0.0",
-    "@vitejs/plugin-vue": "^6.0.6",
+    "@vitejs/plugin-vue": "^6.0.7",
     "eslint": "~10.3.0",
     "eslint-plugin-vue": "^10.9.0",
     "fast-xml-parser": "^5.7.1",
