@@ -49,5 +49,10 @@
     "vue-tsc": "^3.2.7",
     "workbox-precaching": "^7.4.1",
     "wrangler": "^4.90.0"
+  },
+  "overrides": {
+    "vite-plugin-vue-devtools": {
+      "vite-plugin-inspect": "12.0.0-beta.2"
+    }
   }
 }
