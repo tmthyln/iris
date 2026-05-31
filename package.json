@@ -21,7 +21,7 @@
     "pinia": "^3.0.4",
     "sortablejs": "^1.15.6",
     "vue": "^3.5.33",
-    "vue-router": "^5.0.6",
+    "vue-router": "^5.1.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
@@ -46,7 +46,7 @@
     "vite-plugin-pwa": "^1.3.0",
     "vite-plugin-vue-devtools": "^8.1.2",
     "vitest": "^4.1.4",
-    "vue-tsc": "^3.2.7",
+    "vue-tsc": "^3.3.3",
     "workbox-precaching": "^7.4.1",
     "wrangler": "^4.90.0"
   },
