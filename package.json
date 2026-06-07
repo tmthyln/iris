@@ -48,7 +48,7 @@
     "vitest": "^4.1.4",
     "vue-tsc": "^3.2.7",
     "workbox-precaching": "^7.4.1",
-    "wrangler": "^4.90.0"
+    "wrangler": "^4.98.0"
   },
   "overrides": {
     "vite-plugin-vue-devtools": {
