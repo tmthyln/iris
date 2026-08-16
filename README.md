@@ -91,7 +91,21 @@ Iris is deployed as a Cloudflare Worker with static assets. The `wrangler.toml` 
    ```bash
    npm run deploy
    ```
-7. Optionally set up Cloudflare Zero Trust to restrict access.
+7. Put a Cloudflare Access application (Zero Trust) in front of the deployed hostnames — see below.
+
+
+### Authentication
+
+Iris has **no in-app authentication by design**: every API endpoint (adding feeds, editing the
+queue, requesting transcriptions, the media proxy) is open to whoever can reach the Worker.
+Instead, the deployed staging and prod hostnames are fronted by a Cloudflare Access application,
+which requires login before any request reaches the app. If you self-host, treat Access (or an
+equivalent authenticating proxy) as a required part of the deployment, not an optional hardening
+step.
+
+The PWA works normally behind Access, including push notifications — those are delivered through
+the browser's push service rather than same-origin requests, so they arrive even when the Access
+session has expired.
 
 
 ### Rotating the VAPID keypair

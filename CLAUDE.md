@@ -9,8 +9,8 @@ Iris is a self-hosted RSS feed and podcast aggregator built as a replacement for
 ## Development Commands
 
 ```bash
-# Start development server (frontend + backend with Cloudflare bindings)
-npx wrangler pages dev --r2=RSS_CACHE_BUCKET -- npm run dev
+# Start development server (frontend + backend with Cloudflare bindings, via @cloudflare/vite-plugin)
+npm run dev
 
 # Run linting (ESLint 9 flat config)
 npm run lint
@@ -60,6 +60,11 @@ Frontend and backend share `src/` but are **separated by TypeScript project refe
 - **Styling:** Bulma CSS framework with SASS
 - **API Client:** `src/client.ts` — pure data fetching layer using fetch API, returns typed data or `null` on error
 
+### Dev Server
+- `npm run dev` runs `vite dev --mode staging`; `@cloudflare/vite-plugin` (in `vite.config.ts`) runs the Worker inside the Vite dev server with real bindings from `wrangler.toml`, so the single Vite origin (port 5173) serves both the frontend and `/api/*` — no separate `wrangler dev` process
+- The plugin is skipped under Vitest (`!process.env.VITEST && cloudflare()`)
+- Production build/deploy is two steps: `vite build` to `dist/`, then `wrangler deploy` (the Worker serves `dist/` via the `assets` config in `wrangler.toml`)
+
 ### Backend (Cloudflare Workers)
 - **Entry Point:** `src/service.ts` — exports `fetch` (Hono app), `queue` (consumer), and `scheduled` (cron) handlers
 - **API Framework:** Hono for routing (`src/services/endpoints.ts`)
@@ -83,6 +88,15 @@ Data flows through distinct type layers:
 - **Durable Objects:** ItemQueue for persistent playback queue state
 - **Cron:** Hourly scheduled feed refresh (staging: `:07`, prod: `:17`)
 - **Environments:** `staging` and `prod` configured in `wrangler.toml` with separate D1/R2/Queue bindings
+
+### Authentication
+
+The API has **no in-app authentication by design** (#205). Both deployed environments (staging and prod) sit behind a Cloudflare Access application, which handles login before requests ever reach the Worker. Consequences:
+
+- Do not add per-endpoint auth checks, tokens, or session handling to the Worker — access control is Access's job.
+- Endpoints reachable without Access (none currently) must be treated as public. The push-subscription endpoints additionally validate input and cap table growth because they were written before Access was in place.
+- Web push delivery is unaffected: notifications arrive via the browser push service, not same-origin fetches.
+- Local dev (`npm run dev` / wrangler) has no Access in front of it — everything is open on localhost, which is expected.
 
 ### Database
 - Schema migrations in `migrations/`
