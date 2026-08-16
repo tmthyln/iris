@@ -1,4 +1,4 @@
-import {AdjacentFeedItems, Feed, FeedItem, FeedItemPreview, NotificationsResponse, Transcript, TranscriptFull} from "./types.ts";
+import {AdjacentFeedItems, ApiResult, Feed, FeedItem, FeedItemPreview, NotificationsResponse, Transcript, TranscriptFull} from "./types.ts";
 
 interface SearchOptions {
     limit?: number
@@ -29,294 +29,171 @@ interface FeedItemUpdateData {
 
 const TIMEOUT_MS = 10000
 
-function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = TIMEOUT_MS): Promise<Response> {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     return fetch(url, {...init, signal: controller.signal}).finally(() => clearTimeout(timer))
 }
 
+// Pass parse: 'none' for endpoints that respond with an empty body on success.
+async function request<T = void>(
+    url: string,
+    init: RequestInit = {},
+    parse: 'json' | 'none' = 'json',
+    timeoutMs = TIMEOUT_MS,
+): Promise<ApiResult<T>> {
+    try {
+        const response = await fetchWithTimeout(url, init, timeoutMs)
+        if (response.ok) {
+            const data = parse === 'json' ? await response.json() as T : undefined as T
+            return {ok: true, status: response.status, data}
+        }
+        let error = `Server returned ${response.status}`
+        try {
+            const body = await response.json() as {error?: string}
+            if (body?.error) error = body.error
+        } catch { /* non-JSON error body */ }
+        return {ok: false, status: response.status, error}
+    } catch (err) {
+        const aborted = err instanceof DOMException && err.name === 'AbortError'
+        return {ok: false, status: null, error: aborted ? 'Request timed out' : 'Network unavailable'}
+    }
+}
+
+function unwrapItems(result: ApiResult<{items: FeedItemPreview[]}>): ApiResult<FeedItemPreview[]> {
+    return result.ok ? {...result, data: result.data.items} : result
+}
+
 export default {
-    async getFeeds(): Promise<Feed[] | null> {
-        try {
-            const response = await fetchWithTimeout('/api/feed')
-            if (response.ok) return await response.json() as Feed[]
-            return null
-        } catch {
-            return null
-        }
+    getFeeds(): Promise<ApiResult<Feed[]>> {
+        return request<Feed[]>('/api/feed')
     },
-    async getFeedItem(itemGuid: string) {
-        try {
-            const itemDataUrl = `/api/feeditem/${encodeURIComponent(itemGuid)}`
-            const itemResponse = await fetchWithTimeout(itemDataUrl)
-            if (itemResponse.ok) {
-                const data: FeedItem = await itemResponse.json()
-                return data
-            }
-            return null
-        } catch {
-            return null
-        }
+    addFeed(url: string): Promise<ApiResult<void>> {
+        // Adding a feed fetches and parses the remote RSS file server-side,
+        // which can take well beyond the default timeout.
+        return request<void>('/api/feed', {
+            method: 'POST',
+            body: JSON.stringify({url}),
+        }, 'none', 60000)
     },
-    async getAdjacentFeedItems(itemGuid: string): Promise<AdjacentFeedItems | null> {
-        try {
-            const response = await fetchWithTimeout(`/api/feeditem/${encodeURIComponent(itemGuid)}/adjacent`)
-            if (response.ok) return await response.json()
-            return null
-        } catch {
-            return null
-        }
+    getFeedItem(itemGuid: string): Promise<ApiResult<FeedItem>> {
+        return request<FeedItem>(`/api/feeditem/${encodeURIComponent(itemGuid)}`)
     },
-    async getFeedItems(options: GetFeedItemsOptions = {}) {
-        try {
-            const {
-                bookmarked = null,
-                limit = null,
-                offset = 0,
-            } = options
+    getAdjacentFeedItems(itemGuid: string): Promise<ApiResult<AdjacentFeedItems>> {
+        return request<AdjacentFeedItems>(`/api/feeditem/${encodeURIComponent(itemGuid)}/adjacent`)
+    },
+    getFeedItems(options: GetFeedItemsOptions = {}): Promise<ApiResult<FeedItemPreview[]>> {
+        const {
+            bookmarked = null,
+            limit = null,
+            offset = 0,
+        } = options
 
-            const queryParams = new URLSearchParams()
-            queryParams.set('offset', String(offset))
-            limit && queryParams.set('limit', String(limit))
-            bookmarked !== null && queryParams.set('bookmarked', String(bookmarked))
+        const queryParams = new URLSearchParams()
+        queryParams.set('offset', String(offset))
+        limit && queryParams.set('limit', String(limit))
+        bookmarked !== null && queryParams.set('bookmarked', String(bookmarked))
 
-            const response = await fetchWithTimeout(`/api/feeditem?${queryParams}`)
-            if (response.ok) {
-                const data: FeedItemPreview[] = await response.json()
-                return data
-            }
-            return null
-        } catch {
-            return null
-        }
+        return request<FeedItemPreview[]>(`/api/feeditem?${queryParams}`)
     },
-    async modifyFeed(feedGuid: string, updateData: { categories?: string[], alias?: string, notify_enabled?: boolean }) {
-        try {
-            const response = await fetchWithTimeout(`/api/feed/${encodeURIComponent(feedGuid)}`, {
-                method: 'PATCH',
-                body: JSON.stringify(updateData),
-            })
-            return response.ok
-        } catch {
-            return false
-        }
+    modifyFeed(feedGuid: string, updateData: { categories?: string[], alias?: string, notify_enabled?: boolean }): Promise<ApiResult<void>> {
+        return request<void>(`/api/feed/${encodeURIComponent(feedGuid)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(updateData),
+        }, 'none')
     },
-    async modifyFeedItem(itemGuid: string, updateData: FeedItemUpdateData) {
-        try {
-            const response = await fetchWithTimeout(`/api/feeditem/${encodeURIComponent(itemGuid)}`, {
-                method: 'PATCH',
-                body: JSON.stringify(updateData),
-            })
-            return response.ok
-        } catch {
-            return false
-        }
+    modifyFeedItem(itemGuid: string, updateData: FeedItemUpdateData): Promise<ApiResult<void>> {
+        return request<void>(`/api/feeditem/${encodeURIComponent(itemGuid)}`, {
+            method: 'PATCH',
+            body: JSON.stringify(updateData),
+        }, 'none')
     },
-    async queueFeedItem(feedItemGuid: string, position?: number): Promise<FeedItemPreview[] | null> {
-        try {
-            const response = await fetchWithTimeout('/api/queue', {
-                method: 'POST',
-                body: JSON.stringify({feedItemId: feedItemGuid, position}),
-            })
-            if (response.ok) {
-                const data: {items: FeedItemPreview[]} = await response.json()
-                return data.items
-            }
-            return null
-        } catch {
-            return null
-        }
+    async queueFeedItem(feedItemGuid: string, position?: number): Promise<ApiResult<FeedItemPreview[]>> {
+        return unwrapItems(await request<{items: FeedItemPreview[]}>('/api/queue', {
+            method: 'POST',
+            body: JSON.stringify({feedItemId: feedItemGuid, position}),
+        }))
     },
-    async moveQueueItem(feedItemGuid: string, position: number): Promise<FeedItemPreview[] | null> {
-        try {
-            const response = await fetchWithTimeout(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
-                method: 'PATCH',
-                body: JSON.stringify({position}),
-            })
-            if (response.ok) {
-                const data: {items: FeedItemPreview[]} = await response.json()
-                return data.items
-            }
-            return null
-        } catch {
-            return null
-        }
+    async moveQueueItem(feedItemGuid: string, position: number): Promise<ApiResult<FeedItemPreview[]>> {
+        return unwrapItems(await request<{items: FeedItemPreview[]}>(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({position}),
+        }))
     },
-    async clearQueue(keepFirst: boolean): Promise<FeedItemPreview[] | null> {
-        try {
-            const params = keepFirst ? '?keepFirst=true' : ''
-            const response = await fetchWithTimeout(`/api/queue${params}`, {
-                method: 'DELETE',
-            })
-            if (response.ok) {
-                const data: {items: FeedItemPreview[]} = await response.json()
-                return data.items
-            }
-            return null
-        } catch {
-            return null
-        }
+    async clearQueue(keepFirst: boolean): Promise<ApiResult<FeedItemPreview[]>> {
+        const params = keepFirst ? '?keepFirst=true' : ''
+        return unwrapItems(await request<{items: FeedItemPreview[]}>(`/api/queue${params}`, {
+            method: 'DELETE',
+        }))
     },
-    async removeQueueItem(feedItemGuid: string): Promise<FeedItemPreview[] | null> {
-        try {
-            const response = await fetchWithTimeout(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
-                method: 'DELETE',
-            })
-            if (response.ok) {
-                const data: {items: FeedItemPreview[]} = await response.json()
-                return data.items
-            }
-            return null
-        } catch {
-            return null
-        }
+    async removeQueueItem(feedItemGuid: string): Promise<ApiResult<FeedItemPreview[]>> {
+        return unwrapItems(await request<{items: FeedItemPreview[]}>(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
+            method: 'DELETE',
+        }))
     },
-    async refreshFeed(feedGuid: string) {
-        try {
-            const response = await fetchWithTimeout(`/api/command/refresh-feed/${encodeURIComponent(feedGuid)}`, {
-                method: 'POST',
-            })
-            return response.ok
-        } catch {
-            return false
-        }
+    refreshFeed(feedGuid: string): Promise<ApiResult<void>> {
+        return request<void>(`/api/command/refresh-feed/${encodeURIComponent(feedGuid)}`, {
+            method: 'POST',
+        }, 'none')
     },
-    async searchFeedItems(query: string, options: SearchOptions = {}): Promise<FeedItemPreview[] | null> {
-        try {
-            const { limit, offset = 0 } = options
-            const queryParams = new URLSearchParams()
-            queryParams.set('q', query)
-            queryParams.set('offset', String(offset))
-            limit && queryParams.set('limit', String(limit))
+    searchFeedItems(query: string, options: SearchOptions = {}): Promise<ApiResult<FeedItemPreview[]>> {
+        const { limit, offset = 0 } = options
+        const queryParams = new URLSearchParams()
+        queryParams.set('q', query)
+        queryParams.set('offset', String(offset))
+        limit && queryParams.set('limit', String(limit))
 
-            const response = await fetchWithTimeout(`/api/search?${queryParams}`)
-            if (response.ok) return await response.json()
-            return null
-        } catch {
-            return null
-        }
+        return request<FeedItemPreview[]>(`/api/search?${queryParams}`)
     },
-    async planFeedArchives(feedGuid: string) {
-        try {
-            const response = await fetchWithTimeout(`/api/command/plan-feed-archives/${encodeURIComponent(feedGuid)}`, {
-                method: 'POST',
-            })
-            return response.ok
-        } catch {
-            return false
-        }
+    planFeedArchives(feedGuid: string): Promise<ApiResult<void>> {
+        return request<void>(`/api/command/plan-feed-archives/${encodeURIComponent(feedGuid)}`, {
+            method: 'POST',
+        }, 'none')
     },
-    async getQueue(): Promise<FeedItemPreview[] | null> {
-        try {
-            const response = await fetchWithTimeout('/api/queue')
-            if (response.ok) {
-                const data: {items: FeedItemPreview[]} = await response.json()
-                return data.items
-            }
-            return null
-        } catch {
-            return null
-        }
+    async getQueue(): Promise<ApiResult<FeedItemPreview[]>> {
+        return unwrapItems(await request<{items: FeedItemPreview[]}>('/api/queue'))
     },
-    async getNotifications(): Promise<NotificationsResponse | null> {
-        try {
-            const response = await fetchWithTimeout('/api/notification')
-            if (response.ok) return await response.json() as NotificationsResponse
-            return null
-        } catch {
-            return null
-        }
+    getNotifications(): Promise<ApiResult<NotificationsResponse>> {
+        return request<NotificationsResponse>('/api/notification')
     },
-    async dismissNotification(id: number) {
-        try {
-            const response = await fetchWithTimeout(`/api/notification/${id}`, {method: 'DELETE'})
-            return response.ok
-        } catch {
-            return false
-        }
+    dismissNotification(id: number): Promise<ApiResult<void>> {
+        return request<void>(`/api/notification/${id}`, {method: 'DELETE'}, 'none')
     },
-    async dismissAllNotifications() {
-        try {
-            const response = await fetchWithTimeout('/api/notification', {method: 'DELETE'})
-            return response.ok
-        } catch {
-            return false
-        }
+    dismissAllNotifications(): Promise<ApiResult<void>> {
+        return request<void>('/api/notification', {method: 'DELETE'}, 'none')
     },
-    async getVapidPublicKey(): Promise<string | null> {
-        try {
-            const response = await fetchWithTimeout('/api/push/vapid-public-key')
-            if (response.ok) {
-                const data = await response.json() as {key: string}
-                return data.key || null
-            }
-            return null
-        } catch {
-            return null
-        }
+    async getVapidPublicKey(): Promise<ApiResult<string>> {
+        const result = await request<{key: string}>('/api/push/vapid-public-key')
+        return result.ok ? {...result, data: result.data.key} : result
     },
-    async registerPushSubscription(subscription: PushSubscriptionJSON) {
-        try {
-            const response = await fetchWithTimeout('/api/push/subscription', {
-                method: 'POST',
-                body: JSON.stringify(subscription),
-            })
-            return response.ok
-        } catch {
-            return false
-        }
+    registerPushSubscription(subscription: PushSubscriptionJSON): Promise<ApiResult<void>> {
+        return request<void>('/api/push/subscription', {
+            method: 'POST',
+            body: JSON.stringify(subscription),
+        }, 'none')
     },
-    async unregisterPushSubscription(endpoint: string) {
-        try {
-            const response = await fetchWithTimeout('/api/push/subscription', {
-                method: 'DELETE',
-                body: JSON.stringify({endpoint}),
-            })
-            return response.ok
-        } catch {
-            return false
-        }
+    unregisterPushSubscription(endpoint: string): Promise<ApiResult<void>> {
+        return request<void>('/api/push/subscription', {
+            method: 'DELETE',
+            body: JSON.stringify({endpoint}),
+        }, 'none')
     },
-    async listTranscripts(itemGuid: string): Promise<Transcript[] | null> {
-        try {
-            const response = await fetchWithTimeout(`/api/feeditem/${encodeURIComponent(itemGuid)}/transcript`)
-            if (response.ok) return await response.json() as Transcript[]
-            return null
-        } catch {
-            return null
-        }
+    listTranscripts(itemGuid: string): Promise<ApiResult<Transcript[]>> {
+        return request<Transcript[]>(`/api/feeditem/${encodeURIComponent(itemGuid)}/transcript`)
     },
-    async requestTranscript(itemGuid: string, opts: {model?: string, language?: string} = {}): Promise<Transcript | null> {
-        try {
-            const response = await fetchWithTimeout(`/api/feeditem/${encodeURIComponent(itemGuid)}/transcript`, {
-                method: 'POST',
-                body: JSON.stringify(opts),
-            })
-            if (response.ok) return await response.json() as Transcript
-            return null
-        } catch {
-            return null
-        }
+    requestTranscript(itemGuid: string, opts: {model?: string, language?: string} = {}): Promise<ApiResult<Transcript>> {
+        return request<Transcript>(`/api/feeditem/${encodeURIComponent(itemGuid)}/transcript`, {
+            method: 'POST',
+            body: JSON.stringify(opts),
+        })
     },
-    async getTranscript(transcriptId: number): Promise<TranscriptFull | null> {
-        try {
-            const response = await fetchWithTimeout(`/api/transcript/${transcriptId}`)
-            if (response.ok) return await response.json() as TranscriptFull
-            return null
-        } catch {
-            return null
-        }
+    getTranscript(transcriptId: number): Promise<ApiResult<TranscriptFull>> {
+        return request<TranscriptFull>(`/api/transcript/${transcriptId}`)
     },
-    async sendTestPushNotification(endpoint: string): Promise<{ok: true} | {ok: false, error: string}> {
-        try {
-            const response = await fetchWithTimeout('/api/push/test', {
-                method: 'POST',
-                body: JSON.stringify({endpoint}),
-            })
-            if (response.ok) return {ok: true}
-            return {ok: false, error: response.statusText || `Server returned ${response.status}`}
-        } catch (err) {
-            return {ok: false, error: err instanceof Error ? err.message : 'Request failed'}
-        }
+    sendTestPushNotification(endpoint: string): Promise<ApiResult<void>> {
+        return request<void>('/api/push/test', {
+            method: 'POST',
+            body: JSON.stringify({endpoint}),
+        }, 'none')
     },
 }

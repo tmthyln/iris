@@ -74,7 +74,8 @@ export function usePushSubscription() {
                 return false
             }
 
-            const publicKey = await client.getVapidPublicKey()
+            const keyResult = await client.getVapidPublicKey()
+            const publicKey = keyResult.ok ? keyResult.data : null
             if (!publicKey) {
                 lastError.value = 'Push notifications are not configured on the server.'
                 return false
@@ -93,7 +94,7 @@ export function usePushSubscription() {
                 applicationServerKey,
             })
 
-            const ok = await client.registerPushSubscription(subscription.toJSON())
+            const ok = (await client.registerPushSubscription(subscription.toJSON())).ok
             if (!ok) {
                 await subscription.unsubscribe().catch(() => undefined)
                 lastError.value = 'Server rejected the subscription.'
@@ -124,7 +125,7 @@ export function usePushSubscription() {
             }
             const endpoint = sub.endpoint
             const removedLocally = await sub.unsubscribe()
-            const serverOk = await client.unregisterPushSubscription(endpoint)
+            const serverOk = (await client.unregisterPushSubscription(endpoint)).ok
             if (!serverOk) {
                 // Browser-side removal succeeded; server cleanup will happen
                 // on the next push attempt via the 410/404 path. Don't block

@@ -62,7 +62,8 @@ export const useQueueStore = defineStore('queue', {
                 }
             }
 
-            const items = await client.getQueue()
+            const result = await client.getQueue()
+            const items = result.ok ? result.data : null
             if (items) {
                 this.items = items
                 saveQueueToStorage(items)
@@ -89,7 +90,8 @@ export const useQueueStore = defineStore('queue', {
             saveQueueToStorage(optimistic)
             ensureDownloaded([item])
 
-            const serverItems = await client.queueFeedItem(item.guid, position)
+            const result = await client.queueFeedItem(item.guid, position)
+            const serverItems = result.ok ? result.data : null
             if (serverItems) {
                 this.items = serverItems
                 saveQueueToStorage(serverItems)
@@ -101,7 +103,8 @@ export const useQueueStore = defineStore('queue', {
             this.items = optimistic
             saveQueueToStorage(optimistic)
 
-            const serverItems = await client.removeQueueItem(item.guid)
+            const result = await client.removeQueueItem(item.guid)
+            const serverItems = result.ok ? result.data : null
             if (serverItems) {
                 this.items = serverItems
                 saveQueueToStorage(serverItems)
@@ -113,7 +116,8 @@ export const useQueueStore = defineStore('queue', {
             this.items = optimistic
             saveQueueToStorage(optimistic)
 
-            const serverItems = await client.clearQueue(keepFirst)
+            const result = await client.clearQueue(keepFirst)
+            const serverItems = result.ok ? result.data : null
             if (serverItems) {
                 this.items = serverItems
                 saveQueueToStorage(serverItems)
@@ -126,7 +130,8 @@ export const useQueueStore = defineStore('queue', {
             this.items = without
             saveQueueToStorage(without)
 
-            const serverItems = await client.moveQueueItem(item.guid, position)
+            const result = await client.moveQueueItem(item.guid, position)
+            const serverItems = result.ok ? result.data : null
             if (serverItems) {
                 this.items = serverItems
                 saveQueueToStorage(serverItems)

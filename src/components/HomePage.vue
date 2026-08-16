@@ -5,6 +5,7 @@ import {useIntersectionObserver, useTitle} from "@vueuse/core";
 import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
+import client from "../client.ts";
 
 const feedStore = useFeedStore()
 const feedItemStore = useFeedItemStore()
@@ -45,10 +46,7 @@ async function submitFeedURL() {
         feedUrl.value = `https://${feedUrl.value}`
     }
 
-    await fetch('/api/feed', {
-        method: 'POST',
-        body: JSON.stringify({url: feedUrl.value}),
-    })
+    await client.addFeed(feedUrl.value)
 
     closeFeedAdder()
 }
@@ -69,10 +67,7 @@ async function importOpml(event: Event) {
 
     for (let i = 0; i < feeds.length; i++) {
         opmlImportStatus.value = {current: i + 1, total: feeds.length, name: feeds[i].name}
-        await fetch('/api/feed', {
-            method: 'POST',
-            body: JSON.stringify({url: feeds[i].url}),
-        })
+        await client.addFeed(feeds[i].url)
     }
 
     opmlImportStatus.value = null

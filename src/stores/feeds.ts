@@ -50,7 +50,8 @@ export const useFeedStore = defineStore('feeds', {
 
             this.feedsLoadState = 'loading'
 
-            const data = await client.getFeeds()
+            const result = await client.getFeeds()
+            const data = result.ok ? result.data : null
             if (data) {
                 this.feeds.length = 0;
                 this.feeds.push(...data);
@@ -87,7 +88,7 @@ export const useFeedStore = defineStore('feeds', {
             }
         },
         async updateFeedAlias(guid: string, alias: string) {
-            const success = await client.modifyFeed(guid, {alias})
+            const success = (await client.modifyFeed(guid, {alias})).ok
             if (success) {
                 const feed = this.feeds.find(f => f.guid === guid)
                 if (feed) {
@@ -97,7 +98,7 @@ export const useFeedStore = defineStore('feeds', {
             return success
         },
         async updateFeedCategories(guid: string, categories: string[]) {
-            const success = await client.modifyFeed(guid, {categories})
+            const success = (await client.modifyFeed(guid, {categories})).ok
             if (success) {
                 const feed = this.feeds.find(f => f.guid === guid)
                 if (feed) {
@@ -110,7 +111,7 @@ export const useFeedStore = defineStore('feeds', {
             const feed = this.feeds.find(f => f.guid === guid)
             const previous = feed?.notify_enabled ?? false
             if (feed) feed.notify_enabled = notify_enabled
-            const success = await client.modifyFeed(guid, {notify_enabled})
+            const success = (await client.modifyFeed(guid, {notify_enabled})).ok
             if (!success && feed) {
                 feed.notify_enabled = previous
             }

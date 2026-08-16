@@ -13,7 +13,8 @@ export const useNotificationStore = defineStore('notifications', {
             if (this.loadState === 'loading') return
             this.loadState = 'loading'
 
-            const data = await client.getNotifications()
+            const result = await client.getNotifications()
+            const data = result.ok ? result.data : null
             if (data) {
                 this.items = data.items
                 this.unreadCount = data.unreadCount
@@ -28,7 +29,7 @@ export const useNotificationStore = defineStore('notifications', {
             const wasUnread = previous.find(n => n.id === id && !n.dismissed)
             if (wasUnread) this.unreadCount = Math.max(0, this.unreadCount - 1)
 
-            const success = await client.dismissNotification(id)
+            const success = (await client.dismissNotification(id)).ok
             if (!success) {
                 this.items = previous
                 if (wasUnread) this.unreadCount += 1
@@ -41,7 +42,7 @@ export const useNotificationStore = defineStore('notifications', {
             this.items = this.items.map(n => ({...n, dismissed: true}))
             this.unreadCount = 0
 
-            const success = await client.dismissAllNotifications()
+            const success = (await client.dismissAllNotifications()).ok
             if (!success) {
                 this.items = previous
                 this.unreadCount = previousUnread

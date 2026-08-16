@@ -34,7 +34,8 @@ export const useFeedItemStore = defineStore('feeditems', {
             if (this.inflightFull[guid]) return this.inflightFull[guid]
 
             const promise = (async () => {
-                const data = await client.getFeedItem(guid)
+                const result = await client.getFeedItem(guid)
+                const data = result.ok ? result.data : null
                 if (data) this.fullCache[guid] = data
                 delete this.inflightFull[guid]
                 return data
@@ -47,7 +48,8 @@ export const useFeedItemStore = defineStore('feeditems', {
             if (this.inflightAdjacent[guid]) return this.inflightAdjacent[guid]
 
             const promise = (async () => {
-                const data = await client.getAdjacentFeedItems(guid)
+                const result = await client.getAdjacentFeedItems(guid)
+                const data = result.ok ? result.data : null
                 if (data) this.adjacentCache[guid] = data
                 delete this.inflightAdjacent[guid]
                 return data
@@ -63,7 +65,7 @@ export const useFeedItemStore = defineStore('feeditems', {
             this.loadAdjacent(guid)
         },
         async bookmarkItem(feedItem: FeedItemPreview) {
-            const success = await client.modifyFeedItem(feedItem.guid, {bookmarked: true})
+            const success = (await client.modifyFeedItem(feedItem.guid, {bookmarked: true})).ok
             if (success) {
                 const cachedFeedItem = this.cache[feedItem.guid]
                 if (cachedFeedItem) {
@@ -83,7 +85,7 @@ export const useFeedItemStore = defineStore('feeditems', {
             }
         },
         async unbookmarkItem(feedItem: FeedItemPreview) {
-            const success = await client.modifyFeedItem(feedItem.guid, {bookmarked: false})
+            const success = (await client.modifyFeedItem(feedItem.guid, {bookmarked: false})).ok
             if (success) {
                 const cachedFeedItem = this.cache[feedItem.guid]
                 if (cachedFeedItem) {
@@ -104,9 +106,9 @@ export const useFeedItemStore = defineStore('feeditems', {
         },
         async markItemAsComplete(feedItem: FeedItemPreview, progress: number | null = null) {
             const effectiveProgress = progress ? Math.min(1, progress) : null
-            const success = await client.modifyFeedItem(
+            const success = (await client.modifyFeedItem(
                 feedItem.guid,
-                effectiveProgress ? {finished: true, progress: effectiveProgress} : {finished: true})
+                effectiveProgress ? {finished: true, progress: effectiveProgress} : {finished: true})).ok
 
             if (success) {
                 const cachedFeedItem = this.cache[feedItem.guid]
@@ -133,7 +135,7 @@ export const useFeedItemStore = defineStore('feeditems', {
             }
         },
         async markItemAsIncomplete(feedItem: FeedItemPreview) {
-            const success = await client.modifyFeedItem(feedItem.guid, {finished: false})
+            const success = (await client.modifyFeedItem(feedItem.guid, {finished: false})).ok
             if (success) {
                 const cachedFeedItem = this.cache[feedItem.guid]
                 if (cachedFeedItem) {
@@ -151,9 +153,9 @@ export const useFeedItemStore = defineStore('feeditems', {
             const effectiveProgress = Math.min(1, progress)
             const finished = effectiveProgress >= 1 ? true : null
 
-            const success = await client.modifyFeedItem(
+            const success = (await client.modifyFeedItem(
                 feedItem.guid,
-                finished ? {finished: true, progress: effectiveProgress} : {progress: effectiveProgress})
+                finished ? {finished: true, progress: effectiveProgress} : {progress: effectiveProgress})).ok
             if (success) {
                 const cachedFeedItem = this.cache[feedItem.guid]
                 if (cachedFeedItem) {
@@ -187,7 +189,8 @@ export const useFeedItemStore = defineStore('feeditems', {
 
             this.bookmarkedLoadState = 'loading'
 
-            const data = await client.getFeedItems({bookmarked: true})
+            const result = await client.getFeedItems({bookmarked: true})
+            const data = result.ok ? result.data : null
             if (data) {
                 this.bookmarked.length = 0
                 this.bookmarked.push(...data
@@ -209,7 +212,8 @@ export const useFeedItemStore = defineStore('feeditems', {
 
             this.recentLoadState = 'loading'
 
-            const data = await client.getFeedItems({limit: 20})
+            const result = await client.getFeedItems({limit: 20})
+            const data = result.ok ? result.data : null
 
             if (data) {
                 this.recent.length = 0
@@ -233,7 +237,8 @@ export const useFeedItemStore = defineStore('feeditems', {
 
             this.recentLoadState = 'loading'
 
-            const data = await client.getFeedItems({limit: 20, offset: this.recent.length})
+            const result = await client.getFeedItems({limit: 20, offset: this.recent.length})
+            const data = result.ok ? result.data : null
 
             if (data) {
                 this.recent.push(...data

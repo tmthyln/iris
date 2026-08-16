@@ -1,6 +1,12 @@
 
 export type LoadingState = 'unloaded' | 'loading' | 'loaded'
 
+// Result of an API call. On failure, status is null when the request never
+// completed (offline/timeout), or the HTTP status when the server rejected it.
+export type ApiResult<T> =
+    | {ok: true, status: number, data: T}
+    | {ok: false, status: number | null, error: string}
+
 export interface Feed {
     guid: string
     source_url: string

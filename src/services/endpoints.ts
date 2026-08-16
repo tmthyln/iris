@@ -1,5 +1,7 @@
 import type {D1Database} from '@cloudflare/workers-types';
 import { Hono } from 'hono';
+import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
     ClientFeed,
     ClientFeedItemPreview,
@@ -41,6 +43,19 @@ import {getQueue} from "./queue";
 import {refreshFeed, TRANSCRIPT_DEFAULT_MODEL} from "./flows";
 
 export const app = new Hono<{Bindings: Env}>().basePath('/api');
+
+// Errors are returned as JSON bodies ({error: string}) rather than statusText:
+// HTTP/2 does not transmit reason phrases, so statusText is invisible in production.
+function apiError(c: Context, status: ContentfulStatusCode, error: string) {
+    return c.json({error}, status)
+}
+
+app.onError((err, c) => {
+    console.error('Unhandled API error:', err)
+    if (err instanceof SyntaxError) return c.json({error: 'Invalid JSON in request body'}, 400)
+    return c.json({error: 'Internal server error'}, 500)
+})
+app.notFound((c) => c.json({error: 'Not found'}, 404))
 
 /******************************************************************************
  * Search endpoint
@@ -84,10 +99,7 @@ app.post('/feed', async (c) => {
             'no-rss-link-found': 'No RSS feed found at the provided URL.',
         }
         const message = messages[fetchResult.reason] ?? 'Provided URL was not accessible.'
-        return new Response(JSON.stringify({error: message}), {
-            status: 502,
-            headers: {'Content-Type': 'application/json'},
-        })
+        return apiError(c, 502, message)
     }
     const {content, metadata} = fetchResult
 
@@ -104,7 +116,7 @@ app.post('/feed', async (c) => {
             feedGuid: existingFeedSource.referenced_feed,
         } satisfies PlanFeedArchivesTask)
 
-        return new Response(null, {status: 202, statusText: 'Feed already exists, refreshing feed...'})
+        return c.json({message: 'Feed already exists, refreshing feed...'}, 202)
     }
 
     // extract feed info and feed items
@@ -141,14 +153,14 @@ app.post('/feed', async (c) => {
         feedGuid: feed.guid,
     } satisfies PlanFeedArchivesTask)
 
-    return new Response(null, {status: 200, statusText: 'Feed loaded.'})
+    return c.json({message: 'Feed loaded.'}, 200)
 })
 app.get('/feed/:guid', async (c) => {
     const feedGuid = c.req.param('guid')
 
     const feed = await ServerFeed.get(c.env.DB, feedGuid)
 
-    return feed ? Response.json(new ClientFeed(feed)) : new Response(null, {status: 404, statusText: `No feed found with guid: ${feedGuid}`})
+    return feed ? Response.json(new ClientFeed(feed)) : apiError(c, 404, `No feed found with guid: ${feedGuid}`)
 })
 app.patch('/feed/:guid', async (c) => {
     const data = await c.req.json()
@@ -157,7 +169,7 @@ app.patch('/feed/:guid', async (c) => {
 
     for (const key of Object.keys(data)) {
         if (!['categories', 'alias', 'notify_enabled'].includes(key)) {
-            return Response.json(null, {status: 422, statusText: `Cannot update the feed field: ${key}`})
+            return apiError(c, 422, `Cannot update the feed field: ${key}`)
         }
     }
 
@@ -165,7 +177,7 @@ app.patch('/feed/:guid', async (c) => {
     if ('categories' in data) {
         const categories = data.categories as string[]
         if (categories.some(c => c.includes(','))) {
-            return Response.json(null, {status: 422, statusText: 'Category names cannot contain commas'})
+            return apiError(c, 422, 'Category names cannot contain commas')
         }
         updateData.categories = categories.join(',')
     }
@@ -236,23 +248,23 @@ app.get('/feeditem/:guid', async (c) => {
 
     const feedItem = await ServerFeedItem.get(c.env.DB, guid)
 
-    return feedItem ? Response.json(new ClientFeedItem(feedItem)) : new Response(null, {status: 404, statusText: `No feed item found with guid: ${guid}`})
+    return feedItem ? Response.json(new ClientFeedItem(feedItem)) : apiError(c, 404, `No feed item found with guid: ${guid}`)
 })
 app.get('/feeditem/:guid/media', async (c) => {
     const guid = c.req.param('guid')
     const feedItem = await ServerFeedItem.get(c.env.DB, guid)
     if (!feedItem?.enclosure_url) {
-        return new Response(null, {status: 404})
+        return apiError(c, 404, 'Feed item has no media enclosure')
     }
 
     let upstreamUrl: URL
     try {
         upstreamUrl = new URL(feedItem.enclosure_url)
     } catch {
-        return new Response(null, {status: 502})
+        return apiError(c, 502, 'Invalid media URL')
     }
     if (upstreamUrl.protocol !== 'http:' && upstreamUrl.protocol !== 'https:') {
-        return new Response(null, {status: 502})
+        return apiError(c, 502, 'Invalid media URL')
     }
 
     const upstreamHeaders = new Headers()
@@ -281,10 +293,10 @@ app.post('/feeditem/:guid/transcript', async (c) => {
 
     const feedItem = await ServerFeedItem.get(c.env.DB, guid)
     if (!feedItem) {
-        return new Response(null, {status: 404, statusText: `No feed item found with guid: ${guid}`})
+        return apiError(c, 404, `No feed item found with guid: ${guid}`)
     }
     if (!feedItem.enclosure_url) {
-        return new Response(null, {status: 400, statusText: 'Feed item has no audio enclosure'})
+        return apiError(c, 400, 'Feed item has no audio enclosure')
     }
 
     const model = body.model ?? TRANSCRIPT_DEFAULT_MODEL
@@ -311,11 +323,11 @@ app.post('/feeditem/:guid/transcript', async (c) => {
 app.get('/transcript/:id', async (c) => {
     const id = parseInt(c.req.param('id'))
     if (!Number.isFinite(id)) {
-        return new Response(null, {status: 400, statusText: 'Invalid transcript id'})
+        return apiError(c, 400, 'Invalid transcript id')
     }
     const transcript = await ServerTranscript.get(c.env.DB, id)
     if (!transcript) {
-        return new Response(null, {status: 404, statusText: `No transcript found with id: ${id}`})
+        return apiError(c, 404, `No transcript found with id: ${id}`)
     }
     return Response.json(new ClientTranscriptFull(transcript))
 })
@@ -335,7 +347,7 @@ app.patch('/feeditem/:guid', async (c) => {
 
     for (const key of Object.keys(data)) {
         if (!['finished', 'progress', 'bookmarked'].includes(key)) {
-            return Response.json(null, {status: 422, statusText: `Cannot update the feed item field: ${key}`})
+            return apiError(c, 422, `Cannot update the feed item field: ${key}`)
         }
     }
 
@@ -373,17 +385,17 @@ app.post('/queue', async (c) => {
     const {feedItemId, position} = data
 
     if (!feedItemId) {
-        return new Response(null, {status: 400, statusText: 'feedItemId is required'})
+        return apiError(c, 400, 'feedItemId is required')
     }
 
     const feedItem = await ServerFeedItem.get(db, feedItemId)
     if (!feedItem) {
-        return new Response(null, {status: 404, statusText: `No feed item found with id: ${feedItemId}`})
+        return apiError(c, 404, `No feed item found with id: ${feedItemId}`)
     }
 
     const feed = await ServerFeed.get(db, feedItem.source_feed)
     if (feed?.type !== 'podcast') {
-        return new Response(null, {status: 400, statusText: 'Only podcast feed items can be queued'})
+        return apiError(c, 400, 'Only podcast feed items can be queued')
     }
 
     const queue = getQueue(c.env)
@@ -402,7 +414,7 @@ app.patch('/queue/:guid', async (c) => {
     const {position} = await c.req.json()
 
     if (typeof position !== 'number') {
-        return new Response(null, {status: 400, statusText: 'position is required'})
+        return apiError(c, 400, 'position is required')
     }
 
     const queue = getQueue(c.env)
@@ -446,7 +458,7 @@ app.post('/command/refresh-feed/:guid', async (c) => {
     const db = c.env.DB
 
     const feed = await ServerFeed.get(db, feedGuid)
-    if (!feed) return new Response(null, {status: 404, statusText: `No feed found with guid: ${feedGuid}`})
+    if (!feed) return apiError(c, 404, `No feed found with guid: ${feedGuid}`)
 
     await c.env.FEED_PROCESSING_QUEUE.send({
         type: 'refresh-feed',
@@ -461,7 +473,7 @@ app.post('/command/plan-feed-archives/:guid', async (c) => {
     const db = c.env.DB
 
     const feed = await ServerFeed.get(db, feedGuid)
-    if (!feed) return new Response(null, {status: 404, statusText: `No feed found with guid: ${feedGuid}`})
+    if (!feed) return apiError(c, 404, `No feed found with guid: ${feedGuid}`)
 
     await c.env.FEED_PROCESSING_QUEUE.send({
         type: 'plan-feed-archives',
@@ -503,7 +515,7 @@ app.get('/notification', async (c) => {
 app.delete('/notification/:id', async (c) => {
     const id = parseInt(c.req.param('id'))
     if (!Number.isFinite(id)) {
-        return new Response(null, {status: 400, statusText: 'Invalid notification id'})
+        return apiError(c, 400, 'Invalid notification id')
     }
     await dismissNotification(c.env.DB, id)
     return new Response()
@@ -551,7 +563,7 @@ app.get('/push/vapid-public-key', (c) => {
     const env = c.env as unknown as {VAPID_PUBLIC_KEY?: string}
     const key = env.VAPID_PUBLIC_KEY ?? ''
     if (!key) {
-        return new Response(null, {status: 503, statusText: 'Push notifications not configured'})
+        return apiError(c, 503, 'Push notifications not configured')
     }
     return Response.json({key})
 })
@@ -561,14 +573,14 @@ app.post('/push/subscription', async (c) => {
     const endpoint = data?.endpoint
     const keys = data?.keys
     if (!endpoint || !keys?.p256dh || !keys?.auth) {
-        return new Response(null, {status: 400, statusText: 'endpoint, keys.p256dh, and keys.auth are required'})
+        return apiError(c, 400, 'endpoint, keys.p256dh, and keys.auth are required')
     }
     const endpointError = validatePushEndpoint(endpoint)
     if (endpointError) {
-        return new Response(null, {status: 400, statusText: endpointError})
+        return apiError(c, 400, endpointError)
     }
     if (keys.p256dh.length > MAX_PUSH_FIELD_LENGTH || keys.auth.length > MAX_PUSH_FIELD_LENGTH) {
-        return new Response(null, {status: 400, statusText: 'subscription key is too long'})
+        return apiError(c, 400, 'subscription key is too long')
     }
 
     // Cap the table to prevent unbounded growth from an unauthenticated endpoint.
@@ -581,7 +593,7 @@ app.post('/push/subscription', async (c) => {
             .bind(endpoint)
             .first()
         if (!isUpdate) {
-            return new Response(null, {status: 429, statusText: 'subscription cap reached'})
+            return apiError(c, 429, 'subscription cap reached')
         }
     }
 
@@ -593,7 +605,7 @@ app.delete('/push/subscription', async (c) => {
     const data = await c.req.json().catch(() => ({})) as {endpoint?: string}
     const endpoint = data.endpoint ?? c.req.query('endpoint')
     if (!endpoint) {
-        return new Response(null, {status: 400, statusText: 'endpoint is required'})
+        return apiError(c, 400, 'endpoint is required')
     }
     await deletePushSubscription(c.env.DB, endpoint)
     return new Response()
@@ -604,14 +616,14 @@ app.post('/push/test', async (c) => {
 
     const context = await loadPushFanOutContext(c.env)
     if (!context) {
-        return new Response(null, {status: 503, statusText: 'Push not configured or no subscribers'})
+        return apiError(c, 503, 'Push not configured or no subscribers')
     }
 
     const subscriptions = data?.endpoint
         ? context.subscriptions.filter(s => s.endpoint === data.endpoint)
         : context.subscriptions
     if (subscriptions.length === 0) {
-        return new Response(null, {status: 404, statusText: 'No matching subscription'})
+        return apiError(c, 404, 'No matching subscription')
     }
 
     await fanOutPushWithContext(c.env.DB, {...context, subscriptions}, {

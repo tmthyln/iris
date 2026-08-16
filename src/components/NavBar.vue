@@ -24,7 +24,10 @@ const searchResultsEl = ref<HTMLElement>()
 const searchSentinel = ref<HTMLElement>()
 
 const {execute: search, isLoading: searchLoading} = useLatestAsync(
-    (query: string, offset: number) => client.searchFeedItems(query, {limit: PAGE_SIZE, offset})
+    async (query: string, offset: number) => {
+        const result = await client.searchFeedItems(query, {limit: PAGE_SIZE, offset})
+        return result.ok ? result.data : null
+    }
 )
 
 const debouncedInput = refDebounced(searchInput, 300)

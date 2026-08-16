@@ -33,7 +33,8 @@ export const useTranscriptStore = defineStore('transcripts', () => {
         let failures = 0
         const {pause} = useIntervalFn(async () => {
             if (visibility.value !== 'visible') return
-            const list = await client.listTranscripts(itemGuid)
+            const result = await client.listTranscripts(itemGuid)
+            const list = result.ok ? result.data : null
             if (!list) {
                 if (++failures >= MAX_CONSECUTIVE_FAILURES) stopPolling(itemGuid)
                 return
@@ -47,7 +48,8 @@ export const useTranscriptStore = defineStore('transcripts', () => {
 
     async function refresh(itemGuid: string) {
         loading.value[itemGuid] = true
-        const list = await client.listTranscripts(itemGuid)
+        const result = await client.listTranscripts(itemGuid)
+        const list = result.ok ? result.data : null
         loading.value[itemGuid] = false
         if (list) {
             byItem[itemGuid] = list
@@ -61,7 +63,8 @@ export const useTranscriptStore = defineStore('transcripts', () => {
     }
 
     async function request(itemGuid: string, opts: {model?: string, language?: string} = {}) {
-        const created = await client.requestTranscript(itemGuid, opts)
+        const result = await client.requestTranscript(itemGuid, opts)
+        const created = result.ok ? result.data : null
         if (created) {
             // The server dedupes active requests, so `created` may be a
             // transcript we already know about.
@@ -74,7 +77,8 @@ export const useTranscriptStore = defineStore('transcripts', () => {
 
     async function loadFull(transcriptId: number) {
         if (fullById[transcriptId]) return fullById[transcriptId]
-        const full = await client.getTranscript(transcriptId)
+        const result = await client.getTranscript(transcriptId)
+        const full = result.ok ? result.data : null
         if (full) fullById[transcriptId] = full
         return full
     }
