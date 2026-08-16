@@ -1,5 +1,6 @@
 import type {D1Database, R2Bucket} from '@cloudflare/workers-types'
 import {asBoolean, asDate, asStringList} from "../lib/conversion";
+import {stripHtml} from "../lib/html";
 
 interface PersistOptions {
     onConflict?: 'update' | 'ignore'
@@ -521,7 +522,25 @@ export class ServerFeedItem extends ServerEntity {
             content_hash: this.content_hash,
         })
 
-        return await super.includeForTextSearch(db, this)
+        return await this.refreshTextSearch(db)
+    }
+
+    /**
+     * Rebuild this item's text_search row. The `content` column is the
+     * item's encoded_content (reduced to plain text — indexing raw HTML
+     * would make markup like tag names and URLs match queries) plus the
+     * text of every completed transcript, so a single FTS query can match
+     * across metadata and transcript text.
+     */
+    async refreshTextSearch(db: D1Database) {
+        const content = await getCombinedTextSearchContent(db, this.guid, this.encoded_content)
+        return await super.includeForTextSearch(db, {
+            title: this.title,
+            description: this.description,
+            keywords: this.keywords,
+            content,
+            guid: this.guid,
+        })
     }
 
     static async get(db: D1Database, guid: string) {
@@ -636,6 +655,113 @@ export interface ClientNotification {
     item_title: string | null
     created_at: string
     dismissed: boolean
+}
+
+export async function getCombinedTextSearchContent(db: D1Database, feedItemGuid: string, encodedContent: string) {
+    const contentText = stripHtml(encodedContent)
+
+    const {results} = await db
+        .prepare(`SELECT text FROM transcript WHERE feed_item_guid = ? AND status = 'complete' AND text IS NOT NULL`)
+        .bind(feedItemGuid)
+        .all<{text: string}>()
+
+    if (results.length === 0) return contentText
+    return [contentText, ...results.map(r => r.text)].filter(Boolean).join('\n\n')
+}
+
+export type TranscriptStatus = 'pending' | 'processing' | 'complete' | 'error'
+
+export interface RawTranscript {
+    id: number
+    feed_item_guid: string
+    model: string
+    language: string | null
+    source_transcript_id: number | null
+    status: TranscriptStatus
+    text: string | null
+    segments_json: string | null
+    error_message: string | null
+    batch_request_id: string | null
+    requested_at: string | Date
+    started_at: string | Date | null
+    completed_at: string | Date | null
+}
+
+export class ServerTranscript {
+    id: number
+    feed_item_guid: string
+    model: string
+    language: string | null
+    source_transcript_id: number | null
+    status: TranscriptStatus
+    text: string | null
+    segments_json: string | null
+    error_message: string | null
+    batch_request_id: string | null
+    requested_at: Date
+    started_at: Date | null
+    completed_at: Date | null
+
+    constructor(data: RawTranscript) {
+        this.id = data.id
+        this.feed_item_guid = data.feed_item_guid
+        this.model = data.model
+        this.language = data.language
+        this.source_transcript_id = data.source_transcript_id
+        this.status = data.status
+        this.text = data.text
+        this.segments_json = data.segments_json
+        this.error_message = data.error_message
+        this.batch_request_id = data.batch_request_id
+        this.requested_at = asDate(data.requested_at)
+        this.started_at = data.started_at ? asDate(data.started_at) : null
+        this.completed_at = data.completed_at ? asDate(data.completed_at) : null
+    }
+
+    static async get(db: D1Database, id: number) {
+        const row = await db
+            .prepare('SELECT * FROM transcript WHERE id = ?')
+            .bind(id)
+            .first<RawTranscript>()
+        return row ? new ServerTranscript(row) : null
+    }
+}
+
+export class ClientTranscript {
+    id: number
+    feed_item_guid: string
+    model: string
+    language: string | null
+    source_transcript_id: number | null
+    status: TranscriptStatus
+    error_message: string | null
+    requested_at: Date
+    started_at: Date | null
+    completed_at: Date | null
+
+    constructor(data: ServerTranscript) {
+        this.id = data.id
+        this.feed_item_guid = data.feed_item_guid
+        this.model = data.model
+        this.language = data.language
+        this.source_transcript_id = data.source_transcript_id
+        this.status = data.status
+        this.error_message = data.error_message
+        this.requested_at = data.requested_at
+        this.started_at = data.started_at
+        this.completed_at = data.completed_at
+    }
+}
+
+export class ClientTranscriptFull extends ClientTranscript {
+    text: string | null
+    segments_json: string | null
+
+    constructor(data: ServerTranscript) {
+        super(data)
+        this.text = data.text
+        this.segments_json = data.segments_json
+    }
 }
 
 export interface RawPushSubscription {

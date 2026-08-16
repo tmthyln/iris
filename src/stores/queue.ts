@@ -39,6 +39,9 @@ export const useQueueStore = defineStore('queue', {
             items: [] as FeedItemPreview[],
             paused: true,
             loadState: 'unloaded' as LoadingState,
+            // Seek position (seconds) requested from outside the player
+            // (e.g. transcript timestamps); AudioPlayer applies and clears it.
+            pendingSeek: null as number | null,
         }
     },
     getters: {
@@ -132,6 +135,9 @@ export const useQueueStore = defineStore('queue', {
         },
         togglePaused() {
             this.paused = !this.paused
+        },
+        requestSeek(seconds: number) {
+            this.pendingSeek = seconds
         },
         async playItem(item: FeedItemPreview) {
             if (!this.itemQueued(item)) {

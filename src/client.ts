@@ -1,4 +1,4 @@
-import {AdjacentFeedItems, Feed, FeedItem, FeedItemPreview, NotificationsResponse} from "./types.ts";
+import {AdjacentFeedItems, Feed, FeedItem, FeedItemPreview, NotificationsResponse, Transcript, TranscriptFull} from "./types.ts";
 
 interface SearchOptions {
     limit?: number
@@ -275,6 +275,36 @@ export default {
             return response.ok
         } catch {
             return false
+        }
+    },
+    async listTranscripts(itemGuid: string): Promise<Transcript[] | null> {
+        try {
+            const response = await fetchWithTimeout(`/api/feeditem/${encodeURIComponent(itemGuid)}/transcript`)
+            if (response.ok) return await response.json() as Transcript[]
+            return null
+        } catch {
+            return null
+        }
+    },
+    async requestTranscript(itemGuid: string, opts: {model?: string, language?: string} = {}): Promise<Transcript | null> {
+        try {
+            const response = await fetchWithTimeout(`/api/feeditem/${encodeURIComponent(itemGuid)}/transcript`, {
+                method: 'POST',
+                body: JSON.stringify(opts),
+            })
+            if (response.ok) return await response.json() as Transcript
+            return null
+        } catch {
+            return null
+        }
+    },
+    async getTranscript(transcriptId: number): Promise<TranscriptFull | null> {
+        try {
+            const response = await fetchWithTimeout(`/api/transcript/${transcriptId}`)
+            if (response.ok) return await response.json() as TranscriptFull
+            return null
+        } catch {
+            return null
         }
     },
     async sendTestPushNotification(endpoint: string): Promise<{ok: true} | {ok: false, error: string}> {

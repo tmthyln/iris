@@ -1,6 +1,6 @@
 import { app } from './services/endpoints'
 import {FeedProcessingTask, RefreshFeedTask} from "./services/types";
-import {refreshFeed, planFeedArchives, fetchArchiveSnapshot} from "./services/flows";
+import {refreshFeed, planFeedArchives, fetchArchiveSnapshot, transcribeFeedItem} from "./services/flows";
 import {getFeeds} from "./services/crud";
 export {ItemQueue} from "./services/queue";
 
@@ -24,6 +24,10 @@ export default {
                 case 'fetch-archive-snapshot':
                     console.log('Received request to fetch archive snapshot')
                     await fetchArchiveSnapshot(task, env)
+                    break
+                case 'transcribe-feed-item':
+                    console.log('Received request to transcribe feed item')
+                    await transcribeFeedItem(task.transcriptId, env)
                     break
             }
 

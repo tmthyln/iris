@@ -14,7 +14,8 @@ export default defineConfig({
     plugins: [
         vue(),
         !process.env.VITEST && cloudflare(),
-        vueDevTools(),
+        // vite-plugin-vue-devtools@8 crashes against vite 8 at runtime; opt in explicitly.
+        process.env.VUE_DEVTOOLS === '1' && vueDevTools(),
         vitePWA({
             registerType: 'autoUpdate',
             strategies: 'injectManifest',

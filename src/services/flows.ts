@@ -1,5 +1,6 @@
+import {Buffer} from "node:buffer";
 import type {ExecutionContext} from "@cloudflare/workers-types";
-import {ServerFeed, ServerFeedFile, ServerFeedSource} from "./models";
+import {ServerFeed, ServerFeedFile, ServerFeedItem, ServerFeedSource, ServerTranscript} from "./models";
 import {
     createFeedFile,
     createFeedItem,
@@ -9,9 +10,10 @@ import {
     getFeedItemFingerprintsByGuids,
     getFeedMaxItemDate,
     getUpdatableFeedSources,
+    updateTranscriptStatus,
     type FeedItemFingerprint,
 } from "./crud";
-import {computeFeedItemContentHash, fetchRssFile, parseRssText, sha256Encode} from "./utils/files";
+import {computeFeedItemContentHash, fetchRssFile, parseRssText, sha256Encode, FETCH_USER_AGENT} from "./utils/files";
 import {fetchArchiveList, waybackSnapshotUrl} from "./utils/wayback";
 import {fanOutPushWithContext, loadPushFanOutContext, type PushFanOutContext} from "./utils/push";
 import type {FetchArchiveSnapshotTask} from "./types";
@@ -329,4 +331,159 @@ export async function fetchArchiveSnapshot(task: FetchArchiveSnapshotTask, env: 
         const entity = await createFeedItem(feed, item)
         return entity.defer().persistTo(db)
     }))
+}
+
+export const TRANSCRIPT_DEFAULT_MODEL = '@cf/openai/whisper-large-v3-turbo'
+
+const TRANSCRIPT_POLL_DELAY_SEC = 30
+// Total wall-clock cap from when batch was submitted before we give up.
+const TRANSCRIPT_MAX_AGE_MS = 60 * 60 * 1000  // 1 hour
+
+interface WhisperBatchResult {
+    text: string
+    transcription_info?: {language?: string}
+    segments?: unknown
+}
+
+type WhisperBatchSubmitResponse = {request_id?: string, status?: string}
+type WhisperBatchPollResponse = {
+    status?: string
+    // Some models return a `responses` array; others (single-input models like
+    // Whisper when submitted without a `requests` wrapper) may inline the
+    // result directly. Handle both.
+    responses?: Array<{success: boolean, result?: WhisperBatchResult, error?: unknown}>
+    result?: WhisperBatchResult
+    success?: boolean
+    error?: unknown
+}
+
+async function whisperSubmitBatch(env: Env, model: string, audioBase64: string, language: string | null) {
+    // Whisper's batch input mirrors its sync input — audio/task/language at the
+    // root — with queueRequest:true switching env.AI.run into batch mode.
+    return await env.AI.run(model as '@cf/openai/whisper-large-v3-turbo', {
+        audio: audioBase64,
+        task: 'transcribe',
+        ...(language ? {language} : {}),
+        vad_filter: true,
+    }, {queueRequest: true} as never) as unknown as WhisperBatchSubmitResponse
+}
+
+async function whisperPollBatch(env: Env, model: string, requestId: string) {
+    return await env.AI.run(model as '@cf/openai/whisper-large-v3-turbo', {
+        request_id: requestId,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any) as unknown as WhisperBatchPollResponse
+}
+
+async function reenqueueTranscriptPoll(env: Env, transcriptId: number) {
+    await env.FEED_PROCESSING_QUEUE.send(
+        {type: 'transcribe-feed-item', transcriptId} as const,
+        {delaySeconds: TRANSCRIPT_POLL_DELAY_SEC},
+    )
+}
+
+/**
+ * Two-phase transcription using the Workers AI Batch API:
+ *   - pending  -> download audio, submit batch, record request_id, re-enqueue
+ *   - processing -> poll batch; on completion persist text, else re-enqueue
+ * Whisper inference for podcast-length audio exceeds the synchronous AI.run
+ * timeout (504), which is why we go through batch.
+ */
+export async function transcribeFeedItem(transcriptId: number, env: Env) {
+    const db = env.DB
+    const transcript = await ServerTranscript.get(db, transcriptId)
+    if (!transcript) return
+    if (transcript.status === 'complete' || transcript.status === 'error') return
+
+    const feedItem = await ServerFeedItem.get(db, transcript.feed_item_guid)
+    if (!feedItem?.enclosure_url) {
+        await updateTranscriptStatus(db, transcriptId, {
+            status: 'error',
+            error_message: 'Feed item has no enclosure_url',
+            completed_at: new Date().toISOString(),
+        })
+        return
+    }
+
+    if (transcript.status === 'pending') {
+        try {
+            const upstream = await fetch(feedItem.enclosure_url, {
+                headers: {'User-Agent': FETCH_USER_AGENT},
+            })
+            if (!upstream.ok) throw new Error(`Upstream fetch failed: HTTP ${upstream.status}`)
+            const audioBuf = await upstream.arrayBuffer()
+            const audioBase64 = Buffer.from(audioBuf).toString('base64')
+
+            const submitted = await whisperSubmitBatch(env, transcript.model, audioBase64, transcript.language)
+            if (!submitted.request_id) {
+                throw new Error('Batch submission returned no request_id')
+            }
+
+            await updateTranscriptStatus(db, transcriptId, {
+                status: 'processing',
+                started_at: new Date().toISOString(),
+                batch_request_id: submitted.request_id,
+            })
+            await reenqueueTranscriptPoll(env, transcriptId)
+        } catch (err) {
+            await updateTranscriptStatus(db, transcriptId, {
+                status: 'error',
+                error_message: err instanceof Error ? err.message : String(err),
+                completed_at: new Date().toISOString(),
+            })
+        }
+        return
+    }
+
+    // status === 'processing'
+    if (!transcript.batch_request_id) {
+        await updateTranscriptStatus(db, transcriptId, {
+            status: 'error',
+            error_message: 'Processing transcript has no batch_request_id',
+            completed_at: new Date().toISOString(),
+        })
+        return
+    }
+    if (transcript.started_at && Date.now() - transcript.started_at.getTime() > TRANSCRIPT_MAX_AGE_MS) {
+        await updateTranscriptStatus(db, transcriptId, {
+            status: 'error',
+            error_message: 'Timed out waiting for Whisper batch result',
+            completed_at: new Date().toISOString(),
+        })
+        return
+    }
+
+    try {
+        const poll = await whisperPollBatch(env, transcript.model, transcript.batch_request_id)
+        const arrayResponse = poll.responses?.[0]
+        const result = arrayResponse?.result ?? poll.result
+        const success = arrayResponse?.success ?? poll.success
+        const error = arrayResponse?.error ?? poll.error
+
+        if (result && (success ?? true)) {
+            const detectedLanguage = result.transcription_info?.language ?? transcript.language ?? null
+            const segments = result.segments ?? null
+            await updateTranscriptStatus(db, transcriptId, {
+                status: 'complete',
+                text: result.text,
+                segments_json: segments ? JSON.stringify(segments) : null,
+                language: detectedLanguage,
+                completed_at: new Date().toISOString(),
+            })
+            await feedItem.refreshTextSearch(db)
+        } else if (success === false || error) {
+            await updateTranscriptStatus(db, transcriptId, {
+                status: 'error',
+                error_message: error ? JSON.stringify(error) : 'Inference failed',
+                completed_at: new Date().toISOString(),
+            })
+        } else {
+            // Still queued/running — poll again later.
+            await reenqueueTranscriptPoll(env, transcriptId)
+        }
+    } catch (err) {
+        // Treat transient poll failures as retriable up to the max-age cap above.
+        console.error('[transcribe] poll error', err)
+        await reenqueueTranscriptPoll(env, transcriptId)
+    }
 }

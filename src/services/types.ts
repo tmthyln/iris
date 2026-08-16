@@ -17,7 +17,12 @@ export interface FetchArchiveSnapshotTask {
     readonly snapshotUrl: string
 }
 
-export type FeedProcessingTask = RefreshFeedTask | PlanFeedArchivesTask | FetchArchiveSnapshotTask
+export interface TranscribeFeedItemTask {
+    readonly type: 'transcribe-feed-item'
+    readonly transcriptId: number
+}
+
+export type FeedProcessingTask = RefreshFeedTask | PlanFeedArchivesTask | FetchArchiveSnapshotTask | TranscribeFeedItemTask
 
 export interface FetchSuccessFileResult {
     readonly status: 'success'

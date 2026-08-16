@@ -7,6 +7,7 @@ import {useFeedItemStore} from "../stores/feeditems.ts";
 import {AdjacentFeedItems, Feed, FeedItem} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
 import AudioControls from "./AudioControls.vue";
+import TranscriptView from "./TranscriptView.vue";
 import client from '../client'
 
 const props = defineProps<{
@@ -21,6 +22,7 @@ const feedItem = ref<FeedItem | null>(null)
 const feed = ref<Feed | null>(null)
 const isFetchingItem = ref(true)
 const adjacent = ref<AdjacentFeedItems>({ prev: null, next: null })
+const transcriptOpen = ref(false)
 useTitle(computed(() => feedItem.value ? `${feedItem.value.title} — Iris` : 'Iris'))
 async function fetchFeedItem() {
     const guid = props.guid
@@ -85,7 +87,8 @@ onMounted(fetchFeedItem)
 
     <div class="mb-5" :title="feedItem?.date ? new Date(feedItem.date).toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'}) : ''">Published {{ useTimeAgo(feedItem?.date).value }}</div>
 
-    <AudioControls v-if="feedItem" :feed-item="feedItem"/>
+    <AudioControls v-if="feedItem" :feed-item="feedItem" show-transcript @open-transcript="transcriptOpen = true"/>
+    <TranscriptView v-if="feedItem?.enclosure_url" :feed-item-guid="feedItem.guid" v-model:open="transcriptOpen"/>
 
     <hr>
 

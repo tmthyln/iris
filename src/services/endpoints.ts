@@ -3,21 +3,27 @@ import { Hono } from 'hono';
 import {
     ClientFeed,
     ClientFeedItemPreview,
+    ClientTranscript,
+    ClientTranscriptFull,
     ServerFeed,
     ServerFeedSource,
     ClientFeedItem,
     ServerFeedItem,
     ServerFeedFile,
+    ServerTranscript,
     RawFeedItem
 } from './models'
 import {
     createFeed,
     createFeedItem,
     createFeedSource,
+    createTranscriptRequest,
+    getActiveTranscriptRequest,
     getFeeds,
     getBookmarkedFeedItems,
     getFeedItems,
     createFeedFile,
+    listTranscriptsForItem,
     searchFeedItems,
     getAdjacentFeedItems,
     getNotifications,
@@ -28,11 +34,11 @@ import {
     deletePushSubscription,
     countPushSubscriptions,
 } from './crud'
-import type { RefreshFeedTask, PlanFeedArchivesTask } from "./types";
+import type { RefreshFeedTask, PlanFeedArchivesTask, TranscribeFeedItemTask } from "./types";
 import {fetchRssFile, parseRssText, FETCH_USER_AGENT} from "./utils/files";
 import {fanOutPushWithContext, loadPushFanOutContext} from "./utils/push";
 import {getQueue} from "./queue";
-import {refreshFeed} from "./flows";
+import {refreshFeed, TRANSCRIPT_DEFAULT_MODEL} from "./flows";
 
 export const app = new Hono<{Bindings: Env}>().basePath('/api');
 
@@ -263,6 +269,55 @@ app.get('/feeditem/:guid/media', async (c) => {
     }
 
     return new Response(upstream.body, {status: upstream.status, headers})
+})
+app.get('/feeditem/:guid/transcript', async (c) => {
+    const guid = c.req.param('guid')
+    const transcripts = await listTranscriptsForItem(c.env.DB, guid)
+    return Response.json(transcripts.map(t => new ClientTranscript(t)))
+})
+app.post('/feeditem/:guid/transcript', async (c) => {
+    const guid = c.req.param('guid')
+    const body = await c.req.json().catch(() => ({})) as {model?: string, language?: string}
+
+    const feedItem = await ServerFeedItem.get(c.env.DB, guid)
+    if (!feedItem) {
+        return new Response(null, {status: 404, statusText: `No feed item found with guid: ${guid}`})
+    }
+    if (!feedItem.enclosure_url) {
+        return new Response(null, {status: 400, statusText: 'Feed item has no audio enclosure'})
+    }
+
+    const model = body.model ?? TRANSCRIPT_DEFAULT_MODEL
+
+    // A transcription job is expensive (full audio download + billed Whisper
+    // batch), so an already-active request for this item+model is returned
+    // as-is instead of enqueuing a duplicate.
+    const existing = await getActiveTranscriptRequest(c.env.DB, guid, model)
+    if (existing) {
+        return Response.json(new ClientTranscript(existing), {status: 200})
+    }
+
+    const transcript = await createTranscriptRequest(
+        c.env.DB, guid, model, body.language ?? null,
+    )
+
+    await c.env.FEED_PROCESSING_QUEUE.send({
+        type: 'transcribe-feed-item',
+        transcriptId: transcript.id,
+    } satisfies TranscribeFeedItemTask)
+
+    return Response.json(new ClientTranscript(transcript), {status: 202})
+})
+app.get('/transcript/:id', async (c) => {
+    const id = parseInt(c.req.param('id'))
+    if (!Number.isFinite(id)) {
+        return new Response(null, {status: 400, statusText: 'Invalid transcript id'})
+    }
+    const transcript = await ServerTranscript.get(c.env.DB, id)
+    if (!transcript) {
+        return new Response(null, {status: 404, statusText: `No transcript found with id: ${id}`})
+    }
+    return Response.json(new ClientTranscriptFull(transcript))
 })
 app.get('/feeditem/:guid/adjacent', async (c) => {
     const guid = c.req.param('guid')

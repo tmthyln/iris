@@ -85,6 +85,15 @@ function setPlaybackPosition(event: Event) {
         feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
     }
 }
+watch(() => queueStore.pendingSeek, (seconds) => {
+    if (seconds === null) return
+    queueStore.pendingSeek = null
+    if (!currentItemReady.value) return
+    currentTime.value = Math.min(Math.max(0, seconds), duration.value)
+    if (currentItem.value && duration.value > 0) {
+        feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+    }
+})
 function fastRewind() {
     currentTime.value = Math.max(0, currentTime.value - 10)
 }

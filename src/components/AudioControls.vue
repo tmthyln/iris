@@ -1,21 +1,27 @@
 <script setup lang="ts">
 import {FeedItemPreview} from "../types.ts";
-import {computed, ref} from "vue";
+import {computed, ref, watch} from "vue";
 import {useElementHover} from "@vueuse/core";
 import {useQueueStore} from "../stores/queue.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
 import {useFeedStore} from "../stores/feeds.ts";
 import {useDownloadStore} from "../stores/downloads.ts";
+import {useTranscriptStore} from "../stores/transcripts.ts";
 
 const props = defineProps<{
     feedItem: FeedItemPreview,
+    // Fetching transcript state costs a request per item, and opening the
+    // transcript needs ItemView's TranscriptView — so only ItemView opts in.
+    showTranscript?: boolean,
 }>()
 
 const feedItemStore = useFeedItemStore()
 const feedStore = useFeedStore()
 const downloadStore = useDownloadStore()
 
-const feed = feedStore.getFeedById(props.feedItem.source_feed)
+// Computed so it tracks navigation between items and the feeds list
+// finishing its initial load, rather than snapshotting at setup time.
+const feed = computed(() => feedStore.getFeedById(props.feedItem.source_feed))
 
 /* Queuing and Playing */
 const queueStore = useQueueStore()
@@ -108,12 +114,48 @@ function toggleDownload() {
         downloadStore.downloadItem(props.feedItem)
     }
 }
+
+/* Transcript */
+const transcriptStore = useTranscriptStore()
+const toggleTranscriptButton = ref<HTMLButtonElement>()
+const isHoveredTranscriptButton = useElementHover(toggleTranscriptButton)
+
+const emit = defineEmits<{
+    'open-transcript': []
+}>()
+
+const transcripts = computed(() => transcriptStore.getForItem(props.feedItem.guid))
+const latestTranscript = computed(() => transcriptStore.latest(props.feedItem.guid))
+const transcriptStatus = computed<'none' | 'in-progress' | 'complete' | 'error'>(() => {
+    const list = transcripts.value
+    if (list.some(t => t.status === 'pending' || t.status === 'processing')) return 'in-progress'
+    if (list.some(t => t.status === 'complete')) return 'complete'
+    if (list.length > 0 && list[0].status === 'error') return 'error'
+    return 'none'
+})
+
+watch([() => props.feedItem.guid, feed], ([guid, currentFeed]) => {
+    if (props.showTranscript && currentFeed?.type === 'podcast' && props.feedItem.enclosure_url) {
+        transcriptStore.refresh(guid)
+    }
+}, {immediate: true})
+
+function onTranscriptClick() {
+    const status = transcriptStatus.value
+    if (status === 'none') {
+        transcriptStore.request(props.feedItem.guid)
+    } else if (status === 'error') {
+        transcriptStore.request(props.feedItem.guid)
+    } else if (status === 'complete') {
+        emit('open-transcript')
+    }
+}
 </script>
 
 <template>
   <div class="is-flex is-align-items-center mb-3 is-gap-1">
     <button
-        v-if="feed.type === 'podcast'"
+        v-if="feed?.type === 'podcast'"
         class="button tag px-3 is-rounded is-medium is-gap-1"
         :class="{'has-text-info': true, 'has-text-success': false}"
         @click="playItem">
@@ -138,7 +180,7 @@ function toggleDownload() {
     </button>
 
     <button
-        v-if="feed.type === 'podcast'"
+        v-if="feed?.type === 'podcast'"
         ref="toggleQueuedButton"
         class="button is-small px-0 py-1" style="border: none;"
         @click="toggleQueue">
@@ -208,7 +250,7 @@ function toggleDownload() {
     </button>
 
     <button
-        v-if="feed.type === 'podcast' && feedItem.enclosure_url"
+        v-if="feed?.type === 'podcast' && feedItem.enclosure_url"
         ref="toggleDownloadButton"
         class="button is-small px-0 py-1" style="border: none;"
         @click="toggleDownload">
@@ -240,6 +282,37 @@ function toggleDownload() {
           class="material-symbols-outlined" :class="{'has-text-success': isHoveredDownloadButton}"
           title="Download for offline playback">
         download
+      </span>
+    </button>
+
+    <button
+        v-if="showTranscript && feed?.type === 'podcast' && feedItem.enclosure_url"
+        ref="toggleTranscriptButton"
+        class="button is-small px-0 py-1" style="border: none;"
+        @click="onTranscriptClick">
+      <span
+          v-if="transcriptStatus === 'in-progress'"
+          class="material-symbols-outlined has-text-info download-pulse"
+          title="Transcribing audio…">
+        graphic_eq
+      </span>
+      <span
+          v-else-if="transcriptStatus === 'error'"
+          class="material-symbols-outlined has-text-danger"
+          :title="`Transcription failed: ${latestTranscript?.error_message ?? 'unknown error'}. Click to retry`">
+        error
+      </span>
+      <span
+          v-else-if="transcriptStatus === 'complete'"
+          class="material-symbols-outlined" :class="{'has-text-success': !isHoveredTranscriptButton, 'has-text-info': isHoveredTranscriptButton}"
+          title="View transcript">
+        description
+      </span>
+      <span
+          v-else
+          class="material-symbols-outlined" :class="{'has-text-success': isHoveredTranscriptButton}"
+          title="Generate transcript">
+        description
       </span>
     </button>
   </div>

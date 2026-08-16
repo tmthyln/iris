@@ -69,3 +69,29 @@ export interface AdjacentFeedItems {
     prev: FeedItemPreview | null
     next: FeedItemPreview | null
 }
+
+export type TranscriptStatus = 'pending' | 'processing' | 'complete' | 'error'
+
+export interface TranscriptSegment {
+    start?: number
+    end?: number
+    text?: string
+}
+
+export interface Transcript {
+    id: number
+    feed_item_guid: string
+    model: string
+    language: string | null
+    source_transcript_id: number | null
+    status: TranscriptStatus
+    error_message: string | null
+    requested_at: string
+    started_at: string | null
+    completed_at: string | null
+}
+
+export interface TranscriptFull extends Transcript {
+    text: string | null
+    segments_json: string | null
+}

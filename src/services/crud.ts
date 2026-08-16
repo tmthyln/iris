@@ -1,5 +1,5 @@
 import type {D1Database} from "@cloudflare/workers-types";
-import {RawFeed, RawFeedFile, RawFeedItem, RawFeedSource, ServerFeed, ServerFeedFile, ServerFeedItem, ServerFeedSource, ServerNotification, ServerPushSubscription, RawNotification, RawPushSubscription, NotificationType, ClientNotification} from "./models";
+import {RawFeed, RawFeedFile, RawFeedItem, RawFeedSource, RawTranscript, ServerFeed, ServerFeedFile, ServerFeedItem, ServerFeedSource, ServerNotification, ServerPushSubscription, ServerTranscript, RawNotification, RawPushSubscription, NotificationType, ClientNotification, TranscriptStatus} from "./models";
 import {ChannelData, ChannelItemData, computeFeedItemContentHash, sha256Encode} from "./utils/files";
 import {FetchSuccessFileResult} from "./types";
 
@@ -335,6 +335,67 @@ export async function dismissNotification(db: D1Database, id: number) {
 export async function dismissAllNotifications(db: D1Database) {
     await db
         .prepare('UPDATE notification SET dismissed = TRUE WHERE dismissed = FALSE')
+        .run()
+}
+
+/******************************************************************************
+ * Transcripts
+ *****************************************************************************/
+
+export async function getActiveTranscriptRequest(db: D1Database, feedItemGuid: string, model: string) {
+    const row = await db
+        .prepare(`
+            SELECT * FROM transcript
+            WHERE feed_item_guid = ? AND model = ? AND status IN ('pending', 'processing')
+            ORDER BY requested_at DESC
+            LIMIT 1
+        `)
+        .bind(feedItemGuid, model)
+        .first<RawTranscript>()
+    return row ? new ServerTranscript(row) : null
+}
+
+export async function createTranscriptRequest(db: D1Database, feedItemGuid: string, model: string, language?: string | null) {
+    const requestedAt = new Date().toISOString()
+    const result = await db
+        .prepare(`
+            INSERT INTO transcript (feed_item_guid, model, language, status, requested_at)
+            VALUES (?, ?, ?, 'pending', ?)
+        `)
+        .bind(feedItemGuid, model, language ?? null, requestedAt)
+        .run()
+
+    const id = result.meta.last_row_id as number
+    return (await ServerTranscript.get(db, id))!
+}
+
+export async function listTranscriptsForItem(db: D1Database, feedItemGuid: string) {
+    const {results} = await db
+        .prepare('SELECT * FROM transcript WHERE feed_item_guid = ? ORDER BY requested_at DESC')
+        .bind(feedItemGuid)
+        .all<RawTranscript>()
+    return results.map(r => new ServerTranscript(r))
+}
+
+interface UpdateTranscriptPatch {
+    status?: TranscriptStatus
+    language?: string | null
+    text?: string | null
+    segments_json?: string | null
+    error_message?: string | null
+    batch_request_id?: string | null
+    started_at?: string | null
+    completed_at?: string | null
+}
+
+export async function updateTranscriptStatus(db: D1Database, id: number, patch: UpdateTranscriptPatch) {
+    const keys = Object.keys(patch)
+    if (keys.length === 0) return
+    const assignments = keys.map(k => `${k} = ?`).join(', ')
+    const values = keys.map(k => (patch as Record<string, unknown>)[k] ?? null)
+    await db
+        .prepare(`UPDATE transcript SET ${assignments} WHERE id = ?`)
+        .bind(...values, id)
         .run()
 }
 
