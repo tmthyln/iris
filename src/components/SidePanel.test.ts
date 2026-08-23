@@ -4,7 +4,7 @@ import client from '../client.ts'
 import {useFeedItemStore} from '../stores/feeditems.ts'
 import {useFeedStore} from '../stores/feeds.ts'
 import {useDownloadStore} from '../stores/downloads.ts'
-import {makeFeed, makeFullItem, makeItem, ok, stubClient, mountApp} from '../testing/helpers.ts'
+import {err, makeFeed, makeFullItem, makeItem, ok, stubClient, mountApp} from '../testing/helpers.ts'
 import SidePanel from './SidePanel.vue'
 
 afterEach(() => vi.restoreAllMocks())
@@ -24,9 +24,31 @@ describe('feed list', () => {
         expect(wrapper.text()).toContain('Loading feeds...')
     })
 
-    it('prompts to add a feed when there are none', async () => {
+    it('prompts to add a feed when a load found none', async () => {
         const {wrapper} = await mountPanel()
+        useFeedStore().feedsLoadState = 'loaded'
+        await wrapper.vm.$nextTick()
         expect(wrapper.text()).toContain('No feeds! Add a feed to get started.')
+    })
+
+    it('does not claim "no feeds" before any load has finished', async () => {
+        const {wrapper} = await mountPanel()   // feedsLoadState stays 'unloaded'
+        expect(wrapper.text()).not.toContain('No feeds!')
+    })
+
+    it('offers a retry when the feed list failed to load', async () => {
+        const {wrapper} = await mountPanel()
+        const feedStore = useFeedStore()
+        feedStore.feedsLoadState = 'error'
+        await wrapper.vm.$nextTick()
+        expect(wrapper.text()).toContain("Couldn't load your feeds.")
+
+        stubClient('getFeeds', ok([makeFeed({categories: ['Tech']})]))
+        await wrapper.findAll('button').find(b => b.text() === 'Retry')!.trigger('click')
+        await flushPromises()
+        expect(feedStore.feedsLoadState).toBe('loaded')
+        expect(wrapper.text()).not.toContain("Couldn't load your feeds.")
+        expect(wrapper.text()).toContain('Tech')
     })
 
     it('prompts to categorise when no feed has a category', async () => {
@@ -77,6 +99,18 @@ describe('bookmarks', () => {
     it('shows an empty state when nothing is bookmarked', async () => {
         const {wrapper} = await mountPanel()
         expect(wrapper.text()).toContain('No bookmarks!')
+    })
+
+    it('offers a retry when the bookmarks failed to load', async () => {
+        const {wrapper} = await mountPanel({bookmarked: err(null, 'Network unavailable')})
+        expect(wrapper.text()).toContain("Couldn't load your bookmarks.")
+        expect(wrapper.text()).not.toContain('No bookmarks!')
+
+        const item = makeFullItem({bookmarked: true})
+        stubClient('getFeedItems', ok([item]))
+        await wrapper.findAll('button').find(b => b.text() === 'Retry')!.trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain(item.title)
     })
 
     it('unbookmarks an item from the panel', async () => {

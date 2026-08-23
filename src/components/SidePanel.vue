@@ -14,13 +14,19 @@ const downloadCount = computed(() => Object.keys(downloadStore.downloadedItems).
 
 <template>
   <aside class="menu">
-    <div v-if="feedStore.feedsLoadState === 'loading'">
+    <div v-if="feedStore.feedsLoadState === 'loading' && feedStore.feeds.length === 0">
       Loading feeds...
     </div>
-    <div v-else-if="feedStore.feeds.length === 0">
+    <div v-else-if="feedStore.feedsLoadState === 'error' && feedStore.feeds.length === 0">
+      Couldn't load your feeds.
+      <button class="button is-small" @click="feedStore.loadFeeds()">
+        Retry
+      </button>
+    </div>
+    <div v-else-if="feedStore.feedsLoadState === 'loaded' && feedStore.feeds.length === 0">
       No feeds! Add a feed to get started.
     </div>
-    <div v-else-if="Object.keys(feedStore.feedsByCategory).length <= 1">
+    <div v-else-if="feedStore.feeds.length > 0 && Object.keys(feedStore.feedsByCategory).length <= 1">
       No categories! Add a category on a feed to see them here.
     </div>
 
@@ -60,6 +66,12 @@ const downloadCount = computed(() => Object.keys(downloadStore.downloadedItems).
 
     <div v-if="feedItemStore.bookmarkedLoadState === 'loading'">
       Loading bookmarks...
+    </div>
+    <div v-else-if="feedItemStore.bookmarkedLoadState === 'error'">
+      Couldn't load your bookmarks.
+      <button class="button is-small" @click="feedItemStore.loadBookmarkedItems()">
+        Retry
+      </button>
     </div>
     <div v-else-if="feedItemStore.bookmarkedItems.length === 0">
       No bookmarks! Bookmark an item to access them quickly here.

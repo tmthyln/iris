@@ -3,7 +3,7 @@ import type {hc, InferRequestType, InferResponseType} from 'hono/client'
 // tsconfig.app.json references tsconfig.cf.json to resolve it.
 import type {AppType} from './services/endpoints'
 
-export type LoadingState = 'unloaded' | 'loading' | 'loaded'
+export type LoadingState = 'unloaded' | 'loading' | 'loaded' | 'error'
 
 // Result of an API call. On failure, status is null when the request never
 // completed (offline/timeout), or the HTTP status when the server rejected it.

@@ -3,7 +3,7 @@ import {afterEach, describe, expect, it, vi} from 'vitest'
 import client from '../client.ts'
 import {useFeedItemStore} from '../stores/feeditems.ts'
 import {useFeedStore} from '../stores/feeds.ts'
-import {makeFeed, makeFullItem, ok, stubClient, mountApp} from '../testing/helpers.ts'
+import {err, makeFeed, makeFullItem, ok, stubClient, mountApp} from '../testing/helpers.ts'
 import HomePage from './HomePage.vue'
 
 afterEach(() => vi.restoreAllMocks())
@@ -27,9 +27,25 @@ describe('subscribed feeds strip', () => {
         expect(wrapper.text()).not.toContain('All Caught Up')
     })
 
-    it('prompts to subscribe when there are no feeds', async () => {
+    it('prompts to subscribe when a load found no feeds', async () => {
         const {wrapper} = await mountHome()
+        useFeedStore().feedsLoadState = 'loaded'
+        await wrapper.vm.$nextTick()
         expect(wrapper.text()).toContain("You aren't subscribed to any feeds!")
+    })
+
+    it('offers a retry instead of claiming "no feeds" when the load failed', async () => {
+        const {wrapper} = await mountHome()
+        const feedStore = useFeedStore()
+        feedStore.feedsLoadState = 'error'
+        await wrapper.vm.$nextTick()
+        expect(wrapper.text()).toContain("Couldn't load your feeds.")
+        expect(wrapper.text()).not.toContain("You aren't subscribed")
+
+        stubClient('getFeeds', ok([makeFeed({title: 'Recovered Feed'})]))
+        await wrapper.findAll('button').find(b => b.text() === 'Retry')!.trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Recovered Feed')
     })
 })
 
@@ -46,6 +62,21 @@ describe('recent unread items', () => {
         const {wrapper} = await mountHome([])
         expect(useFeedItemStore().recentLoadState).toBe('loaded')
         expect(wrapper.text()).toContain('Yay, inbox zero!')
+    })
+
+    it('offers a retry instead of claiming inbox zero when the load failed', async () => {
+        stubClient('getFeedItems', err(null, 'Network unavailable'))
+        const mounted = await mountApp(HomePage)
+        await flushPromises()
+        const {wrapper} = mounted
+        expect(wrapper.text()).toContain("Couldn't load your items.")
+        expect(wrapper.text()).not.toContain('inbox zero')
+
+        const item = makeFullItem({title: 'Recovered Item'})
+        stubClient('getFeedItems', ok([item]))
+        await wrapper.findAll('button').find(b => b.text() === 'Retry')!.trigger('click')
+        await flushPromises()
+        expect(wrapper.text()).toContain('Recovered Item')
     })
 })
 

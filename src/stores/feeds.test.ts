@@ -25,12 +25,14 @@ describe('loadFeeds', () => {
         expect(callback).toHaveBeenCalledOnce()
     })
 
-    it('returns to unloaded on failure', async () => {
+    it('records a failure as the error state, keeping existing feeds', async () => {
         stubClient('getFeeds', err(500, 'boom'))
         const store = useFeedStore()
+        const existing = makeFeed()
+        store.feeds = [existing]
         await store.loadFeeds()
-        expect(store.feedsLoadState).toBe('unloaded')
-        expect(store.feeds).toEqual([])
+        expect(store.feedsLoadState).toBe('error')
+        expect(store.feeds).toEqual([existing])   // stale data stays visible
     })
 
     it('does not start a second request while one is in flight', async () => {
@@ -40,6 +42,48 @@ describe('loadFeeds', () => {
         const second = store.loadFeeds()
         resolve(ok([makeFeed()]))
         await Promise.all([first, second])
+        expect(spy).toHaveBeenCalledOnce()
+    })
+})
+
+describe('refreshIfStale', () => {
+    it('leaves freshly loaded feeds alone', async () => {
+        stubClient('getFeeds', ok([makeFeed()]))
+        const store = useFeedStore()
+        await store.loadFeeds()
+
+        await store.refreshIfStale(60_000)
+        expect(vi.mocked(client.getFeeds)).toHaveBeenCalledOnce()
+    })
+
+    it('reloads once the data is older than the threshold', async () => {
+        stubClient('getFeeds', ok([makeFeed()]))
+        const store = useFeedStore()
+        await store.loadFeeds()
+
+        await store.refreshIfStale(0)   // everything is stale at age 0
+        expect(vi.mocked(client.getFeeds)).toHaveBeenCalledTimes(2)
+    })
+
+    it('retries after a failed load regardless of age', async () => {
+        stubClient('getFeeds', err())
+        const store = useFeedStore()
+        await store.loadFeeds()
+        expect(store.feedsLoadState).toBe('error')
+
+        stubClient('getFeeds', ok([makeFeed()]))
+        await store.refreshIfStale(60_000)
+        expect(store.feedsLoadState).toBe('loaded')
+        expect(store.feeds).toHaveLength(1)
+    })
+
+    it('does nothing while a load is already in flight', async () => {
+        const {spy, resolve} = stubClientPending('getFeeds')
+        const store = useFeedStore()
+        const loading = store.loadFeeds()
+        await store.refreshIfStale(0)
+        resolve(ok([]))
+        await loading
         expect(spy).toHaveBeenCalledOnce()
     })
 })

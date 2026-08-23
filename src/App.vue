@@ -7,6 +7,7 @@ import {useDownloadStore} from "./stores/downloads.ts";
 import {onMounted, ref} from "vue";
 import {useRouter} from "vue-router";
 import {useOnline} from "@vueuse/core";
+import {useResumeRefresh} from "./composables/useResumeRefresh.ts";
 import AudioPlayer from "./components/AudioPlayer.vue";
 
 const isOnline = useOnline()
@@ -20,6 +21,9 @@ onMounted(() => {
     void queueStore.loadQueue()
     void downloadStore.init()
 })
+
+// Retry failed loads / refresh stale data when the (PWA) app is resumed.
+useResumeRefresh()
 
 const sidebarOpen = ref(false)
 const router = useRouter()

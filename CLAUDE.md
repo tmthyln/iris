@@ -65,7 +65,7 @@ Frontend and backend share `src/` but are **separated by TypeScript project refe
 
 ### Frontend
 - **Framework:** Vue 3 with Composition API
-- **State Management:** Pinia stores in `src/stores/` (feeds, feeditems, queue, downloads) — mix of options and composition API styles, with `LoadingState` tracking ('unloaded' | 'loading' | 'loaded')
+- **State Management:** Pinia stores in `src/stores/` (feeds, feeditems, queue, downloads) — mix of options and composition API styles, with `LoadingState` tracking ('unloaded' | 'loading' | 'loaded' | 'error')
 - **Routing:** Vue Router in `src/router/`
 - **Styling:** Bulma CSS framework with SASS
 - **API Client:** `src/client.ts` — Hono RPC client (`hc<AppType>`) wrapped in `request()`, which returns an `ApiResult<T>` (`{ok: true, data}` / `{ok: false, status, error}`) with timeouts and the Access 401 handling. Path params are `encodeURIComponent`-ed explicitly (hc does not encode, and GUIDs are often URLs)

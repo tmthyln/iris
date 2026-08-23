@@ -16,6 +16,7 @@ export const useFeedItemStore = defineStore('feeditems', {
 
         recent: [] as string[],
         recentLoadState: 'unloaded' as LoadingState,
+        recentLoadedAt: null as number | null,
         recentHasMore: true,
     }),
     getters: {
@@ -185,7 +186,7 @@ export const useFeedItemStore = defineStore('feeditems', {
             }
         },
         async loadBookmarkedItems() {
-            if (this.bookmarkedLoadState !== 'unloaded') {
+            if (this.bookmarkedLoadState === 'loading' || this.bookmarkedLoadState === 'loaded') {
                 return
             }
 
@@ -204,11 +205,18 @@ export const useFeedItemStore = defineStore('feeditems', {
 
                 this.bookmarkedLoadState = 'loaded'
             } else {
-                this.bookmarkedLoadState = 'unloaded'
+                this.bookmarkedLoadState = 'error'
             }
         },
         async loadRecentUnreadItems() {
             if (this.recentLoadState !== 'unloaded') {
+                return
+            }
+            await this.reloadRecentItems()
+        },
+        /** (Re)load the first page of recent items, replacing the list. */
+        async reloadRecentItems() {
+            if (this.recentLoadState === 'loading') {
                 return
             }
 
@@ -228,9 +236,23 @@ export const useFeedItemStore = defineStore('feeditems', {
 
                 this.recentHasMore = data.length >= 20
                 this.recentLoadState = 'loaded'
+                this.recentLoadedAt = Date.now()
             } else {
-                this.recentLoadState = 'unloaded'
+                // Keep whatever was on screen; the state records the failure.
+                this.recentLoadState = 'error'
             }
+        },
+        /**
+         * Reload the recent list when the last attempt failed or the data is
+         * older than maxAgeMs — used when the (PWA) app is resumed from the
+         * background or comes back online.
+         */
+        async refreshRecentIfStale(maxAgeMs: number) {
+            if (this.recentLoadState === 'loading') return
+            const fresh = this.recentLoadState === 'loaded'
+                && this.recentLoadedAt !== null
+                && Date.now() - this.recentLoadedAt < maxAgeMs
+            if (!fresh) await this.reloadRecentItems()
         },
         async loadMoreRecentItems() {
             if (this.recentLoadState !== 'loaded' || !this.recentHasMore) {

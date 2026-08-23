@@ -98,10 +98,16 @@ async function importOpml(event: Event) {
           :feed="feed"
           class="mr-4"
         />
-        <div v-if="feedStore.feedsLoadState === 'loading'">
+        <div v-if="feedStore.feedsLoadState === 'loading' && feedStore.feeds.length === 0">
           Loading feeds...
         </div>
-        <div v-else-if="feedStore.feeds.length === 0">
+        <div v-else-if="feedStore.feedsLoadState === 'error' && feedStore.feeds.length === 0">
+          Couldn't load your feeds.
+          <button class="button is-small" @click="feedStore.loadFeeds()">
+            Retry
+          </button>
+        </div>
+        <div v-else-if="feedStore.feedsLoadState === 'loaded' && feedStore.feeds.length === 0">
           You aren't subscribed to any feeds! Add a feed to see them here.
         </div>
       </div>
@@ -119,7 +125,16 @@ async function importOpml(event: Event) {
           :feed-item="feedItem"
           class="mb-6"
         />
-        <div v-if="feedItemStore.recentItems.length === 0 && feedItemStore.recentLoadState === 'loaded'">
+        <div v-if="feedItemStore.recentLoadState === 'loading' && feedItemStore.recentItems.length === 0">
+          Loading items...
+        </div>
+        <div v-else-if="feedItemStore.recentLoadState === 'error' && feedItemStore.recentItems.length === 0">
+          Couldn't load your items.
+          <button class="button is-small" @click="feedItemStore.reloadRecentItems()">
+            Retry
+          </button>
+        </div>
+        <div v-else-if="feedItemStore.recentItems.length === 0 && feedItemStore.recentLoadState === 'loaded'">
           You don't have any unread items from any feeds. Yay, inbox zero!
         </div>
         <div v-if="feedItemStore.recentHasMore" ref="loadMoreSentinel" class="has-text-centered py-4">

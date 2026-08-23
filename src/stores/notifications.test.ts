@@ -17,11 +17,11 @@ describe('load', () => {
         expect(store.loadState).toBe('loaded')
     })
 
-    it('returns to unloaded on failure', async () => {
+    it('records a failure as the error state (the bell poller retries)', async () => {
         stubClient('getNotifications', err())
         const store = useNotificationStore()
         await store.load()
-        expect(store.loadState).toBe('unloaded')
+        expect(store.loadState).toBe('error')
     })
 
     it('does not start a second request while loading', async () => {

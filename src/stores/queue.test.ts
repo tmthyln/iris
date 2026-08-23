@@ -54,7 +54,7 @@ describe('loadQueue', () => {
 
         await store.loadQueue()
         expect(store.items).toEqual(saved)
-        expect(store.loadState).toBe('unloaded')
+        expect(store.loadState).toBe('error')
     })
 
     it('starts downloading queued audio that is not downloaded yet', async () => {

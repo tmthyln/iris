@@ -2,7 +2,8 @@ import {flushPromises} from '@vue/test-utils'
 import {IDBFactory} from 'fake-indexeddb'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import client from './client.ts'
-import {makeFeed, makeItem, ok, stubClient, mountApp} from './testing/helpers.ts'
+import {useFeedStore} from './stores/feeds.ts'
+import {err, makeFeed, makeItem, ok, stubClient, mountApp} from './testing/helpers.ts'
 import App from './App.vue'
 
 beforeEach(() => {
@@ -43,6 +44,29 @@ describe('startup', () => {
         await wrapper.vm.$nextTick()
         expect(wrapper.find('.offline-banner').text()).toContain("You're offline")
         Reflect.deleteProperty(navigator, 'onLine')
+    })
+})
+
+describe('resume recovery', () => {
+    it('retries a failed feed load when the app becomes visible again', async () => {
+        let visibility: DocumentVisibilityState = 'visible'
+        Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => visibility})
+        stubClient('getFeeds', err(null, 'Network unavailable'))   // launched offline
+        const {wrapper} = await mountShell()
+        expect(useFeedStore().feedsLoadState).toBe('error')
+        expect(wrapper.text()).toContain("Couldn't load your feeds.")
+        expect(wrapper.text()).not.toContain('No feeds!')
+
+        stubClient('getFeeds', ok([makeFeed({categories: ['Tech'], title: 'Recovered'})]))
+        visibility = 'hidden'
+        document.dispatchEvent(new Event('visibilitychange'))
+        await flushPromises()   // let the watcher observe the hidden state
+        visibility = 'visible'
+        document.dispatchEvent(new Event('visibilitychange'))
+        await flushPromises()
+
+        expect(useFeedStore().feedsLoadState).toBe('loaded')
+        expect(wrapper.text()).toContain('Recovered')
     })
 })
 

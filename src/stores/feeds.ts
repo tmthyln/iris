@@ -8,6 +8,7 @@ export const useFeedStore = defineStore('feeds', {
     state: () => ({
         feeds: [] as Feed[],
         feedsLoadState: 'unloaded' as LoadingState,
+        feedsLoadedAt: null as number | null,
         feedLoadedCallbacks: [] as FeedLoadedCallback[],
     }),
     getters: {
@@ -57,12 +58,26 @@ export const useFeedStore = defineStore('feeds', {
                 this.feeds.push(...data);
 
                 this.feedsLoadState = 'loaded'
+                this.feedsLoadedAt = Date.now()
 
                 this.feedLoadedCallbacks.forEach(callback => callback())
                 this.feedLoadedCallbacks.length = 0;
             } else {
-                this.feedsLoadState = 'unloaded'
+                // Keep any previously loaded feeds; only the state records the failure.
+                this.feedsLoadState = 'error'
             }
+        },
+        /**
+         * Reload the feed list when the last attempt failed or the data is
+         * older than maxAgeMs — used when the (PWA) app is resumed from the
+         * background or comes back online.
+         */
+        async refreshIfStale(maxAgeMs: number) {
+            if (this.feedsLoadState === 'loading') return
+            const fresh = this.feedsLoadState === 'loaded'
+                && this.feedsLoadedAt !== null
+                && Date.now() - this.feedsLoadedAt < maxAgeMs
+            if (!fresh) await this.loadFeeds()
         },
         async afterFeedsLoaded(func: FeedLoadedCallback) {
             if (this.feedsLoadState === 'loaded') {

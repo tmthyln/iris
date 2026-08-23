@@ -20,7 +20,7 @@ export const useNotificationStore = defineStore('notifications', {
                 this.unreadCount = data.unreadCount
                 this.loadState = 'loaded'
             } else {
-                this.loadState = 'unloaded'
+                this.loadState = 'error'
             }
         },
         async dismiss(id: number) {

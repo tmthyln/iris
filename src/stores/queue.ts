@@ -70,7 +70,9 @@ export const useQueueStore = defineStore('queue', {
                 ensureDownloaded(items)
                 this.loadState = 'loaded'
             } else {
-                this.loadState = 'unloaded'
+                // The localStorage copy (if any) stays visible; the state
+                // records the failure so a resume can retry.
+                this.loadState = 'error'
             }
         },
         itemPlaying(item: FeedItemPreview) {

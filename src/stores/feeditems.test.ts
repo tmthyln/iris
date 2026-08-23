@@ -209,11 +209,17 @@ describe('bookmarked list loading', () => {
         expect(vi.mocked(client.getFeedItems)).toHaveBeenCalledOnce()
     })
 
-    it('returns to unloaded on failure', async () => {
+    it('records a failure as the error state and can retry from it', async () => {
         stubClient('getFeedItems', err())
         const store = useFeedItemStore()
         await store.loadBookmarkedItems()
-        expect(store.bookmarkedLoadState).toBe('unloaded')
+        expect(store.bookmarkedLoadState).toBe('error')
+
+        const items = [makeFullItem({bookmarked: true})]
+        stubClient('getFeedItems', ok(items))
+        await store.loadBookmarkedItems()   // guard lets an errored load retry
+        expect(store.bookmarkedLoadState).toBe('loaded')
+        expect(store.bookmarkedItems).toEqual(items)
     })
 })
 
@@ -258,6 +264,37 @@ describe('recent list loading', () => {
 
         await store.loadMoreRecentItems()
         expect(vi.mocked(client.getFeedItems)).toHaveBeenCalledOnce()
+    })
+
+    it('records a failed first page as the error state', async () => {
+        stubClient('getFeedItems', err())
+        const store = useFeedItemStore()
+        await store.loadRecentUnreadItems()
+        expect(store.recentLoadState).toBe('error')
+    })
+
+    it('reloadRecentItems replaces the list even when already loaded', async () => {
+        const firstLoad = [makeFullItem()]
+        stubClient('getFeedItems', ok(firstLoad))
+        const store = useFeedItemStore()
+        await store.loadRecentUnreadItems()
+
+        const secondLoad = [makeFullItem(), makeFullItem()]
+        stubClient('getFeedItems', ok(secondLoad))
+        await store.reloadRecentItems()
+        expect(store.recentItems).toEqual(secondLoad)
+    })
+
+    it('refreshRecentIfStale reloads only failed or stale data', async () => {
+        stubClient('getFeedItems', ok([makeFullItem()]))
+        const store = useFeedItemStore()
+        await store.loadRecentUnreadItems()
+
+        await store.refreshRecentIfStale(60_000)   // fresh
+        expect(vi.mocked(client.getFeedItems)).toHaveBeenCalledOnce()
+
+        await store.refreshRecentIfStale(0)        // stale
+        expect(vi.mocked(client.getFeedItems)).toHaveBeenCalledTimes(2)
     })
 
     it('recentItems maps guids through the cache', async () => {
