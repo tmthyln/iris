@@ -6,12 +6,10 @@
     "target": "es2021",
     /* Specify a set of bundled library declaration files that describe the target runtime environment. */
     "lib": ["es2021"],
-    /* Specify what JSX code is generated. */
-    "jsx": "react-jsx",
 
     /* Specify what module code is generated. */
     "module": "es2022",
-    /* Specify how TypeScript looks up a file from a given module specifier. */
+    /* Specify how TypeScript looks up a file from a module specifier. */
     "moduleResolution": "Bundler",
     /* Runtime types come from the generated worker-configuration.d.ts (npm run typegen);
        vitest/importMeta types the in-source `import.meta.vitest` test blocks. */
@@ -26,6 +24,7 @@
 
     /* Disable emitting files from a compilation. */
     "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.cf.tsbuildinfo",
 
     /* Ensure that each file can be safely transpiled without relying on other imports. */
     "isolatedModules": true,
@@ -40,13 +39,10 @@
     /* Skip type checking all .d.ts files. */
     "skipLibCheck": true
   },
-  "exclude": [
-    "test"
-  ],
   "include": [
     "worker-configuration.d.ts",
     "src/service.ts",
-    "src/services/*",
-    "src/lib/*"
+    "src/services/**/*.ts",
+    "src/lib/**/*.ts"
   ]
 }

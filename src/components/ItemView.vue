@@ -53,18 +53,17 @@ async function fetchFeedItem() {
     }
 }
 function navigateTo(guid: string) {
-    router.push({ name: 'item', params: { guid } })
+    void router.push({ name: 'item', params: { guid } })
 }
 watch(() => props.guid, () => {
     window.scrollTo(0, 0)
-    fetchFeedItem()
+    void fetchFeedItem()
 })
 onMounted(fetchFeedItem)
 </script>
 
 <template>
   <div class="section">
-
     <h1 class="title is-1">
       <component :is="feedItem?.link ? 'a' : 'span'" :href="feedItem?.link">
         {{ useUnescapedHTML(feedItem?.title ?? '').value }}
@@ -72,52 +71,68 @@ onMounted(fetchFeedItem)
     </h1>
     <div class="breadcrumb has-dot-separator subtitle" aria-label="breadcrumbs">
       <ul>
-        <li v-if="feed?.title"><router-link :to="{name: 'subscription', params: {guid: feed.guid}}">{{ useUnescapedHTML(feed?.title).value }}</router-link></li>
-        <li class="is-active" v-if="feedItem?.season"><a disabled>Season {{ feedItem?.season }}</a></li>
-        <li class="is-active" v-if="feedItem?.episode"><a disabled>Episode {{ feedItem?.episode }}</a></li>
+        <li v-if="feed?.title">
+          <router-link :to="{name: 'subscription', params: {guid: feed.guid}}">
+            {{ useUnescapedHTML(feed?.title).value }}
+          </router-link>
+        </li>
+        <li class="is-active" v-if="feedItem?.season">
+          <a disabled>Season {{ feedItem?.season }}</a>
+        </li>
+        <li class="is-active" v-if="feedItem?.episode">
+          <a disabled>Episode {{ feedItem?.episode }}</a>
+        </li>
       </ul>
     </div>
     <div class="mb-4">
       <span
-          v-for="keyword in feedItem?.keywords ?? []" :key="keyword"
-          class="tag is-info is-light mr-2">
+        v-for="keyword in feedItem?.keywords ?? []"
+        :key="keyword"
+        class="tag is-info is-light mr-2"
+      >
         {{ keyword }}
       </span>
     </div>
 
-    <div class="mb-5" :title="feedItem?.date ? new Date(feedItem.date).toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'}) : ''">Published {{ useTimeAgo(feedItem?.date ?? 0).value }}</div>
+    <div class="mb-5" :title="feedItem?.date ? new Date(feedItem.date).toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'}) : ''">
+      Published {{ useTimeAgo(feedItem?.date ?? 0).value }}
+    </div>
 
-    <AudioControls v-if="feedItem" :feed-item="feedItem" show-transcript @open-transcript="transcriptOpen = true"/>
-    <TranscriptView v-if="feedItem?.enclosure_url" :feed-item-guid="feedItem.guid" v-model:open="transcriptOpen"/>
+    <AudioControls
+      v-if="feedItem"
+      :feed-item="feedItem"
+      show-transcript
+      @open-transcript="transcriptOpen = true"
+    />
+    <TranscriptView v-if="feedItem?.enclosure_url" :feed-item-guid="feedItem.guid" v-model:open="transcriptOpen" />
 
     <hr>
 
-    <div v-if="!feedItem?.encoded_content" class="content" v-html="feedItem?.description"></div>
-    <div class="content" v-html="feedItem?.encoded_content"></div>
+    <div v-if="!feedItem?.encoded_content" class="content" v-html="feedItem?.description" />
+    <div class="content" v-html="feedItem?.encoded_content" />
 
     <hr class="my-6">
 
     <div class="adjacent-nav px-4">
       <button
-          class="button adjacent-button adjacent-prev"
-          :disabled="!adjacent.prev"
-          :title="adjacent.prev ? useUnescapedHTML(adjacent.prev.title).value : ''"
-          @click="adjacent.prev && navigateTo(adjacent.prev.guid)"
+        class="button adjacent-button adjacent-prev"
+        :disabled="!adjacent.prev"
+        :title="adjacent.prev ? useUnescapedHTML(adjacent.prev.title).value : ''"
+        @click="adjacent.prev && navigateTo(adjacent.prev.guid)"
       >
         <span class="adjacent-arrow">&larr;</span>
         <span class="adjacent-label">{{ adjacent.prev ? useUnescapedHTML(adjacent.prev.title).value : 'Previous' }}</span>
       </button>
       <button
-          class="button adjacent-button adjacent-next"
-          :disabled="!adjacent.next"
-          :title="adjacent.next ? useUnescapedHTML(adjacent.next.title).value : ''"
-          @click="adjacent.next && navigateTo(adjacent.next.guid)"
+        class="button adjacent-button adjacent-next"
+        :disabled="!adjacent.next"
+        :title="adjacent.next ? useUnescapedHTML(adjacent.next.title).value : ''"
+        @click="adjacent.next && navigateTo(adjacent.next.guid)"
       >
         <span class="adjacent-label">{{ adjacent.next ? useUnescapedHTML(adjacent.next.title).value : 'Next' }}</span>
         <span class="adjacent-arrow">&rarr;</span>
       </button>
     </div>
-
   </div>
 </template>
 

@@ -12,7 +12,7 @@ Iris is a self-hosted RSS feed and podcast aggregator built as a replacement for
 # Start development server (frontend + backend with Cloudflare bindings, via @cloudflare/vite-plugin)
 npm run dev
 
-# Run linting (ESLint 9 flat config)
+# Run linting (ESLint flat config, type-aware; warnings fail the run)
 npm run lint
 
 # Run tests (vitest, watch mode by default)
@@ -24,10 +24,10 @@ npm run test -- src/services/utils/files.test.ts
 # Run tests matching a name pattern
 npm run test -- -t "parseRssText"
 
-# Run tests with coverage
+# Run tests once with coverage (text summary + coverage/ with html, lcov and json-summary)
 npm run coverage
 
-# Type checking
+# Type checking — builds every tsconfig project (app, cf, sw, node) via `vue-tsc -b`
 npm run typecheck
 
 # Build for production
@@ -52,10 +52,13 @@ wrangler d1 migrations apply DB --remote --preview
 
 ### Monorepo Structure
 
-Frontend and backend share `src/` but are **separated by TypeScript project references**:
-- `tsconfig.app.json` — Frontend: includes `src/**/*.ts` and `src/**/*.vue`, **excludes `src/services/*` and `src/service.ts`**
-- `tsconfig.cf.json` — Backend: includes `src/service.ts`, `src/services/*`, and `src/lib/*`
-- `src/lib/` — Shared utilities included in both tsconfigs (e.g., `conversion.ts` with `asBoolean()`, `asDate()`, `asStringList()`)
+Frontend and backend share `src/` but are **separated by TypeScript project references** (the root `tsconfig.json` is a solution file with `files: []`; `npm run typecheck` runs `vue-tsc -b` over all of them):
+- `tsconfig.app.json` — Frontend: includes `src/**/*.ts` and `src/**/*.vue`, **excludes `src/services/**`, `src/service.ts` and `src/sw.ts`**
+- `tsconfig.cf.json` — Backend: includes `src/service.ts`, `src/services/**` (including tests), and `src/lib/**`
+- `tsconfig.sw.json` — Service worker: `src/sw.ts` only, with the `WebWorker` lib (neither DOM nor Workers runtime)
+- `tsconfig.node.json` — `vite.config.ts`
+- `src/lib/` — Shared utilities included in both app and cf tsconfigs (e.g., `conversion.ts` with `asBoolean()`, `asDate()`, `asStringList()`)
+- `src/shims-vue.d.ts` declares `*.vue` modules for plain-TypeScript consumers (typescript-eslint); vue-tsc resolves the real SFCs and ignores it
 
 ### Frontend
 - **Framework:** Vue 3 with Composition API
@@ -138,6 +141,8 @@ POST   /api/command/refresh-all-feeds - Trigger manual refresh
 
 - Unused variables should be prefixed with `_` (ESLint rule) — but this does not apply to destructured bindings; omit them instead
 - Short-circuit expressions allowed (`x && doSomething()`)
+- ESLint runs type-aware (`recommendedTypeChecked` with `projectService`), so every linted `.ts`/`.vue` file must belong to one of the tsconfig projects. Intentional fire-and-forget promises are written `void promise`; `eslint --fix` is safe for the Vue template style rules
+- Parsed-JSON / untyped-parser values are cast at the boundary (`await c.req.json() as {…}`, `JSON.parse(x) as T`) rather than left as `any`
 - Vitest supports in-source testing via `import.meta.vitest`
 - Shared conversion utilities live in `src/lib/` (not `src/services/utils/`)
 - Frontend API client in `src/client.ts` is a plain object with async methods, no library dependencies

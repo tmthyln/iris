@@ -88,7 +88,7 @@ app.post('/feed', async (c) => {
     const db = c.env.DB;
     const cache_bucket = c.env.RSS_CACHE_BUCKET;
     const queue = c.env.FEED_PROCESSING_QUEUE;
-    const requestData = await c.req.json()
+    const requestData = await c.req.json() as {url: string}
     const inputUrl = requestData.url;
 
     // fetch live content from input url
@@ -163,7 +163,7 @@ app.get('/feed/:guid', async (c) => {
     return feed ? Response.json(new ClientFeed(feed)) : apiError(c, 404, `No feed found with guid: ${feedGuid}`)
 })
 app.patch('/feed/:guid', async (c) => {
-    const data = await c.req.json()
+    const data = await c.req.json() as Record<string, unknown>
     const feedGuid = c.req.param('guid')
     const db = c.env.DB
 
@@ -182,7 +182,7 @@ app.patch('/feed/:guid', async (c) => {
         updateData.categories = categories.join(',')
     }
     if ('alias' in data) {
-        updateData.alias = String(data.alias ?? '')
+        updateData.alias = typeof data.alias === 'string' ? data.alias : ''
     }
     if ('notify_enabled' in data) {
         updateData.notify_enabled = data.notify_enabled ? 1 : 0
@@ -341,7 +341,7 @@ app.get('/feeditem/:guid/adjacent', async (c) => {
 })
 
 app.patch('/feeditem/:guid', async (c) => {
-    const data = await c.req.json()
+    const data = await c.req.json() as Record<string, unknown>
     const feedItemGuid = c.req.param('guid')
     const db = c.env.DB
 
@@ -381,7 +381,7 @@ app.get('/queue', async (c) => {
 
 app.post('/queue', async (c) => {
     const db = c.env.DB
-    const data = await c.req.json()
+    const data = await c.req.json() as {feedItemId?: string, position?: unknown}
     const {feedItemId, position} = data
 
     if (!feedItemId) {
@@ -411,7 +411,7 @@ app.post('/queue', async (c) => {
 
 app.patch('/queue/:guid', async (c) => {
     const feedItemGuid = c.req.param('guid')
-    const {position} = await c.req.json()
+    const {position} = await c.req.json() as {position?: unknown}
 
     if (typeof position !== 'number') {
         return apiError(c, 400, 'position is required')

@@ -95,14 +95,18 @@ function extractRssLinkFromHtml(html: string): string | null {
         unpairedTags: ['link', 'meta', 'br', 'hr', 'img', 'input'],
         stopNodes: ['*.script', '*.style', '*.body'],
     })
-    const doc = parser.parse(html)
+    type HtmlLink = {'@_type'?: unknown, '@_href'?: unknown}
+    const doc = parser.parse(html) as {html?: {head?: {link?: HtmlLink | HtmlLink[]}}} | null
     const head = doc?.html?.head
     if (!head) return null
 
     const links = Array.isArray(head.link) ? head.link : [head.link]
     for (const link of links) {
-        if (link && RSS_LINK_TYPES.includes(link['@_type']) && link['@_href']) {
-            return link['@_href']
+        if (!link) continue
+        const type = link['@_type']
+        const href = link['@_href']
+        if (typeof type === 'string' && RSS_LINK_TYPES.includes(type) && typeof href === 'string' && href) {
+            return href
         }
     }
     return null

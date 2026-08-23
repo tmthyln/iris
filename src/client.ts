@@ -243,7 +243,7 @@ if (import.meta.vitest) {
         afterEach(() => vi.unstubAllGlobals())
 
         it('sends the Cloudflare Access AJAX header', async () => {
-            const fetchMock = vi.fn(async () => new Response('{}', {status: 200}))
+            const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', {status: 200})))
             vi.stubGlobal('fetch', fetchMock)
             await apiFetch('/api/feed', {headers: {'Content-Type': 'application/json'}})
             const headers = new Headers((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers)
@@ -252,7 +252,7 @@ if (import.meta.vitest) {
         })
 
         it('navigates once to re-authenticate on 401, keeping the current URL', async () => {
-            vi.stubGlobal('fetch', vi.fn(async () => new Response(null, {status: 401})))
+            vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(null, {status: 401}))))
             const assign = vi.fn()
             vi.stubGlobal('window', {location: {href: 'https://iris.example/feed/abc?page=2#top', assign}})
             await apiFetch('/api/feed')

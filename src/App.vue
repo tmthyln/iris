@@ -16,9 +16,9 @@ const queueStore = useQueueStore()
 const downloadStore = useDownloadStore()
 
 onMounted(() => {
-    feedStore.loadFeeds()
-    queueStore.loadQueue()
-    downloadStore.init()
+    void feedStore.loadFeeds()
+    void queueStore.loadQueue()
+    void downloadStore.init()
 })
 
 const sidebarOpen = ref(false)
@@ -41,13 +41,13 @@ function handleExternalLinks(e: MouseEvent) {
     <div v-if="!isOnline" class="offline-banner">
       You're offline — queue and downloaded items are still available
     </div>
-    <NavBar v-model:sidebar-open="sidebarOpen"/>
-    <div class="sidebar-backdrop is-hidden-tablet" v-if="sidebarOpen" @click="sidebarOpen = false"/>
+    <NavBar v-model:sidebar-open="sidebarOpen" />
+    <div class="sidebar-backdrop is-hidden-tablet" v-if="sidebarOpen" @click="sidebarOpen = false" />
     <div class="columns">
-      <SidePanel class="column is-one-quarter is-narrow ml-4 mt-5 sidebar" :class="{'is-hidden-mobile': !sidebarOpen}"/>
-      <RouterView class="column is-three-quarters container"/>
+      <SidePanel class="column is-one-quarter is-narrow ml-4 mt-5 sidebar" :class="{'is-hidden-mobile': !sidebarOpen}" />
+      <RouterView class="column is-three-quarters container" />
     </div>
-    <AudioPlayer/>
+    <AudioPlayer />
   </div>
 </template>
 

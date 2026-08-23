@@ -42,7 +42,7 @@ abstract class ServerEntity {
         }: PersistOptions = this.persistOptions
 
         const columnNames = Object.keys(data)
-        const placeholders: string[] = new Array(columnNames.length).fill('?')
+        const placeholders = Array.from(columnNames, () => '?')
         const values = [...Object.values(data)]
 
         let stmt = `INSERT INTO ${this.tableName} (${columnNames.join(', ')}) VALUES (${placeholders.join(', ')})`;

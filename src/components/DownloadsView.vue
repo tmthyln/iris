@@ -39,7 +39,9 @@ function getSize(guid: string): string {
 <template>
   <div class="section">
     <div class="is-flex is-align-items-baseline mb-4">
-      <h1 class="title mb-0">Downloads</h1>
+      <h1 class="title mb-0">
+        Downloads
+      </h1>
       <span v-if="downloadStore.totalStorageUsed > 0" class="has-text-grey ml-4">
         {{ formatSize(downloadStore.totalStorageUsed) }} used
       </span>
@@ -58,7 +60,7 @@ function getSize(guid: string): string {
           {{ getSize(item.guid) }} &middot; {{ formatDownloadedAt(item.guid) }}
         </span>
       </div>
-      <AudioControls :feed-item="item"/>
+      <AudioControls :feed-item="item" />
     </div>
   </div>
 </template>

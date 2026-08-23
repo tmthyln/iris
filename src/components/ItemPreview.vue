@@ -37,16 +37,17 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
           </router-link>
         </h3>
         <div v-if="feed" class="subtitle">
-          From <router-link :to="{name: 'subscription', params: {guid: feed.guid}}"><em>{{ feed.alias || feed.title }}</em></router-link>
+          From <router-link :to="{name: 'subscription', params: {guid: feed.guid}}">
+            <em>{{ feed.alias || feed.title }}</em>
+          </router-link>
         </div>
       </div>
     </div>
 
-    <AudioControls :feed-item="feedItem"/>
+    <AudioControls :feed-item="feedItem" />
 
     <!-- TODO: remove this injection vulnerability -->
-    <div v-if="feedItem.description" class="content" v-html="feedItem.description">
-    </div>
+    <div v-if="feedItem.description" class="content" v-html="feedItem.description" />
   </div>
 </template>
 

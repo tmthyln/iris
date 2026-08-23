@@ -1,7 +1,7 @@
 
 export function asBoolean(input: string | number | boolean): boolean {
     if (input === true || input === false) {
-        return input as boolean
+        return input
     } else {
         return Boolean(parseInt(String(input)))
     }
@@ -9,7 +9,7 @@ export function asBoolean(input: string | number | boolean): boolean {
 
 export function asStringList(input: string | string[]): string[] {
     if (Array.isArray(input)) {
-        return input as string[]
+        return input
     } else {
         return input
             .split(',')
@@ -24,7 +24,7 @@ function isDate(input: unknown): input is Date {
 
 export function asDate(input: string | number | Date): Date {
     if (isDate(input)) {
-        return input as Date
+        return input
     } else {
         return new Date(input)
     }

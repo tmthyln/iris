@@ -55,15 +55,15 @@ function playItem() {
     if (playingStatus.value === 'playing' || playingStatus.value === 'paused') {
         queueStore.togglePaused()
     } else if (playingStatus.value === 'playable' || playingStatus.value === 'replayable' || playingStatus.value === 'queued') {
-        queueStore.playItem(props.feedItem)
+        void queueStore.playItem(props.feedItem)
     }
 }
 
 function toggleQueue() {
     if (queueStore.itemQueuedOrPlaying(props.feedItem)) {
-        queueStore.removeItem(props.feedItem)
+        void queueStore.removeItem(props.feedItem)
     } else {
-        queueStore.addItem(props.feedItem)
+        void queueStore.addItem(props.feedItem)
     }
 }
 
@@ -73,9 +73,9 @@ const isHoveredFinishedButton = useElementHover(toggleFinishedButton)
 
 function toggleFinished() {
     if (props.feedItem.finished) {
-        feedItemStore.markItemAsIncomplete(props.feedItem)
+        void feedItemStore.markItemAsIncomplete(props.feedItem)
     } else {
-        feedItemStore.markItemAsComplete(props.feedItem)
+        void feedItemStore.markItemAsComplete(props.feedItem)
     }
 }
 
@@ -85,9 +85,9 @@ const isHoveredBookmarkButton = useElementHover(toggleBookmarkButton)
 
 function toggleBookmark() {
     if (props.feedItem.bookmarked) {
-        feedItemStore.unbookmarkItem(props.feedItem)
+        void feedItemStore.unbookmarkItem(props.feedItem)
     } else {
-        feedItemStore.bookmarkItem(props.feedItem)
+        void feedItemStore.bookmarkItem(props.feedItem)
     }
 }
 
@@ -109,9 +109,9 @@ function toggleDownload() {
     if (typeof s === 'object' && s.state === 'downloading') {
         downloadStore.cancelDownload(props.feedItem.guid)
     } else if (typeof s === 'object' && s.state === 'downloaded') {
-        downloadStore.deleteDownload(props.feedItem.guid)
+        void downloadStore.deleteDownload(props.feedItem.guid)
     } else {
-        downloadStore.downloadItem(props.feedItem)
+        void downloadStore.downloadItem(props.feedItem)
     }
 }
 
@@ -136,16 +136,16 @@ const transcriptStatus = computed<'none' | 'in-progress' | 'complete' | 'error'>
 
 watch([() => props.feedItem.guid, feed], ([guid, currentFeed]) => {
     if (props.showTranscript && currentFeed?.type === 'podcast' && props.feedItem.enclosure_url) {
-        transcriptStore.refresh(guid)
+        void transcriptStore.refresh(guid)
     }
 }, {immediate: true})
 
 function onTranscriptClick() {
     const status = transcriptStatus.value
     if (status === 'none') {
-        transcriptStore.request(props.feedItem.guid)
+        void transcriptStore.request(props.feedItem.guid)
     } else if (status === 'error') {
-        transcriptStore.request(props.feedItem.guid)
+        void transcriptStore.request(props.feedItem.guid)
     } else if (status === 'complete') {
         emit('open-transcript')
     }
@@ -155,24 +155,27 @@ function onTranscriptClick() {
 <template>
   <div class="is-flex is-align-items-center mb-3 is-gap-1">
     <button
-        v-if="feed?.type === 'podcast'"
-        class="button tag px-3 is-rounded is-medium is-gap-1"
-        :class="{'has-text-info': true, 'has-text-success': false}"
-        @click="playItem">
-
+      v-if="feed?.type === 'podcast'"
+      class="button tag px-3 is-rounded is-medium is-gap-1"
+      :class="{'has-text-info': true, 'has-text-success': false}"
+      @click="playItem"
+    >
       <span
-          v-if="!feedItem.finished && !queueStore.itemQueuedOrPlaying(feedItem)"
-          class="material-symbols-outlined">
+        v-if="!feedItem.finished && !queueStore.itemQueuedOrPlaying(feedItem)"
+        class="material-symbols-outlined"
+      >
         play_arrow
       </span>
       <span
-          v-else-if="queueStore.itemPlaying(feedItem)"
-          class="material-symbols-outlined">
+        v-else-if="queueStore.itemPlaying(feedItem)"
+        class="material-symbols-outlined"
+      >
         play_circle
       </span>
       <span
-          v-else
-          class="material-symbols-outlined">
+        v-else
+        class="material-symbols-outlined"
+      >
         replay
       </span>
 
@@ -180,138 +183,172 @@ function onTranscriptClick() {
     </button>
 
     <button
-        v-if="feed?.type === 'podcast'"
-        ref="toggleQueuedButton"
-        class="button is-small px-0 py-1" style="border: none;"
-        @click="toggleQueue">
+      v-if="feed?.type === 'podcast'"
+      ref="toggleQueuedButton"
+      class="button is-small px-0 py-1"
+      style="border: none;"
+      @click="toggleQueue"
+    >
       <span
-          v-if="isHoveredQueuedButton && queueStore.itemQueued(feedItem)"
-          class="material-symbols-outlined has-text-warning"
-          title="Remove this item from the queue">
+        v-if="isHoveredQueuedButton && queueStore.itemQueued(feedItem)"
+        class="material-symbols-outlined has-text-warning"
+        title="Remove this item from the queue"
+      >
         playlist_remove
       </span>
       <span
-          v-else-if="queueStore.itemQueued(feedItem)"
-          class="material-symbols-outlined has-text-success">
+        v-else-if="queueStore.itemQueued(feedItem)"
+        class="material-symbols-outlined has-text-success"
+      >
         playlist_add_check
       </span>
       <span
-          v-else
-          class="material-symbols-outlined" :class="{'has-text-success': isHoveredQueuedButton}"
-          title="Add this item to the end of the queue">
+        v-else
+        class="material-symbols-outlined"
+        :class="{'has-text-success': isHoveredQueuedButton}"
+        title="Add this item to the end of the queue"
+      >
         playlist_add
       </span>
     </button>
 
     <button
-        ref="toggleFinishedButton"
-        class="button is-small px-0 py-1" style="border: none;"
-        @click="toggleFinished">
+      ref="toggleFinishedButton"
+      class="button is-small px-0 py-1"
+      style="border: none;"
+      @click="toggleFinished"
+    >
       <span
-          v-if="isHoveredFinishedButton && feedItem.finished"
-          class="material-symbols-outlined has-text-warning"
-          title="Mark item as not completed">
+        v-if="isHoveredFinishedButton && feedItem.finished"
+        class="material-symbols-outlined has-text-warning"
+        title="Mark item as not completed"
+      >
         remove_done
       </span>
       <span
-          v-else-if="feedItem.finished"
-          class="material-symbols-outlined has-text-success">
+        v-else-if="feedItem.finished"
+        class="material-symbols-outlined has-text-success"
+      >
         check_circle
       </span>
       <span
-          v-else
-          class="material-symbols-outlined" :class="{'has-text-success': isHoveredFinishedButton}"
-          title="Mark this item as complete">
+        v-else
+        class="material-symbols-outlined"
+        :class="{'has-text-success': isHoveredFinishedButton}"
+        title="Mark this item as complete"
+      >
         done
       </span>
     </button>
 
     <button
-        ref="toggleBookmarkButton"
-        class="button is-small px-0 py-1" style="border: none;"
-        @click="toggleBookmark">
+      ref="toggleBookmarkButton"
+      class="button is-small px-0 py-1"
+      style="border: none;"
+      @click="toggleBookmark"
+    >
       <span
-          v-if="isHoveredBookmarkButton && feedItem.bookmarked"
-          class="material-symbols-outlined has-text-warning"
-          title="Unbookmark this item">
+        v-if="isHoveredBookmarkButton && feedItem.bookmarked"
+        class="material-symbols-outlined has-text-warning"
+        title="Unbookmark this item"
+      >
         bookmark_remove
       </span>
       <span
-          v-else-if="feedItem.bookmarked"
-          class="material-symbols-outlined has-text-success">
+        v-else-if="feedItem.bookmarked"
+        class="material-symbols-outlined has-text-success"
+      >
         bookmark_added
       </span>
       <span
-          v-else
-          class="material-symbols-outlined" :class="{'has-text-success': isHoveredBookmarkButton}"
-          title="Bookmark this item">
+        v-else
+        class="material-symbols-outlined"
+        :class="{'has-text-success': isHoveredBookmarkButton}"
+        title="Bookmark this item"
+      >
         bookmark_add
       </span>
     </button>
 
     <button
-        v-if="feed?.type === 'podcast' && feedItem.enclosure_url"
-        ref="toggleDownloadButton"
-        class="button is-small px-0 py-1" style="border: none;"
-        @click="toggleDownload">
+      v-if="feed?.type === 'podcast' && feedItem.enclosure_url"
+      ref="toggleDownloadButton"
+      class="button is-small px-0 py-1"
+      style="border: none;"
+      @click="toggleDownload"
+    >
       <span
-          v-if="typeof downloadStatus === 'object' && downloadStatus.state === 'downloading'"
-          class="material-symbols-outlined has-text-info download-pulse"
-          :title="`Downloading: ${downloadProgress}%`">
+        v-if="typeof downloadStatus === 'object' && downloadStatus.state === 'downloading'"
+        class="material-symbols-outlined has-text-info download-pulse"
+        :title="`Downloading: ${downloadProgress}%`"
+      >
         downloading
       </span>
       <span
-          v-else-if="typeof downloadStatus === 'object' && downloadStatus.state === 'error'"
-          class="material-symbols-outlined has-text-danger"
-          :title="`Download failed: ${downloadStatus.message}. Click to retry`">
+        v-else-if="typeof downloadStatus === 'object' && downloadStatus.state === 'error'"
+        class="material-symbols-outlined has-text-danger"
+        :title="`Download failed: ${downloadStatus.message}. Click to retry`"
+      >
         error
       </span>
       <span
-          v-else-if="isHoveredDownloadButton && typeof downloadStatus === 'object' && downloadStatus.state === 'downloaded'"
-          class="material-symbols-outlined has-text-warning"
-          title="Remove downloaded audio">
+        v-else-if="isHoveredDownloadButton && typeof downloadStatus === 'object' && downloadStatus.state === 'downloaded'"
+        class="material-symbols-outlined has-text-warning"
+        title="Remove downloaded audio"
+      >
         download_done
       </span>
       <span
-          v-else-if="typeof downloadStatus === 'object' && downloadStatus.state === 'downloaded'"
-          class="material-symbols-outlined has-text-success">
+        v-else-if="typeof downloadStatus === 'object' && downloadStatus.state === 'downloaded'"
+        class="material-symbols-outlined has-text-success"
+      >
         download_done
       </span>
       <span
-          v-else
-          class="material-symbols-outlined" :class="{'has-text-success': isHoveredDownloadButton}"
-          title="Download for offline playback">
+        v-else
+        class="material-symbols-outlined"
+        :class="{'has-text-success': isHoveredDownloadButton}"
+        title="Download for offline playback"
+      >
         download
       </span>
     </button>
 
     <button
-        v-if="showTranscript && feed?.type === 'podcast' && feedItem.enclosure_url"
-        ref="toggleTranscriptButton"
-        class="button is-small px-0 py-1" style="border: none;"
-        @click="onTranscriptClick">
+      v-if="showTranscript && feed?.type === 'podcast' && feedItem.enclosure_url"
+      ref="toggleTranscriptButton"
+      class="button is-small px-0 py-1"
+      style="border: none;"
+      @click="onTranscriptClick"
+    >
       <span
-          v-if="transcriptStatus === 'in-progress'"
-          class="material-symbols-outlined has-text-info download-pulse"
-          title="Transcribing audio…">
+        v-if="transcriptStatus === 'in-progress'"
+        class="material-symbols-outlined has-text-info download-pulse"
+        title="Transcribing audio…"
+      >
         graphic_eq
       </span>
       <span
-          v-else-if="transcriptStatus === 'error'"
-          class="material-symbols-outlined has-text-danger"
-          :title="`Transcription failed: ${latestTranscript?.error_message ?? 'unknown error'}. Click to retry`">
+        v-else-if="transcriptStatus === 'error'"
+        class="material-symbols-outlined has-text-danger"
+        :title="`Transcription failed: ${latestTranscript?.error_message ?? 'unknown error'}. Click to retry`"
+      >
         error
       </span>
       <span
-          v-else-if="transcriptStatus === 'complete'"
-          class="material-symbols-outlined" :class="{'has-text-success': !isHoveredTranscriptButton, 'has-text-info': isHoveredTranscriptButton}"
-          title="View transcript">
+        v-else-if="transcriptStatus === 'complete'"
+        class="material-symbols-outlined"
+        :class="{'has-text-success': !isHoveredTranscriptButton, 'has-text-info': isHoveredTranscriptButton}"
+        title="View transcript"
+      >
         description
       </span>
       <span
-          v-else
-          class="material-symbols-outlined" :class="{'has-text-success': isHoveredTranscriptButton}"
-          title="Generate transcript">
+        v-else
+        class="material-symbols-outlined"
+        :class="{'has-text-success': isHoveredTranscriptButton}"
+        title="Generate transcript"
+      >
         description
       </span>
     </button>

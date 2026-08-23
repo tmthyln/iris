@@ -61,10 +61,10 @@ export const useFeedItemStore = defineStore('feeditems', {
         },
         prefetchItem(guid: string) {
             // Fire-and-forget: warms the in-memory store, then the browser HTTP cache for any embedded images.
-            this.loadFullItem(guid).then(item => {
+            void this.loadFullItem(guid).then(item => {
                 if (item) prefetchImagesFromHtml(item.encoded_content, item.description)
             })
-            this.loadAdjacent(guid)
+            void this.loadAdjacent(guid)
         },
         async bookmarkItem(feedItem: FeedItemPreview) {
             const success = (await client.modifyFeedItem(feedItem.guid, {bookmarked: true})).ok

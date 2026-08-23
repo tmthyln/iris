@@ -25,19 +25,20 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
   <div>
     <router-link :to="{name: 'subscription', params: {guid: feed.guid }}">
       <figure>
-
         <div class="image is-128x128">
           <img
-              :src="resolvedSrc"
-              :alt="feed.image_alt ?? 'No feed image'"
-              @error="onImageError">
+            :src="resolvedSrc"
+            :alt="feed.image_alt ?? 'No feed image'"
+            @error="onImageError"
+          >
         </div>
 
         <figcaption class="mt-2">
-          <div class="clamp-2-lines" :title="displayTitle">{{ displayTitle }}</div>
+          <div class="clamp-2-lines" :title="displayTitle">
+            {{ displayTitle }}
+          </div>
           <small v-if="showAuthor" class="clamp-2-lines" :title="displayAuthor">{{ displayAuthor }}</small>
         </figcaption>
-
       </figure>
     </router-link>
   </div>

@@ -31,12 +31,12 @@ const showPushCta = computed(() =>
 onMounted(() => notificationStore.load())
 
 useIntervalFn(() => {
-    if (visibility.value === 'visible') notificationStore.load()
+    if (visibility.value === 'visible') void notificationStore.load()
 }, 60_000)
 
 function toggle() {
     open.value = !open.value
-    if (open.value) notificationStore.load()
+    if (open.value) void notificationStore.load()
 }
 
 function notificationLabel(feedTitle: string | null, feedAlias: string | null) {
@@ -45,8 +45,8 @@ function notificationLabel(feedTitle: string | null, feedAlias: string | null) {
 
 function openItem(feedItemGuid: string, id: number) {
     open.value = false
-    notificationStore.dismiss(id)
-    router.push({name: 'item', params: {guid: feedItemGuid}})
+    void notificationStore.dismiss(id)
+    void router.push({name: 'item', params: {guid: feedItemGuid}})
 }
 
 function formatTime(value: string) {
@@ -102,10 +102,11 @@ async function handleSendTest() {
 <template>
   <div ref="rootEl" class="notification-bell">
     <a
-        role="button"
-        class="navbar-item bell-trigger"
-        :title="`${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}`"
-        @click="toggle">
+      role="button"
+      class="navbar-item bell-trigger"
+      :title="`${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}`"
+      @click="toggle"
+    >
       <span class="icon">
         <span class="material-symbols-outlined">notifications</span>
       </span>
@@ -116,10 +117,11 @@ async function handleSendTest() {
       <div class="bell-header">
         <strong>Notifications</strong>
         <button
-            v-if="hasItems"
-            class="button is-small is-text"
-            :disabled="unreadCount === 0"
-            @click="notificationStore.dismissAll()">
+          v-if="hasItems"
+          class="button is-small is-text"
+          :disabled="unreadCount === 0"
+          @click="notificationStore.dismissAll()"
+        >
           Mark all read
         </button>
       </div>
@@ -133,13 +135,16 @@ async function handleSendTest() {
           <p v-if="permission === 'denied'" class="is-size-7 has-text-danger">
             Notifications are blocked in your browser settings.
           </p>
-          <p v-else-if="lastError" class="is-size-7 has-text-danger">{{ lastError }}</p>
+          <p v-else-if="lastError" class="is-size-7 has-text-danger">
+            {{ lastError }}
+          </p>
         </div>
         <button
-            class="button is-small is-info"
-            :class="{'is-loading': isBusy}"
-            :disabled="permission === 'denied'"
-            @click="handlePushToggle">
+          class="button is-small is-info"
+          :class="{'is-loading': isBusy}"
+          :disabled="permission === 'denied'"
+          @click="handlePushToggle"
+        >
           Enable
         </button>
       </div>
@@ -147,27 +152,32 @@ async function handleSendTest() {
       <div v-else-if="isSubscribed" class="bell-push-status">
         <div class="bell-push-status-body">
           <span class="is-size-7 has-text-grey">Push notifications enabled on this device.</span>
-          <p v-if="lastError" class="is-size-7 has-text-danger">{{ lastError }}</p>
+          <p v-if="lastError" class="is-size-7 has-text-danger">
+            {{ lastError }}
+          </p>
           <p
-              v-if="testStatus"
-              class="is-size-7"
-              :class="testStatus.kind === 'success' ? 'has-text-success' : 'has-text-danger'">
+            v-if="testStatus"
+            class="is-size-7"
+            :class="testStatus.kind === 'success' ? 'has-text-success' : 'has-text-danger'"
+          >
             {{ testStatus.message }}
           </p>
         </div>
         <div class="bell-push-status-actions">
           <button
-              class="button is-small is-text"
-              :class="{'is-loading': isTesting}"
-              :disabled="isBusy"
-              @click="handleSendTest">
+            class="button is-small is-text"
+            :class="{'is-loading': isTesting}"
+            :disabled="isBusy"
+            @click="handleSendTest"
+          >
             Send test
           </button>
           <button
-              class="button is-small is-text"
-              :class="{'is-loading': isBusy}"
-              :disabled="isTesting"
-              @click="handlePushToggle">
+            class="button is-small is-text"
+            :class="{'is-loading': isBusy}"
+            :disabled="isTesting"
+            @click="handlePushToggle"
+          >
             Disable
           </button>
         </div>
@@ -178,11 +188,15 @@ async function handleSendTest() {
       </div>
       <ul v-else class="bell-list">
         <li
-            v-for="item in items" :key="item.id"
-            class="bell-item"
-            :class="{'is-dismissed': item.dismissed}">
+          v-for="item in items"
+          :key="item.id"
+          class="bell-item"
+          :class="{'is-dismissed': item.dismissed}"
+        >
           <div class="bell-item-body" @click="openItem(item.feed_item_guid, item.id)">
-            <div class="bell-item-title">{{ item.item_title || 'New item' }}</div>
+            <div class="bell-item-title">
+              {{ item.item_title || 'New item' }}
+            </div>
             <div class="bell-item-meta">
               <span>{{ notificationLabel(item.feed_title, item.feed_alias) }}</span>
               <span v-if="item.type === 'updated_item'" class="tag is-warning is-light is-small">Updated</span>
@@ -190,10 +204,11 @@ async function handleSendTest() {
             </div>
           </div>
           <button
-              v-if="!item.dismissed"
-              class="delete is-small"
-              title="Dismiss"
-              @click.stop="notificationStore.dismiss(item.id)"></button>
+            v-if="!item.dismissed"
+            class="delete is-small"
+            title="Dismiss"
+            @click.stop="notificationStore.dismiss(item.id)"
+          />
         </li>
       </ul>
     </div>

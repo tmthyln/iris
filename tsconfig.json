@@ -1,17 +1,9 @@
 {
   "files": [],
   "references": [
-    {
-      "path": "./tsconfig.node.json"
-    },
-    {
-      "path": "./tsconfig.app.json"
-    },
-    {
-      "path": "./tsconfig.cf.json"
-    }
-  ],
-  "compilerOptions": {
-    "module": "NodeNext"
-  }
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.cf.json" },
+    { "path": "./tsconfig.sw.json" }
+  ]
 }

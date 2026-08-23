@@ -31,7 +31,7 @@ export const useTranscriptStore = defineStore('transcripts', () => {
     function ensurePolling(itemGuid: string) {
         if (pollers.has(itemGuid)) return
         let failures = 0
-        const {pause} = useIntervalFn(async () => {
+        async function poll() {
             if (visibility.value !== 'visible') return
             const result = await client.listTranscripts(itemGuid)
             const list = result.ok ? result.data : null
@@ -42,7 +42,8 @@ export const useTranscriptStore = defineStore('transcripts', () => {
             failures = 0
             byItem[itemGuid] = list
             if (!hasInProgress(list)) stopPolling(itemGuid)
-        }, POLL_INTERVAL_MS)
+        }
+        const {pause} = useIntervalFn(() => void poll(), POLL_INTERVAL_MS)
         pollers.set(itemGuid, pause)
     }
 

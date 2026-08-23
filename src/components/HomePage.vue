@@ -9,13 +9,13 @@ import client from "../client.ts";
 
 const feedStore = useFeedStore()
 const feedItemStore = useFeedItemStore()
-onMounted(feedItemStore.loadRecentUnreadItems)
+onMounted(() => void feedItemStore.loadRecentUnreadItems())
 useTitle('Iris')
 
 const loadMoreSentinel = ref<HTMLElement>()
 useIntersectionObserver(loadMoreSentinel, ([entry]) => {
     if (entry.isIntersecting) {
-        feedItemStore.loadMoreRecentItems()
+        void feedItemStore.loadMoreRecentItems()
     }
 })
 
@@ -29,7 +29,7 @@ function openFeedAdder() {
     feedUrl.value = ''
     opmlImportStatus.value = null
     showFeedAdder.value = true
-    nextTick(() => feedUrlEl.value?.focus())
+    void nextTick(() => feedUrlEl.value?.focus())
 }
 
 function closeFeedAdder() {
@@ -72,7 +72,7 @@ async function importOpml(event: Event) {
 
     opmlImportStatus.value = null
     closeFeedAdder()
-    feedStore.loadFeeds()
+    void feedStore.loadFeeds()
 
     // reset file input so the same file can be re-imported
     if (opmlFileInput.value) opmlFileInput.value.value = ''
@@ -81,18 +81,23 @@ async function importOpml(event: Event) {
 
 <template>
   <div>
-
     <section class="section pb-4">
       <div class="is-flex is-align-items-center mb-4">
-        <h2 class="title is-2 mb-0">Subscribed Feeds</h2>
-        <button class="button is-small is-primary ml-5" @click="openFeedAdder">Add Feed</button>
+        <h2 class="title is-2 mb-0">
+          Subscribed Feeds
+        </h2>
+        <button class="button is-small is-primary ml-5" @click="openFeedAdder">
+          Add Feed
+        </button>
       </div>
 
       <div class="is-flex subscriptions-list">
         <SubscriptionPreview
-            v-for="feed in feedStore.feeds.filter(f => f.has_unread)" :key="feed.guid"
-            :feed="feed"
-            class="mr-4"/>
+          v-for="feed in feedStore.feeds.filter(f => f.has_unread)"
+          :key="feed.guid"
+          :feed="feed"
+          class="mr-4"
+        />
         <div v-if="feedStore.feedsLoadState === 'loading'">
           Loading feeds...
         </div>
@@ -103,13 +108,17 @@ async function importOpml(event: Event) {
     </section>
 
     <section class="section">
-      <h2 class="title is-2">Recent Unread Items</h2>
+      <h2 class="title is-2">
+        Recent Unread Items
+      </h2>
 
       <div>
         <ItemPreview
-            v-for="feedItem in feedItemStore.recentItems" :key="feedItem.guid"
-            :feed-item="feedItem"
-            class="mb-6"/>
+          v-for="feedItem in feedItemStore.recentItems"
+          :key="feedItem.guid"
+          :feed-item="feedItem"
+          class="mb-6"
+        />
         <div v-if="feedItemStore.recentItems.length === 0 && feedItemStore.recentLoadState === 'loaded'">
           You don't have any unread items from any feeds. Yay, inbox zero!
         </div>
@@ -120,35 +129,51 @@ async function importOpml(event: Event) {
     </section>
 
     <div class="modal" :class="{'is-active': showFeedAdder}">
-      <div class="modal-background" @click="closeFeedAdder"/>
+      <div class="modal-background" @click="closeFeedAdder" />
       <div class="modal-card">
         <header class="modal-card-head">
-          <p class="modal-card-title">Add a feed by URL</p>
-          <button class="delete" aria-label="close" @click="closeFeedAdder"></button>
+          <p class="modal-card-title">
+            Add a feed by URL
+          </p>
+          <button class="delete" aria-label="close" @click="closeFeedAdder" />
         </header>
         <section class="modal-card-body">
           <div class="field">
             <label class="label">Feed URL</label>
             <div class="control">
               <input
-                  ref="feedUrlEl"
-                  class="input" type="url"
-                  v-model="feedUrl"
-                  placeholder="https://example.com/feed.xml"
-                  @keyup.enter="submitFeedURL">
+                ref="feedUrlEl"
+                class="input"
+                type="url"
+                v-model="feedUrl"
+                placeholder="https://example.com/feed.xml"
+                @keyup.enter="submitFeedURL"
+              >
             </div>
           </div>
         </section>
         <footer class="modal-card-foot is-gap-2">
-          <button class="button is-success" @click="submitFeedURL">Submit</button>
-          <button class="button" @click="closeFeedAdder">Cancel</button>
+          <button class="button is-success" @click="submitFeedURL">
+            Submit
+          </button>
+          <button class="button" @click="closeFeedAdder">
+            Cancel
+          </button>
           <div class="ml-auto">
-            <input ref="opmlFileInput" type="file" accept=".opml,.xml" class="is-hidden" @change="importOpml">
-            <button class="button is-small is-text" @click="opmlFileInput?.click()">Import OPML</button>
+            <input
+              ref="opmlFileInput"
+              type="file"
+              accept=".opml,.xml"
+              class="is-hidden"
+              @change="importOpml"
+            >
+            <button class="button is-small is-text" @click="opmlFileInput?.click()">
+              Import OPML
+            </button>
           </div>
         </footer>
         <div v-if="opmlImportStatus" class="px-4 py-3">
-          <progress class="progress is-small is-info" :value="opmlImportStatus.current" :max="opmlImportStatus.total"></progress>
+          <progress class="progress is-small is-info" :value="opmlImportStatus.current" :max="opmlImportStatus.total" />
           <p class="is-size-7 has-text-grey">
             Importing {{ opmlImportStatus.current }}/{{ opmlImportStatus.total }}: {{ opmlImportStatus.name }}
           </p>

@@ -55,18 +55,17 @@ interface PushSubscriptionChangeEventLike extends ExtendableEvent {
     newSubscription: PushSubscription | null
 }
 
-function urlBase64ToUint8Array(base64String: string) {
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
     const rawData = atob(base64)
-    const output = new Uint8Array(rawData.length)
+    const output = new Uint8Array(new ArrayBuffer(rawData.length))
     for (let i = 0; i < rawData.length; i++) output[i] = rawData.charCodeAt(i)
     return output
 }
 
 async function resubscribePush(oldSubscription: PushSubscription | null) {
-    let applicationServerKey: ArrayBuffer | Uint8Array | null =
-        (oldSubscription?.options?.applicationServerKey as ArrayBuffer | null) ?? null
+    let applicationServerKey: BufferSource | null = oldSubscription?.options?.applicationServerKey ?? null
 
     if (!applicationServerKey) {
         const resp = await fetch('/api/push/vapid-public-key', {headers: ACCESS_AJAX_HEADERS})
@@ -107,7 +106,8 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close()
-    const url = (event.notification.data?.url as string | undefined) ?? '/'
+    const data = event.notification.data as {url?: string} | undefined
+    const url = data?.url ?? '/'
 
     event.waitUntil((async () => {
         const clientsList = await self.clients.matchAll({type: 'window', includeUncontrolled: true})

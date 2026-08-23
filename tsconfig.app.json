@@ -5,6 +5,7 @@
     "module": "ESNext",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
 
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -25,5 +26,5 @@
     ]
   },
   "include": ["src/**/*.ts", "src/**/*.vue"],
-  "exclude": ["src/services/*", "src/service.ts", "src/sw.ts"]
+  "exclude": ["src/services/**", "src/service.ts", "src/sw.ts"]
 }

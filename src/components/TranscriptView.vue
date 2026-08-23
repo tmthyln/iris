@@ -44,8 +44,8 @@ const segments = computed<TranscriptSegment[]>(() => {
     const json = fullTranscript.value?.segments_json
     if (!json) return []
     try {
-        const parsed = JSON.parse(json)
-        return Array.isArray(parsed) ? parsed : []
+        const parsed: unknown = JSON.parse(json)
+        return Array.isArray(parsed) ? parsed as TranscriptSegment[] : []
     } catch {
         return []
     }
@@ -108,22 +108,29 @@ function toggle() {
     </div>
 
     <div v-if="open" class="transcript-body box">
-      <p v-if="!fullTranscript" class="has-text-grey">Loading transcript…</p>
+      <p v-if="!fullTranscript" class="has-text-grey">
+        Loading transcript…
+      </p>
       <div v-else-if="segments.length > 0" class="transcript-segments">
         <div
-            v-for="(seg, i) in segments" :key="i"
-            class="transcript-segment">
+          v-for="(seg, i) in segments"
+          :key="i"
+          class="transcript-segment"
+        >
           <button
-              class="transcript-timestamp"
-              :disabled="!isPlayingThisItem"
-              :title="isPlayingThisItem ? `Seek to ${formatTime(seg.start)}` : 'Play this episode to seek from the transcript'"
-              @click="seekTo(seg.start)">
+            class="transcript-timestamp"
+            :disabled="!isPlayingThisItem"
+            :title="isPlayingThisItem ? `Seek to ${formatTime(seg.start)}` : 'Play this episode to seek from the transcript'"
+            @click="seekTo(seg.start)"
+          >
             {{ formatTime(seg.start) }}
           </button>
           <span class="transcript-text">{{ seg.text }}</span>
         </div>
       </div>
-      <p v-else class="transcript-plain">{{ fullTranscript.text }}</p>
+      <p v-else class="transcript-plain">
+        {{ fullTranscript.text }}
+      </p>
     </div>
   </div>
 </template>

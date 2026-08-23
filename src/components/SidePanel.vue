@@ -7,7 +7,7 @@ import {useDownloadStore} from "../stores/downloads.ts";
 const feedStore = useFeedStore()
 const feedItemStore = useFeedItemStore()
 const downloadStore = useDownloadStore()
-onMounted(feedItemStore.loadBookmarkedItems)
+onMounted(() => void feedItemStore.loadBookmarkedItems())
 
 const downloadCount = computed(() => Object.keys(downloadStore.downloadedItems).length)
 </script>
@@ -25,13 +25,16 @@ const downloadCount = computed(() => Object.keys(downloadStore.downloadedItems).
     </div>
 
     <template v-for="(catFeeds, category) in feedStore.feedsByCategory" :key="category">
-      <p v-if="category !== 'Uncategorized'" class="menu-label has-text-info">{{ category }}</p>
+      <p v-if="category !== 'Uncategorized'" class="menu-label has-text-info">
+        {{ category }}
+      </p>
 
       <ul class="menu-list">
         <li v-for="feed in catFeeds" :key="feed.guid">
           <router-link
-              :to="{name: 'subscription', params: {guid: feed.guid}}"
-              :class="{'has-text-grey': !feed.has_unread}">
+            :to="{name: 'subscription', params: {guid: feed.guid}}"
+            :class="{'has-text-grey': !feed.has_unread}"
+          >
             {{ feed.alias || feed.title }}
           </router-link>
         </li>
@@ -51,7 +54,9 @@ const downloadCount = computed(() => Object.keys(downloadStore.downloadedItems).
 
     <hr>
 
-    <p class="menu-label has-text-primary">Bookmarked Items</p>
+    <p class="menu-label has-text-primary">
+      Bookmarked Items
+    </p>
 
     <div v-if="feedItemStore.bookmarkedLoadState === 'loading'">
       Loading bookmarks...
@@ -61,16 +66,20 @@ const downloadCount = computed(() => Object.keys(downloadStore.downloadedItems).
     </div>
     <ul class="menu-list">
       <li
-          v-for="feedItem in feedItemStore.bookmarkedItems" :key="feedItem.guid"
-          class="is-inline-flex" style="width: 100%">
+        v-for="feedItem in feedItemStore.bookmarkedItems"
+        :key="feedItem.guid"
+        class="is-inline-flex"
+        style="width: 100%"
+      >
         <router-link :to="{name: 'item', params: {guid: feedItem.guid}}">
           {{ feedItem.title }}
         </router-link>
         <span
-            class="button material-symbols-outlined has-text-warning"
-            style="border: none; margin-left: auto;"
-            title="Unbookmark this item"
-            @click="feedItemStore.unbookmarkItem(feedItem)">
+          class="button material-symbols-outlined has-text-warning"
+          style="border: none; margin-left: auto;"
+          title="Unbookmark this item"
+          @click="feedItemStore.unbookmarkItem(feedItem)"
+        >
           bookmark_remove
         </span>
       </li>

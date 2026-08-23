@@ -20,7 +20,8 @@ const upcomingItems = computed(() => queueStore.items.slice(1))
 
 const resolvedSrc = ref('')
 
-watchEffect(async () => {
+// Everything read before the first `await` is tracked by the effect.
+async function resolveSource() {
     const item = currentItem.value
     if (!item?.enclosure_url) {
         resolvedSrc.value = ''
@@ -34,7 +35,8 @@ watchEffect(async () => {
         }
     }
     resolvedSrc.value = item.enclosure_url
-})
+}
+watchEffect(() => void resolveSource())
 
 const audio = ref<HTMLAudioElement>()
 const {
@@ -74,7 +76,7 @@ watch(() => queueStore.paused, (paused) => {
 watch(playing, (isPlaying) => {
     queueStore.paused = !isPlaying
     if (!isPlaying && currentItem.value && duration.value > 0) {
-        feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+        void feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
     }
 })
 
@@ -82,7 +84,7 @@ function setPlaybackPosition(event: Event) {
     const target = event.currentTarget as HTMLInputElement
     currentTime.value = Number(target.value)
     if (currentItem.value && duration.value > 0) {
-        feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+        void feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
     }
 }
 watch(() => queueStore.pendingSeek, (seconds) => {
@@ -91,7 +93,7 @@ watch(() => queueStore.pendingSeek, (seconds) => {
     if (!currentItemReady.value) return
     currentTime.value = Math.min(Math.max(0, seconds), duration.value)
     if (currentItem.value && duration.value > 0) {
-        feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+        void feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
     }
 })
 function fastRewind() {
@@ -118,7 +120,7 @@ function cyclePlaybackRate() {
 
 useIntervalFn(() => {
     if (playing.value && currentItem.value && duration.value > 0) {
-        feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+        void feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
     }
 }, 5000)
 watch(ended, async () => {
@@ -128,7 +130,7 @@ watch(ended, async () => {
         autoPlayNext.value = upcomingItems.value.length > 0
         await queueStore.removeItem(currentItem.value)
         if (downloadStore.isDownloaded(completedGuid)) {
-            downloadStore.scheduleDelete(completedGuid, 60_000)
+            void downloadStore.scheduleDelete(completedGuid, 60_000)
         }
     }
 })
@@ -154,7 +156,7 @@ if ('mediaSession' in navigator) {
     navigator.mediaSession.setActionHandler('pause', () => { if (!isLoading.value) playing.value = false })
     navigator.mediaSession.setActionHandler('seekbackward', () => { if (!isLoading.value) fastRewind() })
     navigator.mediaSession.setActionHandler('seekforward', () => { if (!isLoading.value) fastForward() })
-    navigator.mediaSession.setActionHandler('nexttrack', () => { if (!isLoading.value) skipNext() })
+    navigator.mediaSession.setActionHandler('nexttrack', () => { if (!isLoading.value) void skipNext() })
 }
 
 /* Queue popover */
@@ -177,22 +179,22 @@ useSortable(queueListEl, upcomingItems, {
         if (event.oldIndex != null && event.newIndex != null && event.oldIndex !== event.newIndex) {
             const item = upcomingItems.value[event.oldIndex]
             // offset by 1 since items[0] is the currently playing item
-            queueStore.moveItem(item, event.newIndex + 1)
+            void queueStore.moveItem(item, event.newIndex + 1)
         }
     },
 })
 
 function playNow(item: FeedItemPreview) {
-    queueStore.playItem(item)
+    void queueStore.playItem(item)
 }
 
 function removeFromQueue(item: FeedItemPreview) {
-    queueStore.removeItem(item)
+    void queueStore.removeItem(item)
 }
 
 function clearQueue() {
     const keepFirst = !queueStore.paused
-    queueStore.clearQueue(keepFirst)
+    void queueStore.clearQueue(keepFirst)
 }
 
 const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(removeFromQueue, {ignoreSelector: '.drag-handle'})
@@ -200,116 +202,126 @@ const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(re
 
 <template>
   <template v-if="queueStore.items.length">
-    <div class="footer-placeholder"/>
+    <div class="footer-placeholder" />
     <footer class="audio-player-section has-background is-flex is-flex-direction-column is-align-items-stretch is-justify-content-space-between">
       <input
-          class="playback-progress p-0 m-0"
-          type="range"
-          :min="0" :max="duration"
-          :value="currentTime" @input="setPlaybackPosition"
-          :disabled="isLoading"
-          :style="{'--progress': `${100*currentTime/duration}%`}">
+        class="playback-progress p-0 m-0"
+        type="range"
+        :min="0"
+        :max="duration"
+        :value="currentTime"
+        @input="setPlaybackPosition"
+        :disabled="isLoading"
+        :style="{'--progress': `${100*currentTime/duration}%`}"
+      >
       <div class="player-layout p-4 is-flex-grow-1">
-        <audio ref="audio"></audio>
+        <audio ref="audio" />
 
         <div class="player-left">
           {{ currentItem?.title }}
         </div>
         <div class="player-center">
-
           <button class="tag button" :disabled="isLoading" @click="cyclePlaybackRate">
             {{ rate }}x
           </button>
 
           <button
-              class="button is-rounded px-2 control-button"
-              title="Rewind 10 seconds"
-              :disabled="isLoading"
-              @click="fastRewind">
+            class="button is-rounded px-2 control-button"
+            title="Rewind 10 seconds"
+            :disabled="isLoading"
+            @click="fastRewind"
+          >
             <span class="material-symbols-outlined">fast_rewind</span>
           </button>
 
           <button
-              class="button is-rounded px-3 is-large control-button"
-              :class="{'is-loading': isLoading}"
-              :disabled="isLoading"
-              :title="isLoading ? 'Loading...' : (playing ? 'Pause' : 'Play')"
-              @click="playing = !playing">
+            class="button is-rounded px-3 is-large control-button"
+            :class="{'is-loading': isLoading}"
+            :disabled="isLoading"
+            :title="isLoading ? 'Loading...' : (playing ? 'Pause' : 'Play')"
+            @click="playing = !playing"
+          >
             <span v-if="!playing" class="material-symbols-outlined">play_arrow</span>
             <span v-else class="material-symbols-outlined">pause</span>
           </button>
 
           <button
-              class="button is-rounded px-2 control-button"
-              title="Skip forward 30 seconds"
-              :disabled="isLoading"
-              @click="fastForward">
+            class="button is-rounded px-2 control-button"
+            title="Skip forward 30 seconds"
+            :disabled="isLoading"
+            @click="fastForward"
+          >
             <span class="material-symbols-outlined">fast_forward</span>
           </button>
 
           <button
-              class="button is-rounded px-2 control-button"
-              title="Skip to next in queue"
-              :disabled="isLoading || upcomingItems.length === 0"
-              @click="skipNext">
+            class="button is-rounded px-2 control-button"
+            title="Skip to next in queue"
+            :disabled="isLoading || upcomingItems.length === 0"
+            @click="skipNext"
+          >
             <span class="material-symbols-outlined">skip_next</span>
           </button>
-
         </div>
         <div class="player-right">
           <span>{{ useDurationFormat(currentTime).value }} / {{ useDurationFormat(duration).value }}</span>
           <div class="queue-toggle-wrapper">
             <button
-                class="button is-rounded px-2 control-button queue-toggle-button"
-                :class="{'has-text-info': showQueue}"
-                title="Show queue and what's up next"
-                @click="showQueue = !showQueue">
+              class="button is-rounded px-2 control-button queue-toggle-button"
+              :class="{'has-text-info': showQueue}"
+              title="Show queue and what's up next"
+              @click="showQueue = !showQueue"
+            >
               <span class="material-symbols-outlined">playlist_play</span>
             </button>
 
             <div v-if="showQueue" ref="queuePopover" class="queue-popover box p-0">
-            <div class="queue-popover-header px-4 py-3 is-flex is-align-items-center is-justify-content-space-between">
-              <strong>Up Next</strong>
-              <button
+              <div class="queue-popover-header px-4 py-3 is-flex is-align-items-center is-justify-content-space-between">
+                <strong>Up Next</strong>
+                <button
                   v-if="upcomingItems.length"
                   class="button is-small control-button"
                   title="Clear queue"
-                  @click="clearQueue">
-                <span class="material-symbols-outlined is-size-6">playlist_remove</span>
-              </button>
-            </div>
-            <div v-if="upcomingItems.length === 0" class="px-4 py-3 has-text-grey">
-              Nothing queued
-            </div>
-            <div ref="queueListEl" class="queue-list">
-              <div
+                  @click="clearQueue"
+                >
+                  <span class="material-symbols-outlined is-size-6">playlist_remove</span>
+                </button>
+              </div>
+              <div v-if="upcomingItems.length === 0" class="px-4 py-3 has-text-grey">
+                Nothing queued
+              </div>
+              <div ref="queueListEl" class="queue-list">
+                <div
                   v-for="item in upcomingItems"
                   :key="item.guid"
                   class="queue-item is-flex is-align-items-center px-3 py-2 is-gap-2"
                   :style="swipeStyle(item)"
                   @touchstart="onTouchStart(item, $event)"
                   @touchmove="onTouchMove"
-                  @touchend="onTouchEnd(item)">
-                <span class="material-symbols-outlined drag-handle has-text-grey" style="cursor: grab; touch-action: none;">
-                  drag_indicator
-                </span>
-                <span class="is-flex-grow-1 is-size-7 queue-item-title">{{ item.title }}</span>
-                <button
+                  @touchend="onTouchEnd(item)"
+                >
+                  <span class="material-symbols-outlined drag-handle has-text-grey" style="cursor: grab; touch-action: none;">
+                    drag_indicator
+                  </span>
+                  <span class="is-flex-grow-1 is-size-7 queue-item-title">{{ item.title }}</span>
+                  <button
                     class="button is-small px-1 control-button"
                     title="Play now"
-                    @click="playNow(item)">
-                  <span class="material-symbols-outlined is-size-6">play_arrow</span>
-                </button>
-                <button
+                    @click="playNow(item)"
+                  >
+                    <span class="material-symbols-outlined is-size-6">play_arrow</span>
+                  </button>
+                  <button
                     class="button is-small px-1 control-button is-hidden-mobile"
                     title="Remove from queue"
-                    @click="removeFromQueue(item)">
-                  <span class="material-symbols-outlined is-size-6">close</span>
-                </button>
+                    @click="removeFromQueue(item)"
+                  >
+                    <span class="material-symbols-outlined is-size-6">close</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
         </div>
       </div>
     </footer>

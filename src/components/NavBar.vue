@@ -89,7 +89,7 @@ async function loadMoreResults() {
 }
 
 useIntersectionObserver(searchSentinel, ([entry]) => {
-    if (entry.isIntersecting) loadMoreResults()
+    if (entry.isIntersecting) void loadMoreResults()
 }, {root: searchResultsEl})
 
 function filterKeyEvent(e: KeyboardEvent) {
@@ -126,12 +126,12 @@ function selectCommand(index: number) {
     const cmd = matchingCommands.value[index]
     if (cmd) {
         searchInput.value = '/' + cmd.name
-        handleSubmit()
+        void handleSubmit()
     }
 }
 
 function selectResult(result: FeedItemPreview) {
-    router.push({name: 'item', params: {guid: result.guid}})
+    void router.push({name: 'item', params: {guid: result.guid}})
     closeSearch()
 }
 
@@ -158,7 +158,7 @@ async function executeCommand(command: string) {
         try {
             const response = await apiFetch('/api/command/refresh-all-feeds', {method: 'POST'})
             if (response.ok) {
-                const data = await response.json()
+                const data = await response.json() as {refreshedCount: number}
                 commandStatus.value = 'success'
                 console.log(`Refreshed ${data.refreshedCount} feeds`)
             } else {
@@ -182,7 +182,7 @@ function openSearch(initialText?: string) {
         searchHasMore.value = false
     }
     commandStatus.value = 'idle'
-    nextTick(() => {
+    void nextTick(() => {
         searchInputEl.value?.focus()
         searchInputEl.value?.select()
     })
@@ -246,75 +246,95 @@ function makeSnippet(result: FeedItemPreview, query: string): string {
   <nav class="navbar" role="navigation" aria-label="main navigation">
     <div class="navbar-brand">
       <router-link class="navbar-item" :to="{name: 'home'}">
-        <img class="mr-2" src="/logo.svg" height="28" alt="logo">
+        <img
+          class="mr-2"
+          src="/logo.svg"
+          height="28"
+          alt="logo"
+        >
         <span class="title is-4">Iris Aggregator</span>
       </router-link>
       <a
-          role="button"
-          class="navbar-item is-hidden-tablet mobile-search-button"
-          aria-label="search"
-          @click="openSearch()">
+        role="button"
+        class="navbar-item is-hidden-tablet mobile-search-button"
+        aria-label="search"
+        @click="openSearch()"
+      >
         <span class="icon">
           <span class="material-symbols-outlined">search</span>
         </span>
       </a>
       <a
-          role="button"
-          class="navbar-burger is-hidden-tablet"
-          :class="{'is-active': sidebarOpen}"
-          aria-label="menu"
-          :aria-expanded="sidebarOpen"
-          @click="sidebarOpen = !sidebarOpen">
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
+        role="button"
+        class="navbar-burger is-hidden-tablet"
+        :class="{'is-active': sidebarOpen}"
+        aria-label="menu"
+        :aria-expanded="sidebarOpen"
+        @click="sidebarOpen = !sidebarOpen"
+      >
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
       </a>
     </div>
 
     <div class="navbar-menu">
       <div class="navbar-end">
         <div class="navbar-item">
-          <input class="input" type="search" placeholder="Search posts and podcasts" readonly @click="openSearch()">
+          <input
+            class="input"
+            type="search"
+            placeholder="Search posts and podcasts"
+            readonly
+            @click="openSearch()"
+          >
         </div>
-        <NotificationBell/>
+        <NotificationBell />
       </div>
     </div>
 
     <div class="modal" :class="{'is-active': showSearch}">
-      <div class="modal-background is-transparent" @click="closeSearch"/>
+      <div class="modal-background is-transparent" @click="closeSearch" />
       <div class="modal-card">
         <section class="modal-card-body">
           <div class="field">
             <div class="control has-icons-right">
               <input
-                  ref="searchInputEl"
-                  class="input is-large"
-                  type="text"
-                  v-model="searchInput"
-                  :placeholder="placeholder"
-                  @keydown="handleInputKeydown"
-                  @keyup.enter="handleSubmit"
-                  @keyup.esc="closeSearch">
+                ref="searchInputEl"
+                class="input is-large"
+                type="text"
+                v-model="searchInput"
+                :placeholder="placeholder"
+                @keydown="handleInputKeydown"
+                @keyup.enter="handleSubmit"
+                @keyup.esc="closeSearch"
+              >
               <span
-                  v-if="searchInput.length"
-                  class="icon is-right is-large is-clickable"
-                  @mousedown.prevent="clearInput">
+                v-if="searchInput.length"
+                class="icon is-right is-large is-clickable"
+                @mousedown.prevent="clearInput"
+              >
                 <span class="material-symbols-outlined">close</span>
               </span>
             </div>
             <p v-if="!isCommand" class="help">
-              <template v-if="searchInput.trim().length === 0">Type "/" to enter a command</template>
-              <template v-else-if="searchInput.trim().length < 3">Type at least 3 characters to search</template>
+              <template v-if="searchInput.trim().length === 0">
+                Type "/" to enter a command
+              </template>
+              <template v-else-if="searchInput.trim().length < 3">
+                Type at least 3 characters to search
+              </template>
             </p>
 
             <div v-if="matchingCommands.length" class="command-list mt-2">
               <div
-                  v-for="(cmd, i) in matchingCommands"
-                  :key="cmd.name"
-                  class="command-item px-3 py-2"
-                  :class="{'is-selected': i === selectedIndex}"
-                  @click="selectCommand(i)">
+                v-for="(cmd, i) in matchingCommands"
+                :key="cmd.name"
+                class="command-item px-3 py-2"
+                :class="{'is-selected': i === selectedIndex}"
+                @click="selectCommand(i)"
+              >
                 <span class="has-text-weight-medium">/{{ cmd.name }}</span>
                 <span class="has-text-grey ml-2">{{ cmd.description }}</span>
               </div>
@@ -325,19 +345,20 @@ function makeSnippet(result: FeedItemPreview, query: string): string {
                 Searching...
               </div>
               <div
-                  v-for="(result, i) in searchResults"
-                  :key="result.guid"
-                  class="search-result px-3 py-2"
-                  :class="{'is-selected': i === selectedIndex}"
-                  @click="selectResult(result)">
+                v-for="(result, i) in searchResults"
+                :key="result.guid"
+                class="search-result px-3 py-2"
+                :class="{'is-selected': i === selectedIndex}"
+                @click="selectResult(result)"
+              >
                 <div class="is-flex is-justify-content-space-between is-align-items-baseline">
-                  <span class="has-text-weight-medium search-result-title" v-html="highlightQuery(result.title, searchInput.trim())"></span>
+                  <span class="has-text-weight-medium search-result-title" v-html="highlightQuery(result.title, searchInput.trim())" />
                   <span class="has-text-grey is-size-7 ml-2 is-flex-shrink-0">{{ formatDate(result.date) }}</span>
                 </div>
                 <div
-                    class="search-result-snippet is-size-7 has-text-grey-dark mt-1"
-                    v-html="makeSnippet(result, searchInput.trim())">
-                </div>
+                  class="search-result-snippet is-size-7 has-text-grey-dark mt-1"
+                  v-html="makeSnippet(result, searchInput.trim())"
+                />
               </div>
               <div v-if="!searchLoading && !searchResults.length" class="px-3 py-2 has-text-grey">
                 No results found

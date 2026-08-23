@@ -52,14 +52,14 @@ function onEnter() {
     if (highlightedIndex.value >= 0 && highlightedIndex.value < filteredSuggestions.value.length) {
         selectSuggestion(filteredSuggestions.value[highlightedIndex.value])
     } else {
-        addCategory()
+        void addCategory()
     }
 }
 function selectSuggestion(category: string) {
     newCategory.value = category
     showSuggestions.value = false
     highlightedIndex.value = -1
-    addCategory()
+    void addCategory()
 }
 async function addCategory() {
     const value = newCategory.value.trim()
@@ -146,7 +146,7 @@ async function fetchPage(offset: number) {
     const response = await apiFetch(`/api/feed/${props.guid}/feeditem?${params}`)
     isFetching.value = false
     if (response.ok) {
-        const data: FeedItem[] = await response.json()
+        const data = await response.json() as FeedItem[]
         hasMore.value = data.length >= PAGE_SIZE
         return data
     }
@@ -169,17 +169,16 @@ watch([() => props.guid, showFinished, sortAscending], loadInitialPage, {immedia
 
 const loadMoreSentinel = ref<HTMLElement>()
 useIntersectionObserver(loadMoreSentinel, ([entry]) => {
-    if (entry.isIntersecting) loadMore()
+    if (entry.isIntersecting) void loadMore()
 })
 </script>
 
 <template>
   <div class="section">
-
     <template v-if="feed">
-    <h1 class="title is-1">
-      <template v-if="editingAlias">
-        <input
+      <h1 class="title is-1">
+        <template v-if="editingAlias">
+          <input
             ref="aliasInputEl"
             v-model="aliasInput"
             class="input is-large"
@@ -187,33 +186,37 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
             placeholder="Feed name"
             @keydown.enter="saveAlias"
             @keydown.escape="cancelAlias"
-            @blur="saveAlias">
-      </template>
-      <template v-else>
-        <component :is="feed.link ? 'a' : 'span'" :href="feed.link">
-          {{ displayName }}
-        </component>
-        <span
+            @blur="saveAlias"
+          >
+        </template>
+        <template v-else>
+          <component :is="feed.link ? 'a' : 'span'" :href="feed.link">
+            {{ displayName }}
+          </component>
+          <span
             class="icon edit-alias-icon ml-2"
             title="Edit feed name"
-            @click="startEditingAlias">
-          <span class="material-symbols-outlined">edit</span>
+            @click="startEditingAlias"
+          >
+            <span class="material-symbols-outlined">edit</span>
+          </span>
+        </template>
+      </h1>
+      <small class="subtitle">{{ useUnescapedHTML(feed.author).value }}</small>
+
+      <div class="mt-4">
+        {{ feed.description }}
+      </div>
+
+      <div class="mt-4 is-flex is-align-items-center is-flex-wrap-wrap" style="gap: 0.5rem">
+        <span v-for="category in feed.categories" :key="category" class="tag is-info is-medium">
+          {{ category }}
+          <button class="delete is-small" @click="removeCategory(category)" />
         </span>
-      </template>
-    </h1>
-    <small class="subtitle">{{ useUnescapedHTML(feed.author).value }}</small>
-
-    <div class="mt-4">{{ feed.description }}</div>
-
-    <div class="mt-4 is-flex is-align-items-center is-flex-wrap-wrap" style="gap: 0.5rem">
-      <span v-for="category in feed.categories" :key="category" class="tag is-info is-medium">
-        {{ category }}
-        <button class="delete is-small" @click="removeCategory(category)"></button>
-      </span>
-      <div class="category-input-wrapper">
-        <div class="field has-addons mb-0">
-          <div class="control">
-            <input
+        <div class="category-input-wrapper">
+          <div class="field has-addons mb-0">
+            <div class="control">
+              <input
                 v-model="newCategory"
                 class="input is-small"
                 type="text"
@@ -222,98 +225,113 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
                 @focus="showSuggestions = true"
                 @blur="showSuggestions = false"
                 @keydown="onKeydown"
-                @keydown.enter.prevent="onEnter">
+                @keydown.enter.prevent="onEnter"
+              >
+            </div>
+            <div class="control">
+              <button class="button is-small is-info" @click="addCategory">
+                +
+              </button>
+            </div>
           </div>
-          <div class="control">
-            <button class="button is-small is-info" @click="addCategory">+</button>
-          </div>
-        </div>
-        <div v-if="showSuggestions && filteredSuggestions.length > 0" class="category-suggestions">
-          <div
-              v-for="(cat, index) in filteredSuggestions" :key="cat"
+          <div v-if="showSuggestions && filteredSuggestions.length > 0" class="category-suggestions">
+            <div
+              v-for="(cat, index) in filteredSuggestions"
+              :key="cat"
               class="category-suggestion"
               :class="{ 'is-active': index === highlightedIndex }"
-              @mousedown.prevent="selectSuggestion(cat)">
-            {{ cat }}
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="mt-5">
-      <em>
-        Updates about once every {{ feed.update_frequency }} day{{ feed.update_frequency === 1 ? '' : 's' }}.
-      </em>
-    </div>
-
-    <label class="mt-4 is-flex is-align-items-center" style="gap: 0.5rem; cursor: pointer; user-select: none;">
-      <input
-          type="checkbox"
-          :checked="feed.notify_enabled"
-          @change="toggleNotifyEnabled(($event.target as HTMLInputElement).checked)">
-      <span>Notify me when new {{ feed.type === 'podcast' ? 'episodes' : 'posts' }} are published</span>
-    </label>
-
-    <section class="mt-6">
-      <div class="is-flex is-align-items-start">
-        <h2 class="title is-2 mr-auto">{{ showFinished ? 'All' : 'Unseen' }} {{ feed?.type === 'podcast' ? 'Episodes' : 'Posts' }}</h2>
-
-        <span
-            class="button icon py-4 mr-2 is-outlined"
-            :class="{'is-primary': sortAscending, 'is-info': !sortAscending, 'is-loading': isFetching}"
-            :title="sortAscending? 'Sort by latest items first' : 'Sort by earliest items first'"
-            @click="sortAscending = !sortAscending">
-          <span class="material-symbols-outlined">swap_vert</span>
-        </span>
-        <span
-            class="button icon py-4 mr-2 is-outlined"
-            :class="{'is-primary': showFinished, 'is-info': !showFinished, 'is-loading': isFetching}"
-            :title="showFinished ? 'Hide finished items' : 'Show finished items'"
-            @click="showFinished = !showFinished">
-          <span class="material-symbols-outlined">{{ showFinished ? 'check_circle' : 'done' }}</span>
-        </span>
-        <div class="dropdown is-right" :class="{'is-active': menuOpen}">
-          <div class="dropdown-trigger">
-            <span
-                class="button icon py-4 is-outlined is-info"
-                :class="{'is-loading': menuLoading}"
-                title="Feed actions"
-                @click="menuOpen = !menuOpen">
-              <span class="material-symbols-outlined">more_horiz</span>
-            </span>
-          </div>
-          <div class="dropdown-menu" role="menu">
-            <div class="dropdown-content">
-              <a class="dropdown-item" @click="handleRefreshFeed">
-                <span class="material-symbols-outlined mr-2" style="vertical-align: middle; font-size: 1.2em;">refresh</span>
-                Refresh Feed
-              </a>
-              <a v-if="!feed?.has_archives" class="dropdown-item" @click="handleFetchArchives">
-                <span class="material-symbols-outlined mr-2" style="vertical-align: middle; font-size: 1.2em;">archive</span>
-                Fetch Archives
-              </a>
+              @mousedown.prevent="selectSuggestion(cat)"
+            >
+              {{ cat }}
             </div>
           </div>
         </div>
-        <div v-if="menuOpen" class="menu-backdrop" @click="closeMenu"></div>
       </div>
 
+      <div class="mt-5">
+        <em>
+          Updates about once every {{ feed.update_frequency }} day{{ feed.update_frequency === 1 ? '' : 's' }}.
+        </em>
+      </div>
 
-      <ItemPreview
-          v-for="feedItem in visibleFeedItems" :key="feedItem.guid"
+      <label class="mt-4 is-flex is-align-items-center" style="gap: 0.5rem; cursor: pointer; user-select: none;">
+        <input
+          type="checkbox"
+          :checked="feed.notify_enabled"
+          @change="toggleNotifyEnabled(($event.target as HTMLInputElement).checked)"
+        >
+        <span>Notify me when new {{ feed.type === 'podcast' ? 'episodes' : 'posts' }} are published</span>
+      </label>
+
+      <section class="mt-6">
+        <div class="is-flex is-align-items-start">
+          <h2 class="title is-2 mr-auto">
+            {{ showFinished ? 'All' : 'Unseen' }} {{ feed?.type === 'podcast' ? 'Episodes' : 'Posts' }}
+          </h2>
+
+          <span
+            class="button icon py-4 mr-2 is-outlined"
+            :class="{'is-primary': sortAscending, 'is-info': !sortAscending, 'is-loading': isFetching}"
+            :title="sortAscending? 'Sort by latest items first' : 'Sort by earliest items first'"
+            @click="sortAscending = !sortAscending"
+          >
+            <span class="material-symbols-outlined">swap_vert</span>
+          </span>
+          <span
+            class="button icon py-4 mr-2 is-outlined"
+            :class="{'is-primary': showFinished, 'is-info': !showFinished, 'is-loading': isFetching}"
+            :title="showFinished ? 'Hide finished items' : 'Show finished items'"
+            @click="showFinished = !showFinished"
+          >
+            <span class="material-symbols-outlined">{{ showFinished ? 'check_circle' : 'done' }}</span>
+          </span>
+          <div class="dropdown is-right" :class="{'is-active': menuOpen}">
+            <div class="dropdown-trigger">
+              <span
+                class="button icon py-4 is-outlined is-info"
+                :class="{'is-loading': menuLoading}"
+                title="Feed actions"
+                @click="menuOpen = !menuOpen"
+              >
+                <span class="material-symbols-outlined">more_horiz</span>
+              </span>
+            </div>
+            <div class="dropdown-menu" role="menu">
+              <div class="dropdown-content">
+                <a class="dropdown-item" @click="handleRefreshFeed">
+                  <span class="material-symbols-outlined mr-2" style="vertical-align: middle; font-size: 1.2em;">refresh</span>
+                  Refresh Feed
+                </a>
+                <a v-if="!feed?.has_archives" class="dropdown-item" @click="handleFetchArchives">
+                  <span class="material-symbols-outlined mr-2" style="vertical-align: middle; font-size: 1.2em;">archive</span>
+                  Fetch Archives
+                </a>
+              </div>
+            </div>
+          </div>
+          <div v-if="menuOpen" class="menu-backdrop" @click="closeMenu" />
+        </div>
+
+
+        <ItemPreview
+          v-for="feedItem in visibleFeedItems"
+          :key="feedItem.guid"
           :feed-item="feedItem"
-          class="mb-6"/>
-      <div v-if="!hasMore && !isFetching && visibleFeedItems.length === 0">
-        {{ showFinished
+          class="mb-6"
+        />
+        <div v-if="!hasMore && !isFetching && visibleFeedItems.length === 0">
+          {{ showFinished
             ? `This feed doesn't have any ${feed?.type === 'podcast' ? 'episodes' : 'posts'} yet.`
             : `No unseen ${feed?.type === 'podcast' ? 'episodes' : 'posts'}. You're all caught up!` }}
-      </div>
-      <div v-if="hasMore" ref="loadMoreSentinel" class="has-text-centered py-4">
-        <span v-if="isFetching" class="has-text-grey">Loading...</span>
-      </div>
-    </section>
+        </div>
+        <div v-if="hasMore" ref="loadMoreSentinel" class="has-text-centered py-4">
+          <span v-if="isFetching" class="has-text-grey">Loading...</span>
+        </div>
+      </section>
     </template>
-    <h1 v-else class="title is-1">Loading subscription...</h1>
+    <h1 v-else class="title is-1">
+      Loading subscription...
+    </h1>
   </div>
 </template>
 

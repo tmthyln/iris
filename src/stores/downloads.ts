@@ -48,7 +48,7 @@ function openDb(): Promise<IDBDatabase> {
             }
         }
         request.onsuccess = () => resolve(request.result)
-        request.onerror = () => reject(request.error)
+        request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'))
     })
 }
 
@@ -57,7 +57,7 @@ function dbPut(db: IDBDatabase, record: DownloadRecord): Promise<void> {
         const tx = db.transaction(STORE_NAME, 'readwrite')
         tx.objectStore(STORE_NAME).put(record)
         tx.oncomplete = () => resolve()
-        tx.onerror = () => reject(tx.error)
+        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'))
     })
 }
 
@@ -66,7 +66,7 @@ function dbGet(db: IDBDatabase, guid: string): Promise<DownloadRecord | undefine
         const tx = db.transaction(STORE_NAME, 'readonly')
         const request = tx.objectStore(STORE_NAME).get(guid)
         request.onsuccess = () => resolve(request.result as DownloadRecord | undefined)
-        request.onerror = () => reject(request.error)
+        request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'))
     })
 }
 
@@ -75,7 +75,7 @@ function dbDelete(db: IDBDatabase, guid: string): Promise<void> {
         const tx = db.transaction(STORE_NAME, 'readwrite')
         tx.objectStore(STORE_NAME).delete(guid)
         tx.oncomplete = () => resolve()
-        tx.onerror = () => reject(tx.error)
+        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'))
     })
 }
 
@@ -96,7 +96,7 @@ function dbGetAllMeta(db: IDBDatabase): Promise<{ guid: string; size: number; do
                 resolve(results)
             }
         }
-        request.onerror = () => reject(request.error)
+        request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'))
     })
 }
 
@@ -105,7 +105,7 @@ function dbPutDeletion(db: IDBDatabase, record: DeletionRecord): Promise<void> {
         const tx = db.transaction(DELETION_STORE_NAME, 'readwrite')
         tx.objectStore(DELETION_STORE_NAME).put(record)
         tx.oncomplete = () => resolve()
-        tx.onerror = () => reject(tx.error)
+        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'))
     })
 }
 
@@ -114,7 +114,7 @@ function dbDeleteDeletion(db: IDBDatabase, guid: string): Promise<void> {
         const tx = db.transaction(DELETION_STORE_NAME, 'readwrite')
         tx.objectStore(DELETION_STORE_NAME).delete(guid)
         tx.oncomplete = () => resolve()
-        tx.onerror = () => reject(tx.error)
+        tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'))
     })
 }
 
@@ -123,7 +123,7 @@ function dbGetAllDeletions(db: IDBDatabase): Promise<DeletionRecord[]> {
         const tx = db.transaction(DELETION_STORE_NAME, 'readonly')
         const request = tx.objectStore(DELETION_STORE_NAME).getAll()
         request.onsuccess = () => resolve(request.result as DeletionRecord[])
-        request.onerror = () => reject(request.error)
+        request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'))
     })
 }
 
@@ -150,14 +150,14 @@ export const useDownloadStore = defineStore('downloads', () => {
                 }
             }
             totalStorageUsed.value = total
-            navigator.storage?.persist?.()
+            void navigator.storage?.persist?.()
 
             // Process any deletions that were scheduled before the page was closed
             const pendingDeletions = await dbGetAllDeletions(db)
             for (const record of pendingDeletions) {
                 const remainingMs = new Date(record.delete_after).getTime() - Date.now()
                 if (remainingMs <= 0) {
-                    deleteDownload(record.guid)
+                    void deleteDownload(record.guid)
                 } else {
                     setTimeout(() => deleteDownload(record.guid), remainingMs)
                 }

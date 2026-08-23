@@ -371,8 +371,7 @@ async function whisperSubmitBatch(env: Env, model: string, audioBase64: string, 
 async function whisperPollBatch(env: Env, model: string, requestId: string) {
     return await env.AI.run(model as '@cf/openai/whisper-large-v3-turbo', {
         request_id: requestId,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any) as unknown as WhisperBatchPollResponse
+    } as never) as unknown as WhisperBatchPollResponse
 }
 
 async function reenqueueTranscriptPoll(env: Env, transcriptId: number) {

@@ -16,7 +16,7 @@ function saveQueueToStorage(items: FeedItemPreview[]) {
 function loadQueueFromStorage(): FeedItemPreview[] {
     try {
         const raw = localStorage.getItem(STORAGE_KEY)
-        return raw ? JSON.parse(raw) : []
+        return raw ? JSON.parse(raw) as FeedItemPreview[] : []
     } catch {
         return []
     }
@@ -28,7 +28,7 @@ function ensureDownloaded(items: FeedItemPreview[]) {
         if (!item.enclosure_url) continue
         const status = downloadStore.getStatus(item.guid)
         if (status === 'idle' || (typeof status === 'object' && status.state === 'error')) {
-            downloadStore.downloadItem(item)
+            void downloadStore.downloadItem(item)
         }
     }
 }

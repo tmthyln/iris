@@ -1,5 +1,4 @@
-/// <reference types="vitest" />
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import viteCompression from 'vite-plugin-compression'
 import { VitePWA as vitePWA } from "vite-plugin-pwa";
@@ -68,10 +67,14 @@ export default defineConfig({
         }),
     ],
     test: {
-        includeSource: [
-            'src/**/*.{js,ts}',
-            'functions/**/*.{js,ts}',
-        ],
+        includeSource: ['src/**/*.{js,ts}'],
+        coverage: {
+            provider: 'v8',
+            include: ['src/**/*.{ts,vue}'],
+            exclude: ['src/**/*.test.ts', 'src/vite-env.d.ts'],
+            reporter: ['text', 'html', 'lcov', 'json', 'json-summary'],
+            reportOnFailure: true,
+        },
     },
     define: {
         'import.meta.vitest': 'undefined',
