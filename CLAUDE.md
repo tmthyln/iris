@@ -63,6 +63,7 @@ Frontend and backend share `src/` but are **separated by TypeScript project refe
 ### Dev Server
 - `npm run dev` runs `vite dev --mode staging`; `@cloudflare/vite-plugin` (in `vite.config.ts`) runs the Worker inside the Vite dev server with real bindings from `wrangler.toml`, so the single Vite origin (port 5173) serves both the frontend and `/api/*` — no separate `wrangler dev` process
 - The plugin is skipped under Vitest (`!process.env.VITEST && cloudflare()`)
+- `access.dev` under `[env.staging]` in `wrangler.toml` simulates a Cloudflare Access identity locally (`ctx.access` in the Worker); the Worker doesn't read it yet — if it starts to, replace the placeholder `aud` with the staging Access application's audience tag
 - Production build/deploy is two steps: `vite build` to `dist/`, then `wrangler deploy` (the Worker serves `dist/` via the `assets` config in `wrangler.toml`)
 
 ### Backend (Cloudflare Workers)
