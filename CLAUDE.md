@@ -48,6 +48,8 @@ wrangler d1 migrations apply DB --remote
 wrangler d1 migrations apply DB --remote --preview
 ```
 
+CI (`.github/workflows/ci.yml`) runs `lint`, `typecheck` and `coverage` as three jobs on pushes to `main` and on pull requests; the test job posts a coverage table (job summary + PR comment) and uploads `coverage/` as an artifact. There is no build job — Cloudflare Builds builds and deploys.
+
 ## Architecture
 
 ### Monorepo Structure

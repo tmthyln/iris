@@ -61,9 +61,16 @@ npm run test
 # Type checking
 npm run typecheck
 
+# Tests with coverage (report in coverage/)
+npm run coverage
+
 # Build for production
 npm run build
 ```
+
+Lint, typecheck and tests run in GitHub Actions (`.github/workflows/ci.yml`) on every push to
+`main` and every pull request; the test job posts a coverage summary and uploads the full
+report as a workflow artifact. Building and deploying is done by Cloudflare Builds, not CI.
 
 
 ## Deployment

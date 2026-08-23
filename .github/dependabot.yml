@@ -29,3 +29,9 @@ updates:
           - "eslint"
           - "eslint-plugin-*"
           - "typescript-eslint"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    assignees:
+      - "tmthyln"
