@@ -13,10 +13,9 @@
     "module": "es2022",
     /* Specify how TypeScript looks up a file from a given module specifier. */
     "moduleResolution": "Bundler",
-    /* Specify type package names to be included without being referenced in a source file. */
-    "types": [
-      "@cloudflare/workers-types/2023-07-01"
-    ],
+    /* Runtime types come from the generated worker-configuration.d.ts (npm run typegen),
+       so no ambient type packages are needed. */
+    "types": [],
     /* Enable importing .json files */
     "resolveJsonModule": true,
 
