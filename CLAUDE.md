@@ -33,15 +33,19 @@ npm run typecheck
 # Build for production
 npm run build
 
-# Deploy to Cloudflare
+# Deploy to Cloudflare (production; run `npm run build` first)
 npm run deploy
+
+# Create/update a Workers Preview (run `npm run build` first; name defaults to the git branch)
+npm run preview
+npm run preview -- --name staging
 
 # Generate Cloudflare Worker types (worker-configuration.d.ts)
 npm run typegen
 
-# Apply D1 migrations
-wrangler d1 migrations apply DB --env staging
-wrangler d1 migrations apply DB --env prod
+# Apply D1 migrations (production / staging DB used by Previews)
+wrangler d1 migrations apply DB --remote
+wrangler d1 migrations apply DB --remote --preview
 ```
 
 ## Architecture
@@ -61,10 +65,12 @@ Frontend and backend share `src/` but are **separated by TypeScript project refe
 - **API Client:** `src/client.ts` — pure data fetching layer using fetch API, returns typed data or `null` on error
 
 ### Dev Server
-- `npm run dev` runs `vite dev --mode staging`; `@cloudflare/vite-plugin` (in `vite.config.ts`) runs the Worker inside the Vite dev server with real bindings from `wrangler.toml`, so the single Vite origin (port 5173) serves both the frontend and `/api/*` — no separate `wrangler dev` process
+- `npm run dev` runs `vite dev`; `@cloudflare/vite-plugin` (in `vite.config.ts`) runs the Worker inside the Vite dev server with real bindings from `wrangler.toml`, so the single Vite origin (port 5173) serves both the frontend and `/api/*` — no separate `wrangler dev` process
 - The plugin is skipped under Vitest (`!process.env.VITEST && cloudflare()`)
-- `access.dev` under `[env.staging]` in `wrangler.toml` simulates a Cloudflare Access identity locally (`ctx.access` in the Worker); the Worker doesn't read it yet — if it starts to, replace the placeholder `aud` with the staging Access application's audience tag
-- Production build/deploy is two steps: `vite build` to `dist/`, then `wrangler deploy` (the Worker serves `dist/` via the `assets` config in `wrangler.toml`)
+- Local dev uses the top-level (production-named) bindings, but D1/R2/Queues/Durable Objects are all local Miniflare state under `.wrangler/state/`; only `AI` is remote
+- `access.dev` at the top level of `wrangler.toml` simulates a Cloudflare Access identity locally (`ctx.access` in the Worker); `aud` is the Access application's audience tag; the Worker doesn't read it yet
+- Production build/deploy is two steps: `vite build` to `dist/`, then `wrangler deploy` (the plugin writes `dist/<worker>/wrangler.json` and a `.wrangler/deploy/config.json` redirect, which is what `wrangler deploy`/`wrangler preview` pick up)
+- Previews: `vite build` then `wrangler preview [--name <name>]` deploys the checkout as a Preview at `<name>.iris.timothylin.me` with the `[previews]` bindings (staging D1/R2/Queue). Cron and the queue consumer don't run in Previews. Previews are the replacement for the old `staging` Wrangler environment; there is no `[env.*]` config anymore
 
 ### Backend (Cloudflare Workers)
 - **Entry Point:** `src/service.ts` — exports `fetch` (Hono app), `queue` (consumer), and `scheduled` (cron) handlers
@@ -87,15 +93,15 @@ Data flows through distinct type layers:
 - **R2:** Bucket storage for RSS file cache
 - **Queues:** Background feed refresh processing
 - **Durable Objects:** ItemQueue for persistent playback queue state
-- **Cron:** Hourly scheduled feed refresh (staging: `:07`, prod: `:17`)
-- **Environments:** `staging` and `prod` configured in `wrangler.toml` with separate D1/R2/Queue bindings
+- **Cron:** Hourly scheduled feed refresh at `:17` (production only — Previews have no cron)
+- **Environments:** Production is the top level of `wrangler.toml` (Worker `iris-prod`); Workers Previews use the `[previews]` block with separate `-staging` D1/R2/Queue resources. No Wrangler `[env.*]` blocks
 
 ### Authentication
 
-The API has **no in-app authentication by design** (#205). Both deployed environments (staging and prod) sit behind a Cloudflare Access application, which handles login before requests ever reach the Worker. Consequences:
+The API has **no in-app authentication by design** (#205). Production and every Preview hostname (`*.iris.timothylin.me`) sit behind a Cloudflare Access application, which handles login before requests ever reach the Worker. Consequences:
 
 - Do not add per-endpoint auth checks, tokens, or session handling to the Worker — access control is Access's job.
-- Endpoints reachable without Access (none currently) must be treated as public. The push-subscription endpoints additionally validate input and cap table growth because they were written before Access was in place.
+- Endpoints reachable without Access (none currently) must be treated as public. Keep `workers_dev`/`preview_urls` off in `wrangler.toml` — `workers.dev` hostnames would bypass Access. The push-subscription endpoints additionally validate input and cap table growth because they were written before Access was in place.
 - Web push delivery is unaffected: notifications arrive via the browser push service, not same-origin fetches.
 - Local dev (`npm run dev` / wrangler) has no Access in front of it — everything is open on localhost, which is expected.
 

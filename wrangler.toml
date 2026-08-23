@@ -1,53 +1,34 @@
-name = "iris"
-route = { pattern = "iris.timothylin.me", custom_domain = true }
+# Top-level config is production (`wrangler deploy`). Branch/PR testing uses
+# Workers Previews (`wrangler preview`), configured in the [previews] block
+# below; there is no separate staging Worker.
+#
+# The Worker keeps the name it had as the old `prod` Wrangler environment so
+# that deploying from the top level updates the existing Worker in place
+# (Durable Object state, secrets, and the custom domain all stay put).
+name = "iris-prod"
 main = "src/service.ts"
 compatibility_date = "2026-02-10"
 compatibility_flags = ["nodejs_compat"]
 assets = { directory = "./dist/", not_found_handling = "single-page-application" }
 
-[observability]
-enabled = true
+# The API has no in-app auth, so only expose hostnames covered by the
+# Cloudflare Access application: the custom domain and its Preview subdomains
+# (`<preview-name>.iris.timothylin.me`). Keep workers.dev URLs off for both
+# production and Previews.
+workers_dev = false
+preview_urls = false
+route = { pattern = "iris.timothylin.me", custom_domain = true, previews_enabled = true }
 
+# Simulated Cloudflare Access identity for local dev (`npm run dev`); `aud` is
+# the Access application's audience tag. The Worker doesn't read ctx.access yet.
+access.dev = { aud = "e3c66cb0433ad4776321e24cef9955fa120c58fb480896f6f11858112316e1e3", identity = { email = "tmthylin@gmail.com" } }
 
-[env.staging]
-route = { pattern = "staging.iris.timothylin.me", custom_domain = true }
-
-# Simulated Cloudflare Access identity for local dev (`npm run dev` runs this
-# env via CLOUDFLARE_ENV=staging). The Worker doesn't read ctx.access yet;
-# replace `aud` with the staging Access application's audience tag if it does.
-access.dev = { aud = "iris-local-dev", identity = { email = "tmthylin@gmail.com" } }
-vars = { VAPID_PUBLIC_KEY = "BJvzRbZFRCGrzyQm--FcpBqLpsB9K2i9_yeIEemKETc7LwOela3ZCe4Yq534sc0TxbomT6bUQYkCFzVBzuP35Uk", VAPID_SUBJECT = "https://staging.iris.timothylin.me" }
-ai = { binding = "AI", remote = true }
-d1_databases = [
-    { binding = "DB", database_name = "iris-db-staging", database_id = "6dc72db6-7c48-4049-ba75-ac83ae139b6f" }
-]
-r2_buckets = [
-    { binding = "RSS_CACHE_BUCKET", bucket_name = "iris-rss-cache-staging" }
-]
-durable_objects.bindings = [
-    { name = "ITEM_QUEUE", class_name = "ItemQueue" }
-]
-migrations = [
-    { tag = "v1", new_sqlite_classes = ["ItemQueue"] }
-]
-
-[env.staging.queues]
-producers = [
-    { binding = "FEED_PROCESSING_QUEUE", queue = "iris-feed-proc-staging" }
-]
-consumers = [
-    { queue = "iris-feed-proc-staging" }
-]
-
-[env.staging.triggers]
-crons = ["7 * * * *"]  # run every hour, 7 minutes past the hour
-
-
-[env.prod]
 vars = { VAPID_PUBLIC_KEY = "BOK1Re3FBQ61ST0DZBm_maYRzOjLseRYqdFroBEo6qxS58_QCYZT0twm-HT-OpbjuKEcaF1VYPWbrevWukSaOOw", VAPID_SUBJECT = "https://iris.timothylin.me" }
 ai = { binding = "AI", remote = true }
+# preview_database_id points at the staging DB so `wrangler d1 ... --preview`
+# (e.g. migrations) targets the database the Previews use.
 d1_databases = [
-    { binding = "DB", database_name = "iris-db-prod", database_id = "962886b7-e979-475d-9b74-c22f56a24eb6" }
+    { binding = "DB", database_name = "iris-db-prod", database_id = "962886b7-e979-475d-9b74-c22f56a24eb6", preview_database_id = "6dc72db6-7c48-4049-ba75-ac83ae139b6f" }
 ]
 r2_buckets = [
     { binding = "RSS_CACHE_BUCKET", bucket_name = "iris-rss-cache-prod" }
@@ -59,7 +40,10 @@ migrations = [
     { tag = "v1", new_sqlite_classes = ["ItemQueue"] }
 ]
 
-[env.prod.queues]
+[observability]
+enabled = true
+
+[queues]
 producers = [
     { binding = "FEED_PROCESSING_QUEUE", queue = "iris-feed-proc-prod" }
 ]
@@ -67,5 +51,34 @@ consumers = [
     { queue = "iris-feed-proc-prod" }
 ]
 
-[env.prod.triggers]
+[triggers]
 crons = ["17 * * * *"]  # run every hour, 17 minutes past the hour
+
+
+# Previews (`wrangler preview [--name <name>]`, default name = git branch).
+# Previews don't inherit production bindings, so every binding the Worker
+# reads from `env` is restated here, pointed at the staging resources. All
+# Previews share these resources; Durable Object state is isolated per
+# Preview automatically.
+#
+# Not covered by Previews: the cron trigger and the queue consumer only run in
+# production, so a Preview can enqueue feed-refresh / transcript tasks but
+# nothing consumes them. The VAPID_PRIVATE_KEY secret is set once with
+# `wrangler preview base-config secret put VAPID_PRIVATE_KEY`.
+[previews]
+vars = { VAPID_PUBLIC_KEY = "BJvzRbZFRCGrzyQm--FcpBqLpsB9K2i9_yeIEemKETc7LwOela3ZCe4Yq534sc0TxbomT6bUQYkCFzVBzuP35Uk", VAPID_SUBJECT = "https://staging.iris.timothylin.me" }
+ai = { binding = "AI", remote = true }
+d1_databases = [
+    { binding = "DB", database_name = "iris-db-staging", database_id = "6dc72db6-7c48-4049-ba75-ac83ae139b6f" }
+]
+r2_buckets = [
+    { binding = "RSS_CACHE_BUCKET", bucket_name = "iris-rss-cache-staging" }
+]
+durable_objects.bindings = [
+    { name = "ITEM_QUEUE", class_name = "ItemQueue" }
+]
+
+[previews.queues]
+producers = [
+    { binding = "FEED_PROCESSING_QUEUE", queue = "iris-feed-proc-staging" }
+]

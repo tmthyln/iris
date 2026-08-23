@@ -4,15 +4,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite dev --mode staging",
+    "dev": "vite dev",
     "test": "vitest",
     "lint": "eslint .",
     "coverage": "vitest run --coverage",
     "typecheck": "vue-tsc --noEmit",
-    "typegen": "wrangler types --env staging",
+    "typegen": "wrangler types",
     "generate:assets": "pwa-assets-generator --preset minimal public/logo.svg",
     "build": "vite build",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "preview": "wrangler preview"
   },
   "dependencies": {
     "@vueuse/core": "^14.3.0",

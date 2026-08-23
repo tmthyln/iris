@@ -68,37 +68,64 @@ npm run build
 
 ## Deployment
 
-Iris is deployed as a Cloudflare Worker with static assets. The `wrangler.toml` defines two environments: `staging` and `prod`, each with separate D1 databases, R2 buckets, and Queues.
+Iris is deployed as a single Cloudflare Worker with static assets. The top level of `wrangler.toml`
+is production (`wrangler deploy`); branch and pull-request testing uses
+[Workers Previews](https://developers.cloudflare.com/workers/previews/) (`wrangler preview`), which are
+configured in the `[previews]` block and bind to a separate "staging" D1 database, R2 bucket, and Queue.
+There is no separate staging Worker.
 
 1. Clone this repo.
-2. Configure Cloudflare resources: D1 database, R2 bucket, Queue, and Durable Object namespace.
-3. Update `wrangler.toml` with your resource bindings.
+2. Configure Cloudflare resources: a D1 database, R2 bucket, and Queue for production, and a second
+   set for Previews.
+3. Update `wrangler.toml` with your resource bindings — production at the top level, the Preview set
+   under `[previews]`, and the Preview database id as `preview_database_id` on the `DB` binding.
 4. Apply D1 migrations:
    ```bash
-   wrangler d1 migrations apply DB --env staging
-   wrangler d1 migrations apply DB --env prod
+   wrangler d1 migrations apply DB --remote            # production
+   wrangler d1 migrations apply DB --remote --preview  # Previews (staging DB)
    ```
 5. To enable push notifications, generate a VAPID keypair (e.g. `npx web-push generate-vapid-keys`)
    and configure it. `VAPID_PUBLIC_KEY` and `VAPID_SUBJECT` (`mailto:` URL or page URL) go in
-   `wrangler.toml` under each environment's `vars`. The private key must be set as a secret:
+   `wrangler.toml` `vars` (top level for production, `[previews].vars` for Previews). The private key
+   must be set as a secret:
    ```bash
-   wrangler secret put VAPID_PRIVATE_KEY --env staging
-   wrangler secret put VAPID_PRIVATE_KEY --env prod
+   wrangler secret put VAPID_PRIVATE_KEY                      # production
+   wrangler preview base-config secret put VAPID_PRIVATE_KEY  # Previews
    ```
    If any of the three are missing, the `/api/push/vapid-public-key` endpoint returns 503 and
    push notifications stay disabled (the rest of the app is unaffected).
-6. Deploy:
+6. Deploy production:
    ```bash
-   npm run deploy
+   npm run build && npm run deploy
    ```
-7. Put a Cloudflare Access application (Zero Trust) in front of the deployed hostnames — see below.
+   Deploying also enables Previews on the custom domain (`previews_enabled` on the route), which
+   provisions a wildcard `*.<domain>` DNS record and certificate.
+7. Put a Cloudflare Access application (Zero Trust) in front of the deployed hostnames, including
+   the wildcard for Previews — see below.
 
+### Previews
+
+A Preview is a deployment of the current checkout with its own URL and the `[previews]` bindings:
+
+```bash
+npm run build && npm run preview                 # Preview named after the current git branch
+npm run build && npm run preview -- --name staging  # stable "staging" Preview
+```
+
+Preview URLs are `<name>.iris.timothylin.me` (so `--name staging` serves
+`staging.iris.timothylin.me`). `workers.dev` URLs are disabled for both production and Previews
+because they would bypass Access.
+
+Limitations, per Cloudflare: cron triggers and queue consumers don't run in Previews, so a Preview can
+enqueue feed-refresh and transcript tasks but nothing consumes them; Durable Object (playback queue)
+state is isolated per Preview. All Previews share the staging D1/R2/Queue. Old Previews can be removed
+with `wrangler preview delete --name <name>`.
 
 ### Authentication
 
 Iris has **no in-app authentication by design**: every API endpoint (adding feeds, editing the
 queue, requesting transcriptions, the media proxy) is open to whoever can reach the Worker.
-Instead, the deployed staging and prod hostnames are fronted by a Cloudflare Access application,
+Instead, the deployed hostnames (production and the Preview wildcard) are fronted by a Cloudflare Access application,
 which requires login before any request reaches the app. If you self-host, treat Access (or an
 equivalent authenticating proxy) as a required part of the deployment, not an optional hardening
 step.
@@ -114,12 +141,15 @@ If a private key is compromised or you want to invalidate all existing
 push subscribers, rotate the keypair:
 
 1. Generate a new pair: `npx web-push generate-vapid-keys --json`.
-2. Replace `VAPID_PUBLIC_KEY` in `wrangler.toml` for the affected environment.
-3. Push the new private key: `wrangler secret put VAPID_PRIVATE_KEY --env <env>`.
+2. Replace `VAPID_PUBLIC_KEY` in `wrangler.toml` (top-level `vars` for production, `[previews].vars`
+   for Previews).
+3. Push the new private key: `wrangler secret put VAPID_PRIVATE_KEY` for production, or
+   `wrangler preview base-config secret put VAPID_PRIVATE_KEY` for Previews.
 4. Drop the now-orphaned subscriptions (they're signed against the old key
    and would all fail with 401):
    ```bash
-   wrangler d1 execute iris-db-<env> --env <env> --command "DELETE FROM push_subscription"
+   wrangler d1 execute DB --remote --command "DELETE FROM push_subscription"            # production
+   wrangler d1 execute DB --remote --preview --command "DELETE FROM push_subscription"  # Previews
    ```
 5. Redeploy. Each device needs to re-enable notifications from the bell menu
    to subscribe under the new key.
