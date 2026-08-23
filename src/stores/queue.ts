@@ -1,5 +1,5 @@
 import {defineStore} from "pinia";
-import {FeedItemPreview, LoadingState} from "../types.ts";
+import {type FeedItemPreview, type LoadingState} from "../types.ts";
 import client from "../client.ts";
 import {useDownloadStore} from "./downloads.ts";
 

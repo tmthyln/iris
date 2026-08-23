@@ -49,6 +49,9 @@ export default defineConfig([
         // inference (e.g. `{} as Record<…>` in a Pinia `state: () => ({…})`), and its autofix then
         // silently widens the inferred type.
         "@typescript-eslint/no-unnecessary-type-assertion": "off",
+        // The frontend imports the Worker's AppType (src/types.ts); keeping type-only imports
+        // explicit guarantees they are erased and no Worker code ends up in the browser bundle.
+        "@typescript-eslint/consistent-type-imports": ["error", { fixStyle: "inline-type-imports" }],
     } },
     // parse-rss.ts walks fast-xml-parser's untyped (`any`) tree by dotted key paths, so every access
     // there is "unsafe" by construction; its behaviour is pinned by the fixture tests in files.test.ts.

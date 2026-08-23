@@ -1,5 +1,5 @@
 import { app } from './services/endpoints'
-import {FeedProcessingTask, RefreshFeedTask} from "./services/types";
+import {type FeedProcessingTask, type RefreshFeedTask} from "./services/types";
 import {refreshFeed, planFeedArchives, fetchArchiveSnapshot, transcribeFeedItem} from "./services/flows";
 import {getFeeds} from "./services/crud";
 export {ItemQueue} from "./services/queue";

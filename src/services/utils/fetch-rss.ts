@@ -1,5 +1,5 @@
 import {XMLParser} from "fast-xml-parser";
-import {FetchFileResult} from "../types";
+import {type FetchFileResult} from "../types";
 import {sha256Encode} from "./crypto";
 import {FETCH_USER_AGENT} from "./files";
 

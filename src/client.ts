@@ -1,31 +1,8 @@
-import {AdjacentFeedItems, ApiResult, Feed, FeedItem, FeedItemPreview, NotificationsResponse, Transcript, TranscriptFull} from "./types.ts";
-
-interface SearchOptions {
-    limit?: number
-    offset?: number
-}
-
-interface GetFeedItemsOptionsBase {
-    offset?: number
-    limit?: number
-}
-
-interface GetBookmarkedFeedItemsOptions extends GetFeedItemsOptionsBase {
-    bookmarked: true
-
-}
-
-interface GetRecentFeedItemsOptions extends GetFeedItemsOptionsBase {
-    bookmarked?: false
-}
-
-type GetFeedItemsOptions = GetBookmarkedFeedItemsOptions | GetRecentFeedItemsOptions
-
-interface FeedItemUpdateData {
-    bookmarked?: boolean
-    finished?: boolean
-    progress?: number
-}
+import {hc} from 'hono/client'
+import type {ClientRequestOptions, ClientResponse} from 'hono/client'
+import type {SuccessStatusCode} from 'hono/utils/http-status'
+import type {AppType} from './services/endpoints'
+import type {ApiResult, FeedItemUpdate, FeedUpdate} from './types.ts'
 
 const TIMEOUT_MS = 10000
 
@@ -53,34 +30,45 @@ function reauthenticate() {
     window.location.assign(url.toString())
 }
 
-// fetch() for same-origin API calls that need the raw Response (streaming,
-// custom parsing). Adds the Access header and re-authenticates on 401; all
-// other handling is left to the caller.
-export async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
+// fetch() for same-origin API calls. Adds the Access header and re-authenticates
+// on 401; all other handling is left to the caller. Also the fetch behind `rpc`.
+export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers)
     headers.set(...ACCESS_AJAX_HEADER)
-    const response = await fetch(url, {...init, headers})
+    const response = await fetch(input, {...init, headers})
     if (response.status === 401) reauthenticate()
     return response
 }
 
-function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = TIMEOUT_MS): Promise<Response> {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
-    return apiFetch(url, {...init, signal: controller.signal}).finally(() => clearTimeout(timer))
+// Typed client for the Worker's routes (src/services/endpoints.ts). Paths,
+// params, query strings, JSON bodies and response types all come from AppType.
+const rpc = hc<AppType>('/', {fetch: apiFetch})
+
+/** The JSON body of a call's 2xx response(s). */
+type SuccessJson<R> = R extends ClientResponse<infer T, infer S, 'json'>
+    ? (S extends SuccessStatusCode ? T : never)
+    : never
+
+type RpcCall<R> = (options: ClientRequestOptions) => Promise<R>
+
+interface RequestOptions {
+    /** 'none' for endpoints that respond with an empty body on success. */
+    parse?: 'json' | 'none'
+    timeoutMs?: number
 }
 
-// Pass parse: 'none' for endpoints that respond with an empty body on success.
-async function request<T = void>(
-    url: string,
-    init: RequestInit = {},
-    parse: 'json' | 'none' = 'json',
-    timeoutMs = TIMEOUT_MS,
-): Promise<ApiResult<T>> {
+// Runs one RPC call and folds the outcome into an ApiResult: the parsed 2xx
+// body, the server's {error} message, or a timeout/offline error.
+function request<R extends ClientResponse<unknown>>(call: RpcCall<R>, options?: RequestOptions & {parse?: 'json'}): Promise<ApiResult<SuccessJson<R>>>
+function request<R extends ClientResponse<unknown>>(call: RpcCall<R>, options: RequestOptions & {parse: 'none'}): Promise<ApiResult<void>>
+async function request<R extends ClientResponse<unknown>>(
+    call: RpcCall<R>,
+    {parse = 'json', timeoutMs = TIMEOUT_MS}: RequestOptions = {},
+): Promise<ApiResult<SuccessJson<R> | void>> {
     try {
-        const response = await fetchWithTimeout(url, init, timeoutMs)
+        const response = await call({init: {signal: AbortSignal.timeout(timeoutMs)}})
         if (response.ok) {
-            const data = parse === 'json' ? await response.json() as T : undefined as T
+            const data = parse === 'json' ? await response.json() as SuccessJson<R> : undefined
             return {ok: true, status: response.status, data}
         }
         if (response.status === 401) {
@@ -88,153 +76,138 @@ async function request<T = void>(
         }
         let error = `Server returned ${response.status}`
         try {
-            const body = await response.json() as {error?: string}
+            const body = await response.json() as {error?: string} | null
             if (body?.error) error = body.error
         } catch { /* non-JSON error body */ }
         return {ok: false, status: response.status, error}
     } catch (err) {
-        const aborted = err instanceof DOMException && err.name === 'AbortError'
-        return {ok: false, status: null, error: aborted ? 'Request timed out' : 'Network unavailable'}
+        const timedOut = err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')
+        return {ok: false, status: null, error: timedOut ? 'Request timed out' : 'Network unavailable'}
     }
 }
 
-function unwrapItems(result: ApiResult<{items: FeedItemPreview[]}>): ApiResult<FeedItemPreview[]> {
+function unwrapItems<T>(result: ApiResult<{items: T[]}>): ApiResult<T[]> {
     return result.ok ? {...result, data: result.data.items} : result
 }
 
-export default {
-    getFeeds(): Promise<ApiResult<Feed[]>> {
-        return request<Feed[]>('/api/feed')
+// hc substitutes path params verbatim, and feed/item GUIDs are often URLs.
+const param = (value: string) => encodeURIComponent(value)
+
+interface PageOptions {
+    limit?: number
+    offset?: number
+}
+
+interface GetFeedItemsOptions extends PageOptions {
+    bookmarked?: boolean
+}
+
+interface GetFeedFeedItemsOptions extends PageOptions {
+    includeFinished?: boolean
+    sortOrder?: 'asc' | 'desc'
+}
+
+const client = {
+    getFeeds() {
+        return request(o => rpc.api.feed.$get(undefined, o))
     },
-    addFeed(url: string): Promise<ApiResult<void>> {
+    addFeed(url: string) {
         // Adding a feed fetches and parses the remote RSS file server-side,
         // which can take well beyond the default timeout.
-        return request<void>('/api/feed', {
-            method: 'POST',
-            body: JSON.stringify({url}),
-        }, 'none', 60000)
+        return request(o => rpc.api.feed.$post({json: {url}}, o), {parse: 'none', timeoutMs: 60000})
     },
-    getFeedItem(itemGuid: string): Promise<ApiResult<FeedItem>> {
-        return request<FeedItem>(`/api/feeditem/${encodeURIComponent(itemGuid)}`)
+    modifyFeed(feedGuid: string, updateData: FeedUpdate) {
+        return request(o => rpc.api.feed[':guid'].$patch({param: {guid: param(feedGuid)}, json: updateData}, o), {parse: 'none'})
     },
-    getAdjacentFeedItems(itemGuid: string): Promise<ApiResult<AdjacentFeedItems>> {
-        return request<AdjacentFeedItems>(`/api/feeditem/${encodeURIComponent(itemGuid)}/adjacent`)
+    getFeedFeedItems(feedGuid: string, {includeFinished, sortOrder, limit, offset}: GetFeedFeedItemsOptions = {}) {
+        return request(o => rpc.api.feed[':guid'].feeditem.$get({
+            param: {guid: param(feedGuid)},
+            query: {include_finished: includeFinished, sort_order: sortOrder, limit, offset},
+        }, o))
     },
-    getFeedItems(options: GetFeedItemsOptions = {}): Promise<ApiResult<FeedItemPreview[]>> {
-        const {
-            bookmarked = null,
-            limit = null,
-            offset = 0,
-        } = options
-
-        const queryParams = new URLSearchParams()
-        queryParams.set('offset', String(offset))
-        limit && queryParams.set('limit', String(limit))
-        bookmarked !== null && queryParams.set('bookmarked', String(bookmarked))
-
-        return request<FeedItemPreview[]>(`/api/feeditem?${queryParams}`)
+    getFeedItem(itemGuid: string) {
+        return request(o => rpc.api.feeditem[':guid'].$get({param: {guid: param(itemGuid)}}, o))
     },
-    modifyFeed(feedGuid: string, updateData: { categories?: string[], alias?: string, notify_enabled?: boolean }): Promise<ApiResult<void>> {
-        return request<void>(`/api/feed/${encodeURIComponent(feedGuid)}`, {
-            method: 'PATCH',
-            body: JSON.stringify(updateData),
-        }, 'none')
+    getAdjacentFeedItems(itemGuid: string) {
+        return request(o => rpc.api.feeditem[':guid'].adjacent.$get({param: {guid: param(itemGuid)}}, o))
     },
-    modifyFeedItem(itemGuid: string, updateData: FeedItemUpdateData): Promise<ApiResult<void>> {
-        return request<void>(`/api/feeditem/${encodeURIComponent(itemGuid)}`, {
-            method: 'PATCH',
-            body: JSON.stringify(updateData),
-        }, 'none')
+    getFeedItems({bookmarked, limit, offset = 0}: GetFeedItemsOptions = {}) {
+        return request(o => rpc.api.feeditem.$get({query: {bookmarked: bookmarked || undefined, limit, offset}}, o))
     },
-    async queueFeedItem(feedItemGuid: string, position?: number): Promise<ApiResult<FeedItemPreview[]>> {
-        return unwrapItems(await request<{items: FeedItemPreview[]}>('/api/queue', {
-            method: 'POST',
-            body: JSON.stringify({feedItemId: feedItemGuid, position}),
-        }))
+    modifyFeedItem(itemGuid: string, updateData: FeedItemUpdate) {
+        return request(o => rpc.api.feeditem[':guid'].$patch({param: {guid: param(itemGuid)}, json: updateData}, o), {parse: 'none'})
     },
-    async moveQueueItem(feedItemGuid: string, position: number): Promise<ApiResult<FeedItemPreview[]>> {
-        return unwrapItems(await request<{items: FeedItemPreview[]}>(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
-            method: 'PATCH',
-            body: JSON.stringify({position}),
-        }))
+    searchFeedItems(query: string, {limit, offset = 0}: PageOptions = {}) {
+        return request(o => rpc.api.search.$get({query: {q: query, limit, offset}}, o))
     },
-    async clearQueue(keepFirst: boolean): Promise<ApiResult<FeedItemPreview[]>> {
-        const params = keepFirst ? '?keepFirst=true' : ''
-        return unwrapItems(await request<{items: FeedItemPreview[]}>(`/api/queue${params}`, {
-            method: 'DELETE',
-        }))
+    async getQueue() {
+        return unwrapItems(await request(o => rpc.api.queue.$get(undefined, o)))
     },
-    async removeQueueItem(feedItemGuid: string): Promise<ApiResult<FeedItemPreview[]>> {
-        return unwrapItems(await request<{items: FeedItemPreview[]}>(`/api/queue/${encodeURIComponent(feedItemGuid)}`, {
-            method: 'DELETE',
-        }))
+    async queueFeedItem(feedItemGuid: string, position?: number) {
+        return unwrapItems(await request(o => rpc.api.queue.$post({json: {feedItemId: feedItemGuid, position}}, o)))
     },
-    refreshFeed(feedGuid: string): Promise<ApiResult<void>> {
-        return request<void>(`/api/command/refresh-feed/${encodeURIComponent(feedGuid)}`, {
-            method: 'POST',
-        }, 'none')
+    async moveQueueItem(feedItemGuid: string, position: number) {
+        return unwrapItems(await request(o => rpc.api.queue[':guid'].$patch({param: {guid: param(feedItemGuid)}, json: {position}}, o)))
     },
-    searchFeedItems(query: string, options: SearchOptions = {}): Promise<ApiResult<FeedItemPreview[]>> {
-        const { limit, offset = 0 } = options
-        const queryParams = new URLSearchParams()
-        queryParams.set('q', query)
-        queryParams.set('offset', String(offset))
-        limit && queryParams.set('limit', String(limit))
-
-        return request<FeedItemPreview[]>(`/api/search?${queryParams}`)
+    async removeQueueItem(feedItemGuid: string) {
+        return unwrapItems(await request(o => rpc.api.queue[':guid'].$delete({param: {guid: param(feedItemGuid)}}, o)))
     },
-    planFeedArchives(feedGuid: string): Promise<ApiResult<void>> {
-        return request<void>(`/api/command/plan-feed-archives/${encodeURIComponent(feedGuid)}`, {
-            method: 'POST',
-        }, 'none')
+    async clearQueue(keepFirst: boolean) {
+        return unwrapItems(await request(o => rpc.api.queue.$delete({query: {keepFirst: keepFirst || undefined}}, o)))
     },
-    async getQueue(): Promise<ApiResult<FeedItemPreview[]>> {
-        return unwrapItems(await request<{items: FeedItemPreview[]}>('/api/queue'))
+    refreshFeed(feedGuid: string) {
+        return request(o => rpc.api.command['refresh-feed'][':guid'].$post({param: {guid: param(feedGuid)}}, o), {parse: 'none'})
     },
-    getNotifications(): Promise<ApiResult<NotificationsResponse>> {
-        return request<NotificationsResponse>('/api/notification')
+    planFeedArchives(feedGuid: string) {
+        return request(o => rpc.api.command['plan-feed-archives'][':guid'].$post({param: {guid: param(feedGuid)}}, o), {parse: 'none'})
     },
-    dismissNotification(id: number): Promise<ApiResult<void>> {
-        return request<void>(`/api/notification/${id}`, {method: 'DELETE'}, 'none')
+    refreshAllFeeds() {
+        // Refreshes every feed inline on the server; this can take a while.
+        return request(o => rpc.api.command['refresh-all-feeds'].$post(undefined, o), {timeoutMs: 120000})
     },
-    dismissAllNotifications(): Promise<ApiResult<void>> {
-        return request<void>('/api/notification', {method: 'DELETE'}, 'none')
+    getNotifications() {
+        return request(o => rpc.api.notification.$get({query: {}}, o))
+    },
+    dismissNotification(id: number) {
+        return request(o => rpc.api.notification[':id'].$delete({param: {id: String(id)}}, o), {parse: 'none'})
+    },
+    dismissAllNotifications() {
+        return request(o => rpc.api.notification.$delete(undefined, o), {parse: 'none'})
     },
     async getVapidPublicKey(): Promise<ApiResult<string>> {
-        const result = await request<{key: string}>('/api/push/vapid-public-key')
+        const result = await request(o => rpc.api.push['vapid-public-key'].$get(undefined, o))
         return result.ok ? {...result, data: result.data.key} : result
     },
     registerPushSubscription(subscription: PushSubscriptionJSON): Promise<ApiResult<void>> {
-        return request<void>('/api/push/subscription', {
-            method: 'POST',
-            body: JSON.stringify(subscription),
-        }, 'none')
+        const {endpoint, keys} = subscription
+        if (!endpoint || !keys?.p256dh || !keys?.auth) {
+            return Promise.resolve({ok: false, status: null, error: 'Push subscription is incomplete'})
+        }
+        const json = {endpoint, keys: {p256dh: keys.p256dh, auth: keys.auth}}
+        return request(o => rpc.api.push.subscription.$post({json}, o), {parse: 'none'})
     },
-    unregisterPushSubscription(endpoint: string): Promise<ApiResult<void>> {
-        return request<void>('/api/push/subscription', {
-            method: 'DELETE',
-            body: JSON.stringify({endpoint}),
-        }, 'none')
+    unregisterPushSubscription(endpoint: string) {
+        return request(o => rpc.api.push.subscription.$delete({json: {endpoint}}, o), {parse: 'none'})
     },
-    listTranscripts(itemGuid: string): Promise<ApiResult<Transcript[]>> {
-        return request<Transcript[]>(`/api/feeditem/${encodeURIComponent(itemGuid)}/transcript`)
+    sendTestPushNotification(endpoint: string) {
+        return request(o => rpc.api.push.test.$post({json: {endpoint}}, o), {parse: 'none'})
     },
-    requestTranscript(itemGuid: string, opts: {model?: string, language?: string} = {}): Promise<ApiResult<Transcript>> {
-        return request<Transcript>(`/api/feeditem/${encodeURIComponent(itemGuid)}/transcript`, {
-            method: 'POST',
-            body: JSON.stringify(opts),
-        })
+    listTranscripts(itemGuid: string) {
+        return request(o => rpc.api.feeditem[':guid'].transcript.$get({param: {guid: param(itemGuid)}}, o))
     },
-    getTranscript(transcriptId: number): Promise<ApiResult<TranscriptFull>> {
-        return request<TranscriptFull>(`/api/transcript/${transcriptId}`)
+    requestTranscript(itemGuid: string, opts: {model?: string, language?: string} = {}) {
+        return request(o => rpc.api.feeditem[':guid'].transcript.$post({param: {guid: param(itemGuid)}, json: opts}, o))
     },
-    sendTestPushNotification(endpoint: string): Promise<ApiResult<void>> {
-        return request<void>('/api/push/test', {
-            method: 'POST',
-            body: JSON.stringify({endpoint}),
-        }, 'none')
+    getTranscript(transcriptId: number) {
+        return request(o => rpc.api.transcript[':id'].$get({param: {id: String(transcriptId)}}, o))
     },
 }
+
+export default client
+
+/******************************************************************************
+ * Tests
+ *****************************************************************************/
 
 if (import.meta.vitest) {
     const {it, expect, describe, vi, afterEach} = import.meta.vitest
@@ -263,6 +236,51 @@ if (import.meta.vitest) {
             expect(target.searchParams.get('page')).toBe('2')
             expect(target.searchParams.has(REAUTH_PARAM)).toBe(true)
             expect(target.hash).toBe('#top')
+        })
+    })
+
+    describe('client', () => {
+        afterEach(() => vi.unstubAllGlobals())
+
+        function stubFetch(body: string, status = 200) {
+            const fetchMock = vi.fn(() => Promise.resolve(new Response(body, {status, headers: {'Content-Type': 'application/json'}})))
+            vi.stubGlobal('fetch', fetchMock)
+            return () => {
+                const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+                return {url: new URL(url, 'https://iris.example'), init, headers: new Headers(init.headers)}
+            }
+        }
+
+        it('encodes path params (GUIDs are often URLs) and sends the Access header', async () => {
+            const lastCall = stubFetch('{"guid":"https://example.com/a?b=1","title":"t"}')
+            const result = await client.getFeedItem('https://example.com/a?b=1')
+            const {url, headers} = lastCall()
+            expect(url.pathname).toBe('/api/feeditem/https%3A%2F%2Fexample.com%2Fa%3Fb%3D1')
+            expect(headers.get('X-Requested-With')).toBe('XMLHttpRequest')
+            expect(result.ok && result.data.title).toBe('t')
+        })
+
+        it('serialises query params and JSON bodies', async () => {
+            const lastCall = stubFetch('[]')
+            await client.searchFeedItems('needle', {limit: 5})
+            const {url} = lastCall()
+            expect(url.pathname).toBe('/api/search')
+            expect(Object.fromEntries(url.searchParams)).toEqual({q: 'needle', limit: '5', offset: '0'})
+
+            const lastPost = stubFetch('', 200)
+            const patched = await client.modifyFeedItem('g', {bookmarked: true})
+            const {url: postUrl, init, headers} = lastPost()
+            expect(patched.ok).toBe(true)
+            expect(postUrl.pathname).toBe('/api/feeditem/g')
+            expect(init.method).toBe('PATCH')
+            expect(headers.get('Content-Type')).toBe('application/json')
+            expect(init.body).toBe('{"bookmarked":true}')
+        })
+
+        it('surfaces the server error message on failure', async () => {
+            stubFetch('{"error":"No feed found with guid: x"}', 404)
+            const result = await client.getFeeds()
+            expect(result).toEqual({ok: false, status: 404, error: 'No feed found with guid: x'})
         })
     })
 }

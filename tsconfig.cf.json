@@ -22,8 +22,14 @@
     /* Enable error reporting in type-checked JavaScript files. */
     "checkJs": false,
 
-    /* Disable emitting files from a compilation. */
-    "noEmit": true,
+    /* This project is referenced by tsconfig.app.json so the frontend can import the Worker's
+       route types (Hono RPC). Referenced projects must be composite and emit declarations;
+       they go to .tsbuild/ (gitignored) and nothing else is emitted. */
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rootDir": ".",
+    "outDir": ".tsbuild/cf",
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.cf.tsbuildinfo",
 
     /* Ensure that each file can be safely transpiled without relying on other imports. */

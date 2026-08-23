@@ -1,4 +1,4 @@
-import {ref, computed, Ref} from 'vue'
+import {ref, computed, type Ref} from 'vue'
 
 function hashString(str: string): number {
   let hash = 0

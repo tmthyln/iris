@@ -159,7 +159,7 @@ export const useDownloadStore = defineStore('downloads', () => {
                 if (remainingMs <= 0) {
                     void deleteDownload(record.guid)
                 } else {
-                    setTimeout(() => deleteDownload(record.guid), remainingMs)
+                    setTimeout(() => void deleteDownload(record.guid), remainingMs)
                 }
             }
         } catch (_err) {
@@ -269,7 +269,7 @@ export const useDownloadStore = defineStore('downloads', () => {
         if (!db) return
         const deleteAfter = new Date(Date.now() + delayMs).toISOString()
         await dbPutDeletion(db, {guid, delete_after: deleteAfter})
-        setTimeout(() => deleteDownload(guid), delayMs)
+        setTimeout(() => void deleteDownload(guid), delayMs)
     }
 
     async function getLocalUrl(guid: string): Promise<string | null> {

@@ -1,7 +1,7 @@
 import type {D1Database} from "@cloudflare/workers-types";
-import {RawFeed, RawFeedFile, RawFeedItem, RawFeedSource, RawTranscript, ServerFeed, ServerFeedFile, ServerFeedItem, ServerFeedSource, ServerNotification, ServerPushSubscription, ServerTranscript, RawNotification, RawPushSubscription, NotificationType, ClientNotification, TranscriptStatus} from "./models";
-import {ChannelData, ChannelItemData, computeFeedItemContentHash, sha256Encode} from "./utils/files";
-import {FetchSuccessFileResult} from "./types";
+import {type RawFeed, type RawFeedFile, type RawFeedItem, type RawFeedSource, type RawTranscript, ServerFeed, ServerFeedFile, ServerFeedItem, ServerFeedSource, ServerNotification, ServerPushSubscription, ServerTranscript, type RawNotification, type RawPushSubscription, type NotificationType, type ClientNotification, type TranscriptStatus} from "./models";
+import {type ChannelData, type ChannelItemData, computeFeedItemContentHash, sha256Encode} from "./utils/files";
+import {type FetchSuccessFileResult} from "./types";
 
 export async function getAdjacentFeedItems(db: D1Database, guid: string) {
     const current = await db
@@ -104,6 +104,33 @@ export async function getFeedItems(db: D1Database, options: GetFeedItemsOptions 
             ORDER BY feed_item.date ${sortOrder.toUpperCase()}
             LIMIT ? OFFSET ?`)
         .bind(limit, offset)
+        .all<RawFeedItem>()
+
+    return results.map(item => new ServerFeedItem(item))
+}
+
+interface GetFeedItemsForFeedOptions {
+    includeFinished?: boolean
+    sortOrder?: 'asc' | 'desc'
+    limit?: number
+    offset?: number
+}
+
+export async function getFeedItemsForFeed(db: D1Database, feedGuid: string, options: GetFeedItemsForFeedOptions = {}) {
+    const {
+        includeFinished = false,
+        sortOrder = 'asc',
+        limit = 20,
+        offset = 0,
+    } = options
+
+    const {results} = await db
+        .prepare(`
+            SELECT * FROM feed_item
+            WHERE source_feed = ? ${includeFinished ? '' : 'AND finished = FALSE'}
+            ORDER BY date ${sortOrder === 'desc' ? 'DESC' : 'ASC'}
+            LIMIT ? OFFSET ?`)
+        .bind(feedGuid, limit, offset)
         .all<RawFeedItem>()
 
     return results.map(item => new ServerFeedItem(item))

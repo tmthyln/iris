@@ -26,5 +26,8 @@
     ]
   },
   "include": ["src/**/*.ts", "src/**/*.vue"],
-  "exclude": ["src/services/**", "src/service.ts", "src/sw.ts"]
+  "exclude": ["src/services/**", "src/service.ts", "src/sw.ts", "src/lib/**"],
+  /* Type-only access to the Worker's Hono app (src/types.ts imports AppType); the cf project's
+     emitted declarations are used, so `vue-tsc -b` builds cf before app. */
+  "references": [{ "path": "./tsconfig.cf.json" }]
 }

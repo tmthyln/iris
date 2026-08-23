@@ -1,4 +1,4 @@
-import {MaybeRefOrGetter, ref, toValue, watchEffect} from "vue";
+import {type MaybeRefOrGetter, ref, toValue, watchEffect} from "vue";
 
 export function useDurationFormat(duration: MaybeRefOrGetter<number>) {
     const formatted = ref('')

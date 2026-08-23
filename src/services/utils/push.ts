@@ -1,6 +1,6 @@
 import webpush, {WebPushError} from 'web-push'
 import type {D1Database} from '@cloudflare/workers-types'
-import {ServerPushSubscription} from '../models'
+import {type ServerPushSubscription} from '../models'
 import {deletePushSubscription, getAllPushSubscriptions, touchPushSubscription} from '../crud'
 
 export interface PushNotificationPayload {

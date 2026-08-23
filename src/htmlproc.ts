@@ -1,4 +1,4 @@
-import {MaybeRefOrGetter, ref, toValue, watchEffect} from "vue";
+import {type MaybeRefOrGetter, ref, toValue, watchEffect} from "vue";
 
 export function useUnescapedHTML(raw: MaybeRefOrGetter<string>) {
     const parser = new DOMParser()

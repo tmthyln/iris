@@ -4,7 +4,7 @@ import {useTimeAgo, useTitle} from "@vueuse/core";
 import {useRouter} from "vue-router";
 import {useFeedStore} from "../stores/feeds.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
-import {AdjacentFeedItems, Feed, FeedItem} from "../types.ts";
+import {type AdjacentFeedItems, type Feed, type FeedItem} from "../types.ts";
 import {useUnescapedHTML} from "../htmlproc.ts";
 import AudioControls from "./AudioControls.vue";
 import TranscriptView from "./TranscriptView.vue";

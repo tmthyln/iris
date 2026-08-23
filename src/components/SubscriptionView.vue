@@ -5,7 +5,7 @@ import {computed, nextTick, ref, watch} from "vue";
 import {useIntersectionObserver, useSessionStorage, useTitle} from "@vueuse/core";
 import {useUnescapedHTML} from "../htmlproc.ts";
 import type {FeedItem} from "../types.ts";
-import {apiFetch} from "../client.ts";
+import client from "../client.ts";
 
 const props = defineProps<{
     guid: string,
@@ -137,18 +137,16 @@ const hasMore = ref(true)
 
 async function fetchPage(offset: number) {
     isFetching.value = true
-    const params = new URLSearchParams({
-        include_finished: String(showFinished.value),
-        sort_order: sortAscending.value ? 'asc' : 'desc',
-        limit: String(PAGE_SIZE),
-        offset: String(offset),
+    const result = await client.getFeedFeedItems(props.guid, {
+        includeFinished: showFinished.value,
+        sortOrder: sortAscending.value ? 'asc' : 'desc',
+        limit: PAGE_SIZE,
+        offset,
     })
-    const response = await apiFetch(`/api/feed/${props.guid}/feeditem?${params}`)
     isFetching.value = false
-    if (response.ok) {
-        const data = await response.json() as FeedItem[]
-        hasMore.value = data.length >= PAGE_SIZE
-        return data
+    if (result.ok) {
+        hasMore.value = result.data.length >= PAGE_SIZE
+        return result.data
     }
     return []
 }

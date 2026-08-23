@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {FeedItemPreview} from "../types.ts";
+import {type FeedItemPreview} from "../types.ts";
 import {useTimeAgo} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
 import {computed, toRef} from "vue";
