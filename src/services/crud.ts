@@ -179,7 +179,8 @@ export async function getFeedItemFingerprintsByGuids(
     const fingerprints = new Map<string, FeedItemFingerprint>()
     if (guids.length === 0) return fingerprints
 
-    const CHUNK = 100
+    // D1 allows at most 100 bound parameters per statement; one is source_feed.
+    const CHUNK = 99
     for (let i = 0; i < guids.length; i += CHUNK) {
         const chunk = guids.slice(i, i + CHUNK)
         const placeholders = chunk.map(() => '?').join(',')
