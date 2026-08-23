@@ -1,12 +1,6 @@
 import {describe, it, expect} from 'vitest'
-import {readFileSync} from 'node:fs'
-import {resolve} from 'node:path'
 import {parseRssText} from './files'
-
-const BLOG_RSS = readFileSync(
-    resolve(__dirname, '../../assets/test/test_rss_johndcook.rss'),
-    'utf-8',
-)
+import BLOG_RSS from '../../assets/test/test_rss_johndcook.rss?raw'
 
 // Minimal podcast RSS with iTunes/enclosure data for testing podcast-specific parsing
 const PODCAST_RSS = `<?xml version="1.0" encoding="UTF-8"?>
