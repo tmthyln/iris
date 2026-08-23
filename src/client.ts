@@ -6,9 +6,10 @@ import type {ApiResult, FeedItemUpdate, FeedUpdate} from './types.ts'
 
 const TIMEOUT_MS = 10000
 
-// The deployed app sits behind Cloudflare Access. Without this header an
-// expired Access session turns every API call into a cross-origin redirect to
-// the login page, which fails CORS; with it, Access answers 401 instead.
+// The deployed app sits behind Cloudflare Access. This header asks Access to
+// answer an expired session with 401 instead of a redirect to its login page —
+// but that is not reliable (a fully absent session still gets the redirect),
+// so apiFetch additionally detects the redirect itself via redirect: 'manual'.
 // https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/#ajax
 const ACCESS_AJAX_HEADER = ['X-Requested-With', 'XMLHttpRequest'] as const
 
@@ -17,11 +18,12 @@ export const REAUTH_PARAM = 'reauth'
 
 let reauthenticating = false
 
-// The Worker has no auth of its own, so a 401 can only come from Cloudflare
-// Access. Re-authenticate by navigating the document: Access logs the user in
-// (silently if the global session is still valid) and redirects back here. The
-// throwaway query param keeps the URL out of the service worker's precache,
-// which would otherwise serve index.html without the request reaching Access.
+// The Worker has no auth of its own, so a 401 — or a redirect towards the
+// Access login page — can only come from Cloudflare Access. Re-authenticate by
+// navigating the document: Access logs the user in (silently if the global
+// session is still valid) and redirects back here. The throwaway query param
+// keeps the URL out of the service worker's precache, which would otherwise
+// serve index.html without the request ever reaching Access.
 function reauthenticate() {
     if (reauthenticating) return
     reauthenticating = true
@@ -31,12 +33,18 @@ function reauthenticate() {
 }
 
 // fetch() for same-origin API calls. Adds the Access header and re-authenticates
-// on 401; all other handling is left to the caller. Also the fetch behind `rpc`.
+// when the Access session has expired; all other handling is left to the
+// caller. Also the fetch behind `rpc`.
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers)
     headers.set(...ACCESS_AJAX_HEADER)
-    const response = await fetch(input, {...init, headers})
-    if (response.status === 401) reauthenticate()
+    // An expired session can also surface as a redirect to Access's
+    // (cross-origin) login page; following it from fetch() would only fail
+    // CORS and look like a network error. With 'manual' the redirect comes
+    // back as an opaqueredirect response instead — and since the API never
+    // redirects, any redirect here means the session is gone.
+    const response = await fetch(input, {...init, headers, redirect: 'manual'})
+    if (response.status === 401 || response.type === 'opaqueredirect') reauthenticate()
     return response
 }
 
@@ -71,8 +79,12 @@ async function request<R extends ClientResponse<unknown>>(
             const data = parse === 'json' ? await response.json() as SuccessJson<R> : undefined
             return {ok: true, status: response.status, data}
         }
-        if (response.status === 401) {
-            return {ok: false, status: response.status, error: 'Session expired, signing in again'}
+        // Hono types status as the HTTP-code union, but an opaqueredirect is 0.
+        const status: number = response.status
+        if (status === 401 || status === 0) {
+            // 401 from Access's AJAX handling, or its login redirect surfaced
+            // as an opaqueredirect (status 0); apiFetch has begun re-auth.
+            return {ok: false, status: 401, error: 'Session expired, signing in again'}
         }
         let error = `Server returned ${response.status}`
         try {
@@ -215,17 +227,25 @@ if (import.meta.vitest) {
     describe('apiFetch', () => {
         afterEach(() => vi.unstubAllGlobals())
 
-        it('sends the Cloudflare Access AJAX header', async () => {
+        it('sends the Cloudflare Access AJAX header and keeps redirects manual', async () => {
             const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', {status: 200})))
             vi.stubGlobal('fetch', fetchMock)
             await apiFetch('/api/feed', {headers: {'Content-Type': 'application/json'}})
-            const headers = new Headers((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].headers)
+            const init = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+            const headers = new Headers(init.headers)
             expect(headers.get('X-Requested-With')).toBe('XMLHttpRequest')
             expect(headers.get('Content-Type')).toBe('application/json')
+            expect(init.redirect).toBe('manual')
         })
 
-        it('navigates once to re-authenticate on 401, keeping the current URL', async () => {
-            vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(null, {status: 401}))))
+        it('navigates once to re-authenticate on an expired session, keeping the current URL', async () => {
+            // First call: Access redirects to its login page (no session at
+            // all — the header's AJAX-401 behaviour does not apply); second
+            // call: Access answers 401. Both mean the session is gone.
+            const loginRedirect = {type: 'opaqueredirect', status: 0, ok: false} as Response
+            vi.stubGlobal('fetch', vi.fn()
+                .mockResolvedValueOnce(loginRedirect)
+                .mockResolvedValue(new Response(null, {status: 401})))
             const assign = vi.fn()
             vi.stubGlobal('window', {location: {href: 'https://iris.example/feed/abc?page=2#top', assign}})
             await apiFetch('/api/feed')
@@ -275,6 +295,14 @@ if (import.meta.vitest) {
             expect(init.method).toBe('PATCH')
             expect(headers.get('Content-Type')).toBe('application/json')
             expect(init.body).toBe('{"bookmarked":true}')
+        })
+
+        it('maps an Access login redirect to the session-expired result', async () => {
+            const loginRedirect = {type: 'opaqueredirect', status: 0, ok: false} as Response
+            vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(loginRedirect)))
+            vi.stubGlobal('window', {location: {href: 'https://iris.example/', assign: vi.fn()}})
+            const result = await client.getFeeds()
+            expect(result).toEqual({ok: false, status: 401, error: 'Session expired, signing in again'})
         })
 
         it('surfaces the server error message on failure', async () => {
