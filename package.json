@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.52.1",
-    "@cloudflare/workers-types": "^5.20260816.1",
+    "@cloudflare/workers-types": "^5.20260820.1",
     "@eslint/css": "^1.2.0",
     "@eslint/js": "~10.0.1",
     "@types/sortablejs": "^1.15.9",
