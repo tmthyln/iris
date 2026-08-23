@@ -68,6 +68,7 @@ Frontend and backend share `src/` but are **separated by TypeScript project refe
 - **State Management:** Pinia stores in `src/stores/` (feeds, feeditems, queue, downloads) — mix of options and composition API styles, with `LoadingState` tracking ('unloaded' | 'loading' | 'loaded' | 'error')
 - **Routing:** Vue Router in `src/router/`
 - **Styling:** Bulma CSS framework with SASS
+- **PWA / Service worker:** `src/sw.ts` (vite-plugin-pwa `injectManifest` + `registerType: 'autoUpdate'`): Workbox precache of the app shell plus web-push handlers. It must keep `self.skipWaiting()` and `clients.claim()` — in injectManifest mode the plugin does not inject them, and without them a newly deployed worker waits forever while the old one serves the old precached shell to every open client (the autoUpdate client only reloads on the `activated` event). `src/main.ts` re-checks for a new worker on resume and hourly.
 - **API Client:** `src/client.ts` — Hono RPC client (`hc<AppType>`) wrapped in `request()`, which returns an `ApiResult<T>` (`{ok: true, data}` / `{ok: false, status, error}`) with timeouts and the Access 401 handling. Path params are `encodeURIComponent`-ed explicitly (hc does not encode, and GUIDs are often URLs)
 
 ### Dev Server

@@ -3,6 +3,17 @@ import {precacheAndRoute} from 'workbox-precaching'
 
 declare const self: ServiceWorkerGlobalScope
 
+// vite-plugin-pwa's autoUpdate mode relies on the (injectManifest) service
+// worker doing this itself: activate a freshly installed version immediately
+// instead of waiting for every open client to close, and take over existing
+// clients. The register client (virtual:pwa-register) then reloads the page on
+// activation, so deploys actually reach the browser on the next load — without
+// this, the old worker serves the old precached shell forever.
+void self.skipWaiting()
+self.addEventListener('activate', (event) => {
+    event.waitUntil(self.clients.claim())
+})
+
 precacheAndRoute(self.__WB_MANIFEST)
 
 // Makes Cloudflare Access answer an expired session with 401 instead of a
