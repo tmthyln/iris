@@ -15,11 +15,12 @@ npm run dev
 # Run linting (ESLint flat config, type-aware; warnings fail the run)
 npm run lint
 
-# Run tests (vitest, watch mode by default)
+# Run tests (vitest, watch mode by default; both projects — see Testing below)
 npm run test
 
-# Run a single test file
+# Run a single test file / only the Worker tests
 npm run test -- src/services/utils/files.test.ts
+npm run test -- --project workers
 
 # Run tests matching a name pattern
 npm run test -- -t "parseRssText"
@@ -128,6 +129,21 @@ The API has **no in-app authentication by design** (#205). Production and every 
 - Handles both blog and podcast feeds (podcast detection via iTunes namespace)
 - Podcast-specific fields: season, episode, duration, enclosure
 
+## Testing
+
+`vitest.config.ts` defines two projects (`vite.config.ts` has no test config):
+
+- `node` — frontend and `src/lib/` tests, run in Node (`src/**/*.test.ts` plus in-source tests, excluding the Worker).
+- `workers` — `src/services/**` and `src/service.ts`, run **inside workerd** by `@cloudflare/vitest-plugin` with the bindings from `wrangler.toml`: a real local D1 database (the migrations in `migrations/` are applied per test file by `src/services/testing/setup.ts`), R2 and the `ItemQueue` Durable Object. `remoteBindings` is off and the VAPID vars are pinned in the config, so tests never reach Cloudflare and don't depend on `.dev.vars`.
+
+Conventions for Worker tests (`src/services/testing/fixtures.ts` has the helpers):
+- Storage is isolated per file; call `resetStorage()` in `beforeEach` to isolate tests within a file (it empties every D1 table, restarts AUTOINCREMENT counters and clears the R2 bucket). The Durable Object queue is separate — clear it with `getQueue(env).clearQueue()` if a test uses it.
+- Seed data through the models (`seedFeed`, `seedFeedItem`, `seedFeedSource`) so FTS rows and conflict handling behave as in production.
+- Endpoints are driven with `app.request(path, init, env)`; `testEnv()` returns the real bindings with `FEED_PROCESSING_QUEUE` replaced by an in-memory fake (`queue.messages`) and accepts overrides (e.g. a fake `AI`).
+- **Do not use `vi.mock`** — inside the workerd pool it does not reliably replace a module for transitive importers. Stub outbound HTTP with `mockFetch()` (global `fetch`; unknown URLs throw), spy on `webpush.sendNotification` with `stubWebPush()`, and swap bindings through `testEnv()`.
+- No filesystem in workerd: load fixture files with Vite `?raw` imports (typed by `src/services/testing/raw-imports.d.ts`).
+- Coverage uses Istanbul (V8 coverage is unavailable in workerd); `src/services/testing/**` is excluded from the report.
+
 ## API Endpoints
 
 ```
@@ -152,7 +168,7 @@ POST   /api/command/refresh-all-feeds - Trigger manual refresh
 - Short-circuit expressions allowed (`x && doSomething()`)
 - ESLint runs type-aware (`recommendedTypeChecked` with `projectService`), so every linted `.ts`/`.vue` file must belong to one of the tsconfig projects. Intentional fire-and-forget promises are written `void promise`; `eslint --fix` is safe for the Vue template style rules
 - Parsed-JSON / untyped-parser values are cast at the boundary (`await c.req.json() as {…}`, `JSON.parse(x) as T`) rather than left as `any`
-- Vitest supports in-source testing via `import.meta.vitest`
+- Vitest supports in-source testing via `import.meta.vitest` (used for private helpers in `src/services/utils/*.ts` and `src/client.ts`)
 - Shared conversion utilities live in `src/lib/` (not `src/services/utils/`)
 - Frontend API client in `src/client.ts` is a plain object of async methods over the Hono RPC client; add a method there rather than calling `apiFetch` with a hand-written path
 - Pinia stores use cache-first approach for feed items and callback queues for lazy loading

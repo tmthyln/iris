@@ -21,7 +21,7 @@ export default defineConfig({
                     name: 'node',
                     include: ['src/**/*.test.ts'],
                     includeSource: ['src/**/*.ts'],
-                    exclude: ['**/node_modules/**', 'src/services/**', 'src/service.ts'],
+                    exclude: ['**/node_modules/**', 'src/services/**', 'src/service.ts', 'src/service.test.ts'],
                 },
             },
             {

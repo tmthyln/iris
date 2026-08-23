@@ -55,7 +55,7 @@ npm run dev
 # Run linting
 npm run lint
 
-# Run tests
+# Run tests (the Worker's tests run inside workerd against local D1/R2/Durable Object bindings)
 npm run test
 
 # Type checking
