@@ -2,7 +2,7 @@
 import {ref, computed, nextTick, watch} from "vue";
 import {useRouter} from "vue-router";
 import {refDebounced, onKeyStroke, useIntersectionObserver} from "@vueuse/core";
-import client from "../client.ts";
+import client, {apiFetch} from "../client.ts";
 import type {FeedItemPreview} from "../types.ts";
 import {useLatestAsync} from "../composables/useLatestAsync.ts";
 import NotificationBell from "./NotificationBell.vue";
@@ -156,7 +156,7 @@ async function executeCommand(command: string) {
     if (cmd === 'refresh' && args[0] === 'all') {
         commandStatus.value = 'running'
         try {
-            const response = await fetch('/api/command/refresh-all-feeds', {method: 'POST'})
+            const response = await apiFetch('/api/command/refresh-all-feeds', {method: 'POST'})
             if (response.ok) {
                 const data = await response.json()
                 commandStatus.value = 'success'

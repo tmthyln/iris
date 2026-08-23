@@ -1,6 +1,7 @@
 import {defineStore} from "pinia";
 import {reactive, ref} from "vue";
 import type {FeedItemPreview} from "../types.ts";
+import {apiFetch} from "../client.ts";
 
 /* ── Types ── */
 
@@ -187,7 +188,7 @@ export const useDownloadStore = defineStore('downloads', () => {
             }
 
             const proxiedUrl = `/api/feeditem/${encodeURIComponent(item.guid)}/media`
-            const response = await fetch(proxiedUrl, {signal: abortController.signal})
+            const response = await apiFetch(proxiedUrl, {signal: abortController.signal})
             if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
             const contentLength = Number(response.headers.get('content-length')) || 0

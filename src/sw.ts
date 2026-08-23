@@ -5,6 +5,10 @@ declare const self: ServiceWorkerGlobalScope
 
 precacheAndRoute(self.__WB_MANIFEST)
 
+// Makes Cloudflare Access answer an expired session with 401 instead of a
+// cross-origin redirect to its login page (see client.ts).
+const ACCESS_AJAX_HEADERS = {'X-Requested-With': 'XMLHttpRequest'}
+
 interface PushPayload {
     type: 'new_item' | 'updated_item'
     feed_guid: string
@@ -65,7 +69,7 @@ async function resubscribePush(oldSubscription: PushSubscription | null) {
         (oldSubscription?.options?.applicationServerKey as ArrayBuffer | null) ?? null
 
     if (!applicationServerKey) {
-        const resp = await fetch('/api/push/vapid-public-key')
+        const resp = await fetch('/api/push/vapid-public-key', {headers: ACCESS_AJAX_HEADERS})
         if (!resp.ok) return
         const data = await resp.json().catch(() => null) as {key?: string} | null
         if (!data?.key) return
@@ -79,14 +83,14 @@ async function resubscribePush(oldSubscription: PushSubscription | null) {
 
     await fetch('/api/push/subscription', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {...ACCESS_AJAX_HEADERS, 'Content-Type': 'application/json'},
         body: JSON.stringify(newSub.toJSON()),
     })
 
     if (oldSubscription?.endpoint && oldSubscription.endpoint !== newSub.endpoint) {
         await fetch('/api/push/subscription', {
             method: 'DELETE',
-            headers: {'Content-Type': 'application/json'},
+            headers: {...ACCESS_AJAX_HEADERS, 'Content-Type': 'application/json'},
             body: JSON.stringify({endpoint: oldSubscription.endpoint}),
         }).catch(() => undefined)
     }

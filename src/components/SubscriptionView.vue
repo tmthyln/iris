@@ -5,6 +5,7 @@ import {computed, nextTick, ref, watch} from "vue";
 import {useIntersectionObserver, useSessionStorage, useTitle} from "@vueuse/core";
 import {useUnescapedHTML} from "../htmlproc.ts";
 import type {FeedItem} from "../types.ts";
+import {apiFetch} from "../client.ts";
 
 const props = defineProps<{
     guid: string,
@@ -142,7 +143,7 @@ async function fetchPage(offset: number) {
         limit: String(PAGE_SIZE),
         offset: String(offset),
     })
-    const response = await fetch(`/api/feed/${props.guid}/feeditem?${params}`)
+    const response = await apiFetch(`/api/feed/${props.guid}/feeditem?${params}`)
     isFetching.value = false
     if (response.ok) {
         const data: FeedItem[] = await response.json()
