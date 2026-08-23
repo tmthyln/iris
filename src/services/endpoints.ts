@@ -1,6 +1,7 @@
 import type {D1Database} from '@cloudflare/workers-types';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
     ClientFeed,
@@ -46,11 +47,13 @@ export const app = new Hono<{Bindings: Env}>().basePath('/api');
 
 // Errors are returned as JSON bodies ({error: string}) rather than statusText:
 // HTTP/2 does not transmit reason phrases, so statusText is invisible in production.
-function apiError(c: Context, status: ContentfulStatusCode, error: string) {
+// The status is generic so each error status stays distinct from 200 in the route's response type.
+function apiError<S extends ContentfulStatusCode>(c: Context, status: S, error: string) {
     return c.json({error}, status)
 }
 
 app.onError((err, c) => {
+    if (err instanceof HTTPException) return c.json({error: err.message}, err.status)
     console.error('Unhandled API error:', err)
     if (err instanceof SyntaxError) return c.json({error: 'Invalid JSON in request body'}, 400)
     return c.json({error: 'Internal server error'}, 500)
@@ -64,7 +67,7 @@ app.notFound((c) => c.json({error: 'Not found'}, 404))
 app.get('/search', async (c) => {
     const query = c.req.query('q')?.trim() ?? ''
     if (query.length < 3) {
-        return Response.json([])
+        return c.json([], 200)
     }
 
     const limit = parseInt(c.req.query('limit') ?? '20')
@@ -72,7 +75,7 @@ app.get('/search', async (c) => {
 
     const results = await searchFeedItems(c.env.DB, query, { limit, offset })
 
-    return Response.json(results.map(item => new ClientFeedItemPreview(item)))
+    return c.json(results.map(item => new ClientFeedItemPreview(item)), 200)
 })
 
 /******************************************************************************
@@ -82,7 +85,7 @@ app.get('/search', async (c) => {
 app.get('/feed', async (c) => {
     const feeds = await getFeeds(c.env.DB)
 
-    return Response.json(feeds.map(feed => new ClientFeed(feed)))
+    return c.json(feeds.map(feed => new ClientFeed(feed)), 200)
 })
 app.post('/feed', async (c) => {
     const db = c.env.DB;
@@ -160,7 +163,7 @@ app.get('/feed/:guid', async (c) => {
 
     const feed = await ServerFeed.get(c.env.DB, feedGuid)
 
-    return feed ? Response.json(new ClientFeed(feed)) : apiError(c, 404, `No feed found with guid: ${feedGuid}`)
+    return feed ? c.json(new ClientFeed(feed), 200) : apiError(c, 404, `No feed found with guid: ${feedGuid}`)
 })
 app.patch('/feed/:guid', async (c) => {
     const data = await c.req.json() as Record<string, unknown>
@@ -189,7 +192,7 @@ app.patch('/feed/:guid', async (c) => {
     }
 
     if (Object.keys(updateData).length === 0) {
-        return new Response()
+        return c.body(null, 200)
     }
 
     await db
@@ -200,7 +203,7 @@ app.patch('/feed/:guid', async (c) => {
         .bind(...Object.values(updateData), feedGuid)
         .run()
 
-    return new Response()
+    return c.body(null, 200)
 })
 app.get('/feed/:guid/feeditem', async (c) => {
     const feedGuid = c.req.param('guid')
@@ -220,7 +223,7 @@ app.get('/feed/:guid/feeditem', async (c) => {
         .bind(feedGuid, limit, offset)
         .all<RawFeedItem>()
 
-    return Response.json(results.map(item => new ClientFeedItem(new ServerFeedItem(item))))
+    return c.json(results.map(item => new ClientFeedItem(new ServerFeedItem(item))), 200)
 })
 
 /******************************************************************************
@@ -240,7 +243,7 @@ app.get('/feeditem', async (c) => {
         feedItems = await getFeedItems(db, {limit, offset})
     }
 
-    return Response.json(feedItems.map(item => new ClientFeedItem(item)))
+    return c.json(feedItems.map(item => new ClientFeedItem(item)), 200)
 })
 
 app.get('/feeditem/:guid', async (c) => {
@@ -248,7 +251,7 @@ app.get('/feeditem/:guid', async (c) => {
 
     const feedItem = await ServerFeedItem.get(c.env.DB, guid)
 
-    return feedItem ? Response.json(new ClientFeedItem(feedItem)) : apiError(c, 404, `No feed item found with guid: ${guid}`)
+    return feedItem ? c.json(new ClientFeedItem(feedItem), 200) : apiError(c, 404, `No feed item found with guid: ${guid}`)
 })
 app.get('/feeditem/:guid/media', async (c) => {
     const guid = c.req.param('guid')
@@ -285,7 +288,7 @@ app.get('/feeditem/:guid/media', async (c) => {
 app.get('/feeditem/:guid/transcript', async (c) => {
     const guid = c.req.param('guid')
     const transcripts = await listTranscriptsForItem(c.env.DB, guid)
-    return Response.json(transcripts.map(t => new ClientTranscript(t)))
+    return c.json(transcripts.map(t => new ClientTranscript(t)), 200)
 })
 app.post('/feeditem/:guid/transcript', async (c) => {
     const guid = c.req.param('guid')
@@ -306,7 +309,7 @@ app.post('/feeditem/:guid/transcript', async (c) => {
     // as-is instead of enqueuing a duplicate.
     const existing = await getActiveTranscriptRequest(c.env.DB, guid, model)
     if (existing) {
-        return Response.json(new ClientTranscript(existing), {status: 200})
+        return c.json(new ClientTranscript(existing), 200)
     }
 
     const transcript = await createTranscriptRequest(
@@ -318,7 +321,7 @@ app.post('/feeditem/:guid/transcript', async (c) => {
         transcriptId: transcript.id,
     } satisfies TranscribeFeedItemTask)
 
-    return Response.json(new ClientTranscript(transcript), {status: 202})
+    return c.json(new ClientTranscript(transcript), 202)
 })
 app.get('/transcript/:id', async (c) => {
     const id = parseInt(c.req.param('id'))
@@ -329,15 +332,15 @@ app.get('/transcript/:id', async (c) => {
     if (!transcript) {
         return apiError(c, 404, `No transcript found with id: ${id}`)
     }
-    return Response.json(new ClientTranscriptFull(transcript))
+    return c.json(new ClientTranscriptFull(transcript), 200)
 })
 app.get('/feeditem/:guid/adjacent', async (c) => {
     const guid = c.req.param('guid')
     const {prev, next} = await getAdjacentFeedItems(c.env.DB, guid)
-    return Response.json({
+    return c.json({
         prev: prev ? new ClientFeedItemPreview(prev) : null,
         next: next ? new ClientFeedItemPreview(next) : null,
-    })
+    }, 200)
 })
 
 app.patch('/feeditem/:guid', async (c) => {
@@ -359,7 +362,7 @@ app.patch('/feeditem/:guid', async (c) => {
         .bind(...Object.values(data), feedItemGuid)
         .run()
 
-    return new Response()
+    return c.body(null, 200)
 })
 
 /******************************************************************************
@@ -376,7 +379,7 @@ async function hydrateQueueItems(db: D1Database, guids: string[]) {
 app.get('/queue', async (c) => {
     const queue = getQueue(c.env)
     const guids = await queue.getItems()
-    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
+    return c.json({items: await hydrateQueueItems(c.env.DB, guids)}, 200)
 })
 
 app.post('/queue', async (c) => {
@@ -406,7 +409,7 @@ app.post('/queue', async (c) => {
         guids = await queue.enqueueItem(feedItemId)
     }
 
-    return Response.json({items: await hydrateQueueItems(db, guids)}, {status: 201})
+    return c.json({items: await hydrateQueueItems(db, guids)}, 201)
 })
 
 app.patch('/queue/:guid', async (c) => {
@@ -420,7 +423,7 @@ app.patch('/queue/:guid', async (c) => {
     const queue = getQueue(c.env)
     const guids = await queue.insertItem(feedItemGuid, position)
 
-    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
+    return c.json({items: await hydrateQueueItems(c.env.DB, guids)}, 200)
 })
 
 app.delete('/queue/:guid', async (c) => {
@@ -428,7 +431,7 @@ app.delete('/queue/:guid', async (c) => {
     const queue = getQueue(c.env)
     const guids = await queue.removeItem(feedItemGuid)
 
-    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
+    return c.json({items: await hydrateQueueItems(c.env.DB, guids)}, 200)
 })
 
 app.delete('/queue', async (c) => {
@@ -446,7 +449,7 @@ app.delete('/queue', async (c) => {
         guids = await queue.clearQueue()
     }
 
-    return Response.json({items: await hydrateQueueItems(c.env.DB, guids)})
+    return c.json({items: await hydrateQueueItems(c.env.DB, guids)}, 200)
 })
 
 /******************************************************************************
@@ -465,7 +468,7 @@ app.post('/command/refresh-feed/:guid', async (c) => {
         feedGuid,
     } satisfies RefreshFeedTask)
 
-    return new Response(null, {status: 202})
+    return c.body(null, 202)
 })
 
 app.post('/command/plan-feed-archives/:guid', async (c) => {
@@ -480,7 +483,7 @@ app.post('/command/plan-feed-archives/:guid', async (c) => {
         feedGuid,
     } satisfies PlanFeedArchivesTask)
 
-    return new Response(null, {status: 202})
+    return c.body(null, 202)
 })
 
 app.post('/command/refresh-all-feeds', async (c) => {
@@ -491,7 +494,7 @@ app.post('/command/refresh-all-feeds', async (c) => {
     }
     //await Promise.all(feeds.map(feed => refreshFeed(feed.guid, c.env)))
 
-    return Response.json({refreshedCount: feeds.length})
+    return c.json({refreshedCount: feeds.length}, 200)
 })
 
 /******************************************************************************
@@ -509,7 +512,7 @@ app.get('/notification', async (c) => {
         getUnreadNotificationCount(db),
     ])
 
-    return Response.json({items, unreadCount})
+    return c.json({items, unreadCount}, 200)
 })
 
 app.delete('/notification/:id', async (c) => {
@@ -518,12 +521,12 @@ app.delete('/notification/:id', async (c) => {
         return apiError(c, 400, 'Invalid notification id')
     }
     await dismissNotification(c.env.DB, id)
-    return new Response()
+    return c.body(null, 200)
 })
 
 app.delete('/notification', async (c) => {
     await dismissAllNotifications(c.env.DB)
-    return new Response()
+    return c.body(null, 200)
 })
 
 /******************************************************************************
@@ -565,7 +568,7 @@ app.get('/push/vapid-public-key', (c) => {
     if (!key) {
         return apiError(c, 503, 'Push notifications not configured')
     }
-    return Response.json({key})
+    return c.json({key}, 200)
 })
 
 app.post('/push/subscription', async (c) => {
@@ -598,7 +601,7 @@ app.post('/push/subscription', async (c) => {
     }
 
     await upsertPushSubscription(c.env.DB, endpoint, keys.p256dh, keys.auth)
-    return new Response(null, {status: 201})
+    return c.body(null, 201)
 })
 
 app.delete('/push/subscription', async (c) => {
@@ -608,7 +611,7 @@ app.delete('/push/subscription', async (c) => {
         return apiError(c, 400, 'endpoint is required')
     }
     await deletePushSubscription(c.env.DB, endpoint)
-    return new Response()
+    return c.body(null, 200)
 })
 
 app.post('/push/test', async (c) => {
@@ -634,5 +637,5 @@ app.post('/push/test', async (c) => {
         body: 'Test notification — push is working.',
         url: '/',
     })
-    return new Response(null, {status: 204})
+    return c.body(null, 204)
 })
