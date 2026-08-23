@@ -133,8 +133,16 @@ The API has **no in-app authentication by design** (#205). Production and every 
 
 `vitest.config.ts` defines two projects (`vite.config.ts` has no test config):
 
-- `node` — frontend and `src/lib/` tests, run in Node (`src/**/*.test.ts` plus in-source tests, excluding the Worker).
+- `node` — frontend and `src/lib/` tests, run in jsdom (`src/**/*.test.ts` plus in-source tests, excluding the Worker).
 - `workers` — `src/services/**` and `src/service.ts`, run **inside workerd** by `@cloudflare/vitest-plugin` with the bindings from `wrangler.toml`: a real local D1 database (the migrations in `migrations/` are applied per test file by `src/services/testing/setup.ts`), R2 and the `ItemQueue` Durable Object. `remoteBindings` is off and the VAPID vars are pinned in the config, so tests never reach Cloudflare and don't depend on `.dev.vars`.
+
+Conventions for frontend tests (`src/testing/helpers.ts` has the helpers):
+- Stub the API boundary by spying on the methods of the `client` object: `stubClient('getFeeds', ok([makeFeed()]))` / `err(status)` / `stubClientPending()` (no `vi.mock` needed — `client` is a plain object, so `vi.spyOn` works; `vi.restoreAllMocks()` in `afterEach` undoes it). Stores are real Pinia stores (`setActivePinia(createPinia())` in `beforeEach`), so store tests exercise the real wiring.
+- Components mount with `mountApp(Component, options, {route, pinia})` — a fresh Pinia plus a memory-history router whose routes mirror `src/router/routes.ts` (stub components), so `router-link`s render real hrefs and navigation is assertable via `router.currentRoute`.
+- Factories `makeFeed`/`makeItem`/`makeFullItem`/`makeNotification`/`makeTranscript` build the **frontend** (JSON-serialised) shapes from `src/types.ts`; note `client.getFeedItems` returns full items (`makeFullItem`), not previews.
+- Browser APIs jsdom lacks: IndexedDB via `fake-indexeddb` (`globalThis.indexedDB = new IDBFactory()` per test), push via `stubBrowserPush()`/`makeSubscription()` (plus `Reflect.deleteProperty(navigator, 'serviceWorker')` in `afterEach`), `URL.createObjectURL` and `HTMLMediaElement.prototype.play/pause/load` stubbed where needed; media metadata is faked by defining `duration` and dispatching `durationchange` (vueuse's `useMediaControls` applies `src` as `<source>` children).
+- Time-based behaviour (debounce, pollers) uses `vi.useFakeTimers` — pass `toFake` selectively so `Date`/IndexedDB keep working — with `vi.advanceTimersByTimeAsync`.
+- `@typescript-eslint/unbound-method` is off for test files (mock assertions like `expect(vi.mocked(client.x))` trip it).
 
 Conventions for Worker tests (`src/services/testing/fixtures.ts` has the helpers):
 - Storage is isolated per file; call `resetStorage()` in `beforeEach` to isolate tests within a file (it empties every D1 table, restarts AUTOINCREMENT counters and clears the R2 bucket). The Durable Object queue is separate — clear it with `getQueue(env).clearQueue()` if a test uses it.

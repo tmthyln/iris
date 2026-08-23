@@ -19,6 +19,8 @@ export default defineConfig({
                 extends: true,
                 test: {
                     name: 'node',
+                    // Frontend tests need a DOM; jsdom also provides localStorage etc.
+                    environment: 'jsdom',
                     include: ['src/**/*.test.ts'],
                     includeSource: ['src/**/*.ts'],
                     exclude: ['**/node_modules/**', 'src/services/**', 'src/service.ts', 'src/service.test.ts'],
@@ -53,7 +55,7 @@ export default defineConfig({
         coverage: {
             provider: 'istanbul',
             include: ['src/**/*.{ts,vue}'],
-            exclude: ['src/**/*.test.ts', 'src/**/*.d.ts', 'src/services/testing/**'],
+            exclude: ['src/**/*.test.ts', 'src/**/*.d.ts', 'src/services/testing/**', 'src/testing/**'],
             reporter: ['text', 'html', 'lcov', 'json', 'json-summary'],
             reportOnFailure: true,
         },

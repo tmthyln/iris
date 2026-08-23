@@ -65,4 +65,9 @@ export default defineConfig([
     { files: ["**/*.vue"], rules: {
         "vue/max-attributes-per-line": ["error", { singleline: { max: 3 }, multiline: { max: 1 } }],
     } },
+    // In tests, `expect(vi.mocked(obj.method))` and helpers passing spies around reference methods
+    // without a receiver — unbound-method's documented false positive for mock assertions.
+    { files: ["src/**/*.test.ts", "src/testing/**", "src/services/testing/**"], rules: {
+        "@typescript-eslint/unbound-method": "off",
+    } },
 ]);
