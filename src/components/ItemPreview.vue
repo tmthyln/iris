@@ -13,11 +13,11 @@ const props = defineProps<{
 
 const feedStore = useFeedStore()
 const feed = computed(() => feedStore.getFeedById(props.feedItem.source_feed))
-const formattedPubDate = useTimeAgo(props.feedItem.date)
+const formattedPubDate = useTimeAgo(() => props.feedItem.date ?? 0)
 
 const {resolvedSrc, onImageError} = usePlaceholderImage(
-    toRef(() => feed.value.image_src),
-    toRef(() => feed.value.title),
+    toRef(() => feed.value?.image_src),
+    toRef(() => feed.value?.title ?? ''),
     64
 )
 </script>
@@ -36,7 +36,7 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
             {{ useUnescapedHTML(feedItem.title).value }}
           </router-link>
         </h3>
-        <div class="subtitle">
+        <div v-if="feed" class="subtitle">
           From <router-link :to="{name: 'subscription', params: {guid: feed.guid}}"><em>{{ feed.alias || feed.title }}</em></router-link>
         </div>
       </div>

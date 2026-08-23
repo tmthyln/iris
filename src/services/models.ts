@@ -35,7 +35,7 @@ abstract class ServerEntity {
         return this
     }
 
-    protected async persistTo(db: D1Database, data: Record<string, unknown>) {
+    protected async persistRow(db: D1Database, data: Record<string, unknown>) {
         const {
             onConflict = 'ignore',
             updateExcludeFields = [],
@@ -173,7 +173,7 @@ export class ServerFeedFile extends ServerEntity {
             await bucket.put(this.cached_file, this.#rawText)
         }
 
-        return await super.persistTo(db, {
+        return await super.persistRow(db, {
             feed_url: this.feed_url,
             fetched_at: this.fetched_at.toISOString(),
             referenced_feed: this.referenced_feed,
@@ -251,7 +251,7 @@ export class ServerFeedSource extends ServerEntity {
     }
 
     async persistTo(db: D1Database) {
-        return await super.persistTo(db, {
+        return await super.persistRow(db, {
             feed_url: this.feed_url,
             referenced_feed: this.referenced_feed,
             actively_updating: this.actively_updating,
@@ -343,7 +343,7 @@ export class ServerFeed extends ServerEntity {
     }
 
     async persistTo(db: D1Database) {
-        await super.persistTo(db, {
+        await super.persistRow(db, {
             guid: this.guid,
             input_url: this.input_url,
             source_url: this.source_url,
@@ -500,7 +500,7 @@ export class ServerFeedItem extends ServerEntity {
     }
 
     async persistTo(db: D1Database) {
-        await super.persistTo(db, {
+        await super.persistRow(db, {
             guid: this.guid,
             source_feed: this.source_feed,
             season: this.season,
@@ -634,7 +634,7 @@ export class ServerNotification extends ServerEntity {
     }
 
     async persistTo(db: D1Database) {
-        await super.persistTo(db, {
+        await super.persistRow(db, {
             type: this.type,
             feed_guid: this.feed_guid,
             feed_item_guid: this.feed_item_guid,
@@ -793,7 +793,7 @@ export class ServerPushSubscription extends ServerEntity {
     }
 
     async persistTo(db: D1Database) {
-        await super.persistTo(db, {
+        await super.persistRow(db, {
             endpoint: this.endpoint,
             p256dh: this.p256dh,
             auth: this.auth,

@@ -15,7 +15,7 @@ import {
 } from "./crud";
 import {computeFeedItemContentHash, fetchRssFile, parseRssText, sha256Encode, FETCH_USER_AGENT} from "./utils/files";
 import {fetchArchiveList, waybackSnapshotUrl} from "./utils/wayback";
-import {fanOutPushWithContext, loadPushFanOutContext, type PushFanOutContext} from "./utils/push";
+import {fanOutPushWithContext, loadPushFanOutContext, type PushFanOutContext, type PushNotificationPayload} from "./utils/push";
 import type {FetchArchiveSnapshotTask} from "./types";
 
 export type FeedItemClassification = 'new' | 'updated' | 'skip'
@@ -134,7 +134,7 @@ export async function refreshFeed(feedGuid: string, env: Env, ctx?: ExecutionCon
 
             if (!pushContext) continue
 
-            const payload = {
+            const payload: PushNotificationPayload = {
                 type,
                 feed_guid: feed.guid,
                 feed_item_guid: item.guid,

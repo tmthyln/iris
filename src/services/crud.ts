@@ -222,6 +222,7 @@ export function createFeed(channelData: ChannelData, fetchResult: FetchSuccessFi
         update_frequency: 1,
         link: channelData.link,
         categories: channelData.categories,
+        notify_enabled: false,
     })
 }
 

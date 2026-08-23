@@ -81,7 +81,7 @@ export function usePushSubscription() {
                 return false
             }
 
-            let applicationServerKey: Uint8Array
+            let applicationServerKey: Uint8Array<ArrayBuffer>
             try {
                 applicationServerKey = urlBase64ToUint8Array(publicKey)
             } catch {

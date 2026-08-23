@@ -195,7 +195,7 @@ export const useDownloadStore = defineStore('downloads', () => {
             const reader = response.body?.getReader()
             if (!reader) throw new Error('No response body')
 
-            const chunks: Uint8Array[] = []
+            const chunks: Uint8Array<ArrayBuffer>[] = []
             let received = 0
 
             while (true) {

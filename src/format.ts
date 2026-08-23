@@ -7,7 +7,7 @@ export function useDurationFormat(duration: MaybeRefOrGetter<number>) {
         let rawDuration = toValue(duration)
 
         const totalHours = Math.floor(rawDuration / (60 * 60)) || null
-        rawDuration -= totalHours * (60 * 60)
+        rawDuration -= (totalHours ?? 0) * (60 * 60)
         const totalMinutes = Math.floor(rawDuration / 60)
         rawDuration -= totalMinutes * 60
         const totalSeconds = Math.round(1 * rawDuration)

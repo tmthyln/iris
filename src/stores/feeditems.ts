@@ -8,8 +8,8 @@ export const useFeedItemStore = defineStore('feeditems', {
         cache: {} as Record<string, FeedItemPreview>,
         fullCache: {} as Record<string, FeedItem>,
         adjacentCache: {} as Record<string, AdjacentFeedItems>,
-        inflightFull: {} as Record<string, Promise<FeedItem | null>>,
-        inflightAdjacent: {} as Record<string, Promise<AdjacentFeedItems | null>>,
+        inflightFull: {} as Record<string, Promise<FeedItem | null> | undefined>,
+        inflightAdjacent: {} as Record<string, Promise<AdjacentFeedItems | null> | undefined>,
 
         bookmarked: [] as string[],
         bookmarkedLoadState: 'unloaded' as LoadingState,
@@ -31,7 +31,8 @@ export const useFeedItemStore = defineStore('feeditems', {
     actions: {
         async loadFullItem(guid: string): Promise<FeedItem | null> {
             if (this.fullCache[guid]) return this.fullCache[guid]
-            if (this.inflightFull[guid]) return this.inflightFull[guid]
+            const inflight = this.inflightFull[guid]
+            if (inflight) return inflight
 
             const promise = (async () => {
                 const result = await client.getFeedItem(guid)
@@ -45,7 +46,8 @@ export const useFeedItemStore = defineStore('feeditems', {
         },
         async loadAdjacent(guid: string): Promise<AdjacentFeedItems | null> {
             if (this.adjacentCache[guid]) return this.adjacentCache[guid]
-            if (this.inflightAdjacent[guid]) return this.inflightAdjacent[guid]
+            const inflight = this.inflightAdjacent[guid]
+            if (inflight) return inflight
 
             const promise = (async () => {
                 const result = await client.getAdjacentFeedItems(guid)

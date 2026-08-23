@@ -67,7 +67,7 @@ onMounted(fetchFeedItem)
 
     <h1 class="title is-1">
       <component :is="feedItem?.link ? 'a' : 'span'" :href="feedItem?.link">
-        {{ useUnescapedHTML(feedItem?.title).value }}
+        {{ useUnescapedHTML(feedItem?.title ?? '').value }}
       </component>
     </h1>
     <div class="breadcrumb has-dot-separator subtitle" aria-label="breadcrumbs">
@@ -85,7 +85,7 @@ onMounted(fetchFeedItem)
       </span>
     </div>
 
-    <div class="mb-5" :title="feedItem?.date ? new Date(feedItem.date).toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'}) : ''">Published {{ useTimeAgo(feedItem?.date).value }}</div>
+    <div class="mb-5" :title="feedItem?.date ? new Date(feedItem.date).toLocaleDateString(undefined, {weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'}) : ''">Published {{ useTimeAgo(feedItem?.date ?? 0).value }}</div>
 
     <AudioControls v-if="feedItem" :feed-item="feedItem" show-transcript @open-transcript="transcriptOpen = true"/>
     <TranscriptView v-if="feedItem?.enclosure_url" :feed-item-guid="feedItem.guid" v-model:open="transcriptOpen"/>

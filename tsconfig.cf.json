@@ -13,9 +13,9 @@
     "module": "es2022",
     /* Specify how TypeScript looks up a file from a given module specifier. */
     "moduleResolution": "Bundler",
-    /* Runtime types come from the generated worker-configuration.d.ts (npm run typegen),
-       so no ambient type packages are needed. */
-    "types": [],
+    /* Runtime types come from the generated worker-configuration.d.ts (npm run typegen);
+       vitest/importMeta types the in-source `import.meta.vitest` test blocks. */
+    "types": ["vitest/importMeta"],
     /* Enable importing .json files */
     "resolveJsonModule": true,
 
