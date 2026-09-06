@@ -30,9 +30,12 @@ interface FakeMessage {
     retry: ReturnType<typeof vi.fn>
 }
 
-function message(body: unknown, id = 'msg-1'): FakeMessage {
-    return {id, timestamp: new Date(), attempts: 1, body, ack: vi.fn(), retry: vi.fn()}
+function message(body: unknown, id = 'msg-1', attempts = 1): FakeMessage {
+    return {id, timestamp: new Date(), attempts, body, ack: vi.fn(), retry: vi.fn()}
 }
+
+/** A D1 binding whose every statement fails, so any task that touches the database throws. */
+const brokenDb = {prepare: () => { throw new Error('D1 unavailable') }} as unknown as D1Database
 
 function batch(messages: FakeMessage[]) {
     return {queue: 'iris-feed-proc-prod', messages, ackAll: vi.fn(), retryAll: vi.fn()} as unknown as MessageBatch<FeedProcessingTask>
@@ -47,6 +50,8 @@ async function transcriptStatus(id: number) {
 beforeEach(async () => {
     await resetStorage()
     vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 afterEach(() => {
     vi.unstubAllGlobals()
@@ -183,6 +188,35 @@ describe('queue', () => {
         expect(messages.every(m => m.ack.mock.calls.length === 1)).toBe(true)
         expect(await countRows('feed_item')).toBe(2)
     })
+
+    test('retries a message whose task fails and still processes the rest of the batch', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const {env: testenv} = testEnv({DB: brokenDb})
+        const messages = [
+            message({type: 'refresh-feed', feedGuid: 'feed-a'}, 'first'),
+            message({type: 'unknown-task'}, 'second'),
+            message({type: 'refresh-feed', feedGuid: 'feed-b'}, 'third'),
+        ]
+
+        await expect(worker.queue(batch(messages), testenv, createExecutionContext())).resolves.toBeUndefined()
+
+        expect(messages[0].retry).toHaveBeenCalledWith({delaySeconds: 60})
+        expect(messages[0].ack).not.toHaveBeenCalled()
+        expect(messages[1].ack).toHaveBeenCalledTimes(1)
+        expect(messages[1].retry).not.toHaveBeenCalled()
+        expect(messages[2].retry).toHaveBeenCalledWith({delaySeconds: 60})
+        expect(messages[2].ack).not.toHaveBeenCalled()
+        expect(error).toHaveBeenCalledTimes(2)
+    })
+
+    test('backs off longer on each redelivery of a failing message', async () => {
+        const {env: testenv} = testEnv({DB: brokenDb})
+        const msg = message({type: 'refresh-feed', feedGuid: 'feed-a'}, 'msg-1', 3)
+
+        await worker.queue(batch([msg]), testenv, createExecutionContext())
+
+        expect(msg.retry).toHaveBeenCalledWith({delaySeconds: 240})
+    })
 })
 
 describe('scheduled', () => {
@@ -200,6 +234,8 @@ describe('scheduled', () => {
             {type: 'refresh-feed', feedGuid: 'feed-a'},
             {type: 'refresh-feed', feedGuid: 'feed-b'},
         ])
+        expect(queue.sendBatch).toHaveBeenCalledTimes(1)
+        expect(queue.send).not.toHaveBeenCalled()
     })
 
     test('sends nothing when there are no feeds', async () => {
@@ -208,5 +244,6 @@ describe('scheduled', () => {
         await worker.scheduled(controller, testenv, createExecutionContext())
 
         expect(queue.send).not.toHaveBeenCalled()
+        expect(queue.sendBatch).not.toHaveBeenCalled()
     })
 })

@@ -48,7 +48,13 @@ producers = [
     { binding = "FEED_PROCESSING_QUEUE", queue = "iris-feed-proc-prod" }
 ]
 consumers = [
-    { queue = "iris-feed-proc-prod" }
+    # A failed message is redelivered with exponential backoff (src/service.ts)
+    # up to max_retries times, then parked on the dead-letter queue (created
+    # once with `wrangler queues create iris-feed-proc-prod-dlq`) instead of
+    # being dropped. max_concurrency caps parallel consumer invocations so the
+    # hourly refresh of every feed doesn't stampede upstream hosts; messages
+    # within a batch are processed one at a time.
+    { queue = "iris-feed-proc-prod", max_retries = 3, dead_letter_queue = "iris-feed-proc-prod-dlq", max_concurrency = 2 }
 ]
 
 [triggers]
