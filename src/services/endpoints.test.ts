@@ -757,15 +757,37 @@ describe('command routes', () => {
         expect(queue.messages.map(m => m.body)).toEqual([{type: 'plan-feed-archives', feedGuid: 'feed-a'}])
     })
 
-    test('refresh-all-feeds refreshes every active feed inline', async () => {
+    test('refresh-all-feeds enqueues a refresh task for every active feed', async () => {
         await seedFeed({guid: 'feed-a'})
         await seedFeed({guid: 'feed-b'})
         await seedFeed({guid: 'feed-inactive', active: false})
-        const {env} = testEnv()
+        const {env, queue} = testEnv()
 
         const response = await app.request('/api/command/refresh-all-feeds', {method: 'POST'}, env)
-        expect(response.status).toBe(200)
-        expect(await read<unknown>(response)).toEqual({refreshedCount: 2})
+        expect(response.status).toBe(202)
+        expect(await read<unknown>(response)).toEqual({queuedCount: 2})
+        expect(queue.messages.map(m => m.body).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))).toEqual([
+            {type: 'refresh-feed', feedGuid: 'feed-a'},
+            {type: 'refresh-feed', feedGuid: 'feed-b'},
+        ])
+    })
+
+    test('refresh-all-feeds refreshes inline where TASK_RUNNER is "inline"', async () => {
+        const sourceUrl = 'https://example.com/feed.xml'
+        await seedFeed({guid: 'feed-a'})
+        await seedFeedSource('feed-a', {feed_url: sourceUrl})
+        mockFetch({[sourceUrl]: new Response(buildRss({
+            title: 'Example', guid: 'feed-a', selfLink: sourceUrl,
+            items: [{guid: 'item-1', title: 'One', pubDate: 'Mon, 01 Jan 2024 00:00:00 GMT'}],
+        }))})
+        const {env, queue} = testEnv({TASK_RUNNER: 'inline'})
+
+        const response = await app.request('/api/command/refresh-all-feeds', {method: 'POST'}, env)
+        expect(response.status).toBe(202)
+        expect(await read<unknown>(response)).toEqual({queuedCount: 1})
+        expect(queue.messages).toEqual([])
+        expect(await countRows('feed_file')).toBe(1)
+        expect(await countRows('feed_item')).toBe(1)
     })
 })
 

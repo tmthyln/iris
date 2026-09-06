@@ -42,6 +42,27 @@ export async function enqueueTasks(queue: Queue, tasks: readonly FeedProcessingT
 }
 
 /**
+ * Hands tasks to the queue consumer, or, where there is none (Previews set
+ * TASK_RUNNER = "inline"), runs them here one at a time before returning.
+ * Failures are logged and skipped, as the consumer would. Inline callers hold
+ * their request open for the whole run, so this is for Preview-sized loads;
+ * production always goes through the queue.
+ */
+export async function dispatchTasks(env: Env, tasks: readonly FeedProcessingTask[]): Promise<void> {
+    if (env.TASK_RUNNER !== 'inline') {
+        await enqueueTasks(env.FEED_PROCESSING_QUEUE, tasks)
+        return
+    }
+    for (const task of tasks) {
+        try {
+            await runTask(task, env)
+        } catch (err) {
+            console.error(`Inline ${task.type} task failed`, err)
+        }
+    }
+}
+
+/**
  * Delay before redelivering a message that failed on its `attempts`-th
  * delivery: one minute, doubling each time, capped at fifteen minutes.
  */

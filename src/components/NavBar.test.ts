@@ -131,7 +131,7 @@ describe('commands', () => {
 
     it('runs "refresh all" from the palette', async () => {
         vi.spyOn(console, 'log').mockImplementation(() => undefined)
-        stubClient('refreshAllFeeds', ok({refreshedCount: 4}))
+        stubClient('refreshAllFeeds', ok({queuedCount: 4}))
         const {wrapper} = await mountApp(NavBar)
 
         const input = await openSearch(wrapper)

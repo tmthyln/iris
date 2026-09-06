@@ -174,7 +174,8 @@ const client = {
         return request(o => rpc.api.command['plan-feed-archives'][':guid'].$post({param: {guid: param(feedGuid)}}, o), {parse: 'none'})
     },
     refreshAllFeeds() {
-        // Refreshes every feed inline on the server; this can take a while.
+        // Production enqueues the refreshes and answers at once; a Preview runs
+        // them inside the request (TASK_RUNNER = "inline"), which can take a while.
         return request(o => rpc.api.command['refresh-all-feeds'].$post(undefined, o), {timeoutMs: 120000})
     },
     getNotifications() {

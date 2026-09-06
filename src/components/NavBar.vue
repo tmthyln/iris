@@ -158,7 +158,7 @@ async function executeCommand(command: string) {
         const result = await client.refreshAllFeeds()
         if (result.ok) {
             commandStatus.value = 'success'
-            console.log(`Refreshed ${result.data.refreshedCount} feeds`)
+            console.log(`Queued a refresh for ${result.data.queuedCount} feeds`)
         } else {
             commandStatus.value = 'error'
         }

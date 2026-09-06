@@ -1,7 +1,7 @@
 import {env} from 'cloudflare:workers'
 import {afterEach, describe, expect, test, vi} from 'vitest'
-import {enqueueTasks, retryDelaySeconds, runTask} from './tasks'
-import {fakeQueue} from './testing/fixtures'
+import {dispatchTasks, enqueueTasks, retryDelaySeconds, runTask} from './tasks'
+import {fakeQueue, testEnv} from './testing/fixtures'
 import type {FeedProcessingTask, RefreshFeedTask} from './types'
 
 afterEach(() => {
@@ -36,6 +36,38 @@ describe('enqueueTasks', () => {
         await enqueueTasks(queue as unknown as Queue, [])
 
         expect(queue.sendBatch).not.toHaveBeenCalled()
+    })
+})
+
+describe('dispatchTasks', () => {
+    const tasks: RefreshFeedTask[] = [
+        {type: 'refresh-feed', feedGuid: 'feed-a'},
+        {type: 'refresh-feed', feedGuid: 'feed-b'},
+    ]
+
+    test('enqueues the tasks where TASK_RUNNER is "queue"', async () => {
+        const {env: testenv, queue} = testEnv({TASK_RUNNER: 'queue'})
+
+        await dispatchTasks(testenv, tasks)
+
+        expect(queue.messages.map(m => m.body)).toEqual(tasks)
+    })
+
+    test('runs the tasks one by one where TASK_RUNNER is "inline", logging and skipping failures', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const brokenDb = {prepare: () => { throw new Error('D1 unavailable') }} as unknown as D1Database
+        const {env: testenv, queue} = testEnv({TASK_RUNNER: 'inline', DB: brokenDb})
+
+        await expect(dispatchTasks(testenv, [
+            tasks[0],
+            {type: 'unknown-task'} as unknown as FeedProcessingTask,
+            tasks[1],
+        ])).resolves.toBeUndefined()
+
+        expect(error).toHaveBeenCalledTimes(2)
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(queue.messages).toEqual([])
     })
 })
 

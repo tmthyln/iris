@@ -42,7 +42,8 @@ import type { RefreshFeedTask, PlanFeedArchivesTask, TranscribeFeedItemTask } fr
 import {fetchRssFile, parseRssText, FETCH_USER_AGENT} from "./utils/files";
 import {fanOutPushWithContext, loadPushFanOutContext} from "./utils/push";
 import {getQueue} from "./queue";
-import {refreshFeed, TRANSCRIPT_DEFAULT_MODEL} from "./flows";
+import {TRANSCRIPT_DEFAULT_MODEL} from "./flows";
+import {dispatchTasks} from "./tasks";
 
 type Bindings = {Bindings: Env}
 
@@ -569,12 +570,13 @@ const commandRoutes = new Hono<Bindings>()
     .post('/command/refresh-all-feeds', async (c) => {
         const feeds = await getFeeds(c.env.DB)
 
-        for (const feed of feeds) {
-            await refreshFeed(feed.guid, c.env)
-        }
-        //await Promise.all(feeds.map(feed => refreshFeed(feed.guid, c.env)))
+        // Same tasks the hourly cron enqueues; the consumer does the work.
+        await dispatchTasks(c.env, feeds.map((feed): RefreshFeedTask => ({
+            type: 'refresh-feed',
+            feedGuid: feed.guid,
+        })))
 
-        return c.json({refreshedCount: feeds.length}, 200)
+        return c.json({queuedCount: feeds.length}, 202)
     })
 
 /******************************************************************************

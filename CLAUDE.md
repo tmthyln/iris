@@ -41,7 +41,8 @@ npm run deploy
 npm run preview
 npm run preview -- --name staging
 
-# Generate Cloudflare Worker types (worker-configuration.d.ts)
+# Generate Cloudflare Worker types (worker-configuration.d.ts); vars are typed as
+# plain strings (--strict-vars=false) because [previews] overrides their values
 npm run typegen
 
 # Apply D1 migrations (production / staging DB used by Previews)
@@ -77,13 +78,13 @@ Frontend and backend share `src/` but are **separated by TypeScript project refe
 - Local dev uses the top-level (production-named) bindings, but D1/R2/Queues/Durable Objects are all local Miniflare state under `.wrangler/state/`; only `AI` is remote
 - `access.dev` at the top level of `wrangler.toml` simulates a Cloudflare Access identity locally (`ctx.access` in the Worker); `aud` is the Access application's audience tag; the Worker doesn't read it yet
 - Production build/deploy is two steps: `vite build` to `dist/`, then `wrangler deploy` (the plugin writes `dist/<worker>/wrangler.json` and a `.wrangler/deploy/config.json` redirect, which is what `wrangler deploy`/`wrangler preview` pick up)
-- Previews: `vite build` then `wrangler preview [--name <name>]` deploys the checkout as a Preview at `<name>.iris.timothylin.me` with the `[previews]` bindings (staging D1/R2/Queue). Cron and the queue consumer don't run in Previews. Previews are the replacement for the old `staging` Wrangler environment; there is no `[env.*]` config anymore
+- Previews: `vite build` then `wrangler preview [--name <name>]` deploys the checkout as a Preview at `<name>.iris.timothylin.me` with the `[previews]` bindings (staging D1/R2/Queue). Cron and the queue consumer don't run in Previews; the `[previews]` block sets `TASK_RUNNER = "inline"` so `refresh-all-feeds` still does its work inside the request, but the other producers enqueue with nothing consuming (#247). Previews are the replacement for the old `staging` Wrangler environment; there is no `[env.*]` config anymore
 
 ### Backend (Cloudflare Workers)
 - **Entry Point:** `src/service.ts` — exports `fetch` (Hono app), `queue` (consumer), and `scheduled` (cron) handlers
 - **API Framework:** Hono for routing (`src/services/endpoints.ts`)
 - **Request flow:** `endpoints.ts` → `flows.ts` (business logic) → `crud.ts` (DB ops) → `models.ts` (entities) → D1/R2
-- **Background processing:** Hourly cron → `scheduled()` → sends feed refresh tasks to Queue → `queue()` consumer → `refreshFeed()` flow
+- **Background processing:** Hourly cron → `scheduled()` → sends feed refresh tasks to Queue → `queue()` consumer → `refreshFeed()` flow. `src/services/tasks.ts` holds the per-task dispatcher (`runTask`), the batched producer (`enqueueTasks`) and `dispatchTasks()`, which endpoints use to hand off tasks: it enqueues where `TASK_RUNNER` is `"queue"` and runs the tasks inside the request where it is `"inline"` (Previews, which have no consumer)
 - **Durable Objects:** `ItemQueue` in `src/services/queue.ts` — persistent queue with SQL storage for podcast playback queue
 
 ### Type Layers

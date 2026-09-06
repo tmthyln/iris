@@ -23,7 +23,9 @@ route = { pattern = "iris.timothylin.me", custom_domain = true, previews_enabled
 # the Access application's audience tag. The Worker doesn't read ctx.access yet.
 access.dev = { aud = "e3c66cb0433ad4776321e24cef9955fa120c58fb480896f6f11858112316e1e3", identity = { email = "tmthylin@gmail.com" } }
 
-vars = { VAPID_PUBLIC_KEY = "BOK1Re3FBQ61ST0DZBm_maYRzOjLseRYqdFroBEo6qxS58_QCYZT0twm-HT-OpbjuKEcaF1VYPWbrevWukSaOOw", VAPID_SUBJECT = "https://iris.timothylin.me" }
+# TASK_RUNNER is how endpoints hand off feed-processing tasks (src/services/tasks.ts):
+# "queue" where a consumer runs (production, local dev), "inline" where none does (Previews).
+vars = { VAPID_PUBLIC_KEY = "BOK1Re3FBQ61ST0DZBm_maYRzOjLseRYqdFroBEo6qxS58_QCYZT0twm-HT-OpbjuKEcaF1VYPWbrevWukSaOOw", VAPID_SUBJECT = "https://iris.timothylin.me", TASK_RUNNER = "queue" }
 ai = { binding = "AI", remote = true }
 # preview_database_id points at the staging DB so `wrangler d1 ... --preview`
 # (e.g. migrations) targets the database the Previews use.
@@ -68,11 +70,13 @@ crons = ["17 * * * *"]  # run every hour, 17 minutes past the hour
 # Preview automatically.
 #
 # Not covered by Previews: the cron trigger and the queue consumer only run in
-# production, so a Preview can enqueue feed-refresh / transcript tasks but
-# nothing consumes them. The VAPID_PRIVATE_KEY secret is set once with
+# production. TASK_RUNNER = "inline" makes refresh-all-feeds run its tasks
+# inside the request instead; the other producers (single-feed refresh,
+# archive planning, transcription) still enqueue with nothing consuming (#247).
+# The VAPID_PRIVATE_KEY secret is set once with
 # `wrangler preview base-config secret put VAPID_PRIVATE_KEY`.
 [previews]
-vars = { VAPID_PUBLIC_KEY = "BJvzRbZFRCGrzyQm--FcpBqLpsB9K2i9_yeIEemKETc7LwOela3ZCe4Yq534sc0TxbomT6bUQYkCFzVBzuP35Uk", VAPID_SUBJECT = "https://staging.iris.timothylin.me" }
+vars = { VAPID_PUBLIC_KEY = "BJvzRbZFRCGrzyQm--FcpBqLpsB9K2i9_yeIEemKETc7LwOela3ZCe4Yq534sc0TxbomT6bUQYkCFzVBzuP35Uk", VAPID_SUBJECT = "https://staging.iris.timothylin.me", TASK_RUNNER = "inline" }
 ai = { binding = "AI", remote = true }
 d1_databases = [
     { binding = "DB", database_name = "iris-db-staging", database_id = "6dc72db6-7c48-4049-ba75-ac83ae139b6f" }

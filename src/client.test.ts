@@ -150,9 +150,9 @@ describe('commands', () => {
     })
 
     it('refreshAllFeeds parses the refresh summary', async () => {
-        stubFetch({refreshedCount: 7})
+        stubFetch({queuedCount: 7})
         const result = await client.refreshAllFeeds()
-        expect(result.ok && result.data).toEqual({refreshedCount: 7})
+        expect(result.ok && result.data).toEqual({queuedCount: 7})
     })
 })
 
