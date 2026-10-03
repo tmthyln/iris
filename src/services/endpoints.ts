@@ -151,6 +151,7 @@ const feedRoutes = new Hono<Bindings>()
             const messages: Record<string, string> = {
                 'blocked-by-bot-protection': 'URL is protected by bot detection. Try providing the direct RSS feed URL instead.',
                 'no-rss-link-found': 'No RSS feed found at the provided URL.',
+                'too-many-feed-links': 'Gave up following feed links from the provided URL. Try providing the direct RSS feed URL instead.',
             }
             const message = messages[fetchResult.reason] ?? 'Provided URL was not accessible.'
             return apiError(c, 502, message)

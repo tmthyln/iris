@@ -11,11 +11,19 @@ const RSS_ACCEPT_MIMES = [
     'text/xml;q=0.4',
 ].join(', ')
 
-export async function fetchRssFile(url: string): Promise<FetchFileResult> {
+/** How many times `fetchRssFile` follows a known-site rewrite or an HTML `<link>` before giving up (pages can link in a cycle). */
+const MAX_FEED_LINK_HOPS = 3
+
+export async function fetchRssFile(url: string, hops = 0): Promise<FetchFileResult> {
+    if (hops > MAX_FEED_LINK_HOPS) {
+        console.log(`[fetchRssFile] Gave up after following ${MAX_FEED_LINK_HOPS} feed links (url: ${url})`)
+        return {status: 'error', content: null, reason: 'too-many-feed-links'}
+    }
+
     const knownFeedUrl = resolveKnownFeedUrl(url)
     if (knownFeedUrl) {
         console.log(`[fetchRssFile] Resolved known feed URL: ${url} -> ${knownFeedUrl}`)
-        return fetchRssFile(knownFeedUrl)
+        return fetchRssFile(knownFeedUrl, hops + 1)
     }
 
     const response = await fetch(url, {
@@ -45,10 +53,10 @@ export async function fetchRssFile(url: string): Promise<FetchFileResult> {
                 return {status: 'error', content: null, reason: 'blocked-by-bot-protection'}
             }
 
-            const rssUrl = extractRssLinkFromHtml(text)
+            const rssUrl = extractRssLinkFromHtml(text, response.url || url)
             if (rssUrl) {
                 console.log(`[fetchRssFile] Found RSS link in HTML: ${rssUrl}`)
-                return fetchRssFile(rssUrl)
+                return fetchRssFile(rssUrl, hops + 1)
             }
         }
     } else {
@@ -70,10 +78,10 @@ export async function fetchRssFile(url: string): Promise<FetchFileResult> {
             return {status: 'error', content: null, reason: 'blocked-by-bot-protection'}
         }
 
-        const rssUrl = extractRssLinkFromHtml(htmlText)
+        const rssUrl = extractRssLinkFromHtml(htmlText, htmlResponse.url || url)
         if (rssUrl) {
             console.log(`[fetchRssFile] Found RSS link in HTML fallback: ${rssUrl}`)
-            return fetchRssFile(rssUrl)
+            return fetchRssFile(rssUrl, hops + 1)
         }
     }
 
@@ -86,7 +94,8 @@ export async function fetchRssFile(url: string): Promise<FetchFileResult> {
 
 const RSS_LINK_TYPES = ['application/rss+xml', 'application/atom+xml']
 
-function extractRssLinkFromHtml(html: string): string | null {
+/** Returns the page's first RSS/Atom `<link>` as an absolute http(s) URL, resolving its href against `pageUrl`. */
+function extractRssLinkFromHtml(html: string, pageUrl: string): string | null {
     const parser = new XMLParser({
         ignoreAttributes: false,
         allowBooleanAttributes: true,
@@ -106,10 +115,16 @@ function extractRssLinkFromHtml(html: string): string | null {
         const type = link['@_type']
         const href = link['@_href']
         if (typeof type === 'string' && RSS_LINK_TYPES.includes(type) && typeof href === 'string' && href) {
-            return href
+            const resolved = resolveHref(href, pageUrl)
+            if (resolved) return resolved
         }
     }
     return null
+}
+
+function resolveHref(href: string, baseUrl: string): string | null {
+    const url = URL.parse(href, baseUrl)
+    return url && (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : null
 }
 
 const KNOWN_FEED_URL_RULES: {pattern: RegExp, toFeedUrl: (match: RegExpMatchArray) => string}[] = [
@@ -211,19 +226,24 @@ if (import.meta.vitest) {
     })
 
     describe('extractRssLinkFromHtml', () => {
+        const PAGE_URL = 'https://example.com/blog/post'
+        const pageLinking = (href: string) => `<!DOCTYPE html><html><head>
+                <link rel="alternate" type="application/rss+xml" href="${href}">
+            </head><body></body></html>`
+
         it('extracts RSS link from standard HTML head', () => {
             const html = `<!DOCTYPE html><html><head>
                 <title>My Blog</title>
                 <link rel="alternate" type="application/rss+xml" title="RSS" href="https://example.com/feed.xml">
             </head><body></body></html>`
-            expect(extractRssLinkFromHtml(html)).toBe('https://example.com/feed.xml')
+            expect(extractRssLinkFromHtml(html, PAGE_URL)).toBe('https://example.com/feed.xml')
         })
 
         it('extracts Atom link', () => {
             const html = `<!DOCTYPE html><html><head>
                 <link rel="alternate" type="application/atom+xml" title="Atom" href="https://example.com/atom.xml">
             </head><body></body></html>`
-            expect(extractRssLinkFromHtml(html)).toBe('https://example.com/atom.xml')
+            expect(extractRssLinkFromHtml(html, PAGE_URL)).toBe('https://example.com/atom.xml')
         })
 
         it('prefers first RSS link when multiple exist', () => {
@@ -231,7 +251,7 @@ if (import.meta.vitest) {
                 <link rel="alternate" type="application/rss+xml" href="https://example.com/rss1.xml">
                 <link rel="alternate" type="application/rss+xml" href="https://example.com/rss2.xml">
             </head><body></body></html>`
-            expect(extractRssLinkFromHtml(html)).toBe('https://example.com/rss1.xml')
+            expect(extractRssLinkFromHtml(html, PAGE_URL)).toBe('https://example.com/rss1.xml')
         })
 
         it('ignores non-RSS link elements', () => {
@@ -239,7 +259,7 @@ if (import.meta.vitest) {
                 <link rel="stylesheet" type="text/css" href="/style.css">
                 <link rel="alternate" type="application/rss+xml" href="https://example.com/feed.xml">
             </head><body></body></html>`
-            expect(extractRssLinkFromHtml(html)).toBe('https://example.com/feed.xml')
+            expect(extractRssLinkFromHtml(html, PAGE_URL)).toBe('https://example.com/feed.xml')
         })
 
         it('returns null when no RSS link exists', () => {
@@ -247,16 +267,27 @@ if (import.meta.vitest) {
                 <title>No Feed</title>
                 <link rel="stylesheet" type="text/css" href="/style.css">
             </head><body></body></html>`
-            expect(extractRssLinkFromHtml(html)).toBeNull()
+            expect(extractRssLinkFromHtml(html, PAGE_URL)).toBeNull()
         })
 
         it('returns null when head is missing', () => {
             const html = `<!DOCTYPE html><html><body><p>No head</p></body></html>`
-            expect(extractRssLinkFromHtml(html)).toBeNull()
+            expect(extractRssLinkFromHtml(html, PAGE_URL)).toBeNull()
+        })
+
+        it('resolves root-relative, relative and protocol-relative hrefs against the page URL', () => {
+            expect(extractRssLinkFromHtml(pageLinking('/feed.xml'), PAGE_URL)).toBe('https://example.com/feed.xml')
+            expect(extractRssLinkFromHtml(pageLinking('feed.xml'), PAGE_URL)).toBe('https://example.com/blog/feed.xml')
+            expect(extractRssLinkFromHtml(pageLinking('//feeds.example.net/rss'), PAGE_URL)).toBe('https://feeds.example.net/rss')
+        })
+
+        it('skips links that do not resolve to an http(s) URL', () => {
+            expect(extractRssLinkFromHtml(pageLinking('javascript:alert(1)'), PAGE_URL)).toBeNull()
+            expect(extractRssLinkFromHtml(pageLinking('http://[bad'), PAGE_URL)).toBeNull()
         })
 
         it('returns null for non-HTML content', () => {
-            expect(extractRssLinkFromHtml('<?xml version="1.0"?><rss><channel></channel></rss>'))
+            expect(extractRssLinkFromHtml('<?xml version="1.0"?><rss><channel></channel></rss>', PAGE_URL))
                 .toBeNull()
         })
     })

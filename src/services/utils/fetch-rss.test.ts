@@ -96,6 +96,26 @@ describe('fetchRssFile', () => {
             expect(calls.map(c => c.url)).toEqual([PAGE_URL, FEED_URL])
         })
 
+        test('resolves a relative RSS link against the page URL', async () => {
+            const page = PAGE_WITH_LINK.replace(FEED_URL, '/feed.xml')
+            const {calls} = mockFetch({[PAGE_URL]: html(page), [FEED_URL]: rss()})
+
+            const result = await fetchRssFile(PAGE_URL)
+
+            expect(result.status).toBe('success')
+            if (result.status === 'success') expect(result.metadata.requestUrl).toBe(FEED_URL)
+            expect(calls.map(c => c.url)).toEqual([PAGE_URL, FEED_URL])
+        })
+
+        test('gives up when pages link to each other in a cycle', async () => {
+            const OTHER_URL = 'https://example.com/other'
+            const linking = (href: string) => html(PAGE_WITH_LINK.replace(FEED_URL, href))
+            const {calls} = mockFetch({[PAGE_URL]: linking('/other'), [OTHER_URL]: linking('/')})
+
+            expect(await fetchRssFile(PAGE_URL)).toEqual({status: 'error', content: null, reason: 'too-many-feed-links'})
+            expect(calls.map(c => c.url)).toEqual([PAGE_URL, OTHER_URL, PAGE_URL, OTHER_URL])
+        })
+
         test('without a link, refetches as HTML and follows the link found there', async () => {
             const {calls} = routes({
                 [PAGE_URL]: {rss: html(PAGE_WITHOUT_LINK), html: html(PAGE_WITH_LINK)},
