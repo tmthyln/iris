@@ -88,6 +88,12 @@ function optionalNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+// "identity" (or no content-encoding) means the body is the origin's bytes as-is.
+function isContentEncoded(response: Response): boolean {
+    const encoding = response.headers.get('content-encoding')?.trim().toLowerCase()
+    return Boolean(encoding) && encoding !== 'identity'
+}
+
 // Routes are chained (and composed with .route() below) so the app's type carries the full route
 // schema: src/types.ts and src/client.ts derive the frontend's DTO and request types from AppType.
 
@@ -334,13 +340,30 @@ const feedItemRoutes = new Hono<Bindings>()
 
         const upstreamHeaders = new Headers()
         upstreamHeaders.set('user-agent', FETCH_USER_AGENT)
+        // Ask for the raw bytes: byte ranges and lengths only line up for an unencoded body.
+        upstreamHeaders.set('accept-encoding', 'identity')
         const range = c.req.header('range')
         if (range) upstreamHeaders.set('range', range)
 
-        const upstream = await fetch(upstreamUrl.toString(), {headers: upstreamHeaders})
+        let upstream = await fetch(upstreamUrl.toString(), {headers: upstreamHeaders})
+
+        // Workers decompresses a content-encoded upstream body transparently (content-encoding
+        // is not forwarded, so the client receives the decoded bytes). If the origin compressed
+        // anyway, its byte counts and ranges describe the encoded body, not the one streamed
+        // below. A compressed partial body cannot be served at all: decoded, it is not the
+        // requested range, and a slice from mid-stream does not decode. So fetch the whole
+        // file again and serve it as a plain 200.
+        if (upstream.status === 206 && isContentEncoded(upstream)) {
+            await upstream.body?.cancel()
+            upstreamHeaders.delete('range')
+            upstream = await fetch(upstreamUrl.toString(), {headers: upstreamHeaders})
+        }
+        // Without the byte counts the client streams the body to its end instead of
+        // truncating it or waiting for bytes that never come.
+        const byteHeaders = isContentEncoded(upstream) ? [] : ['content-length', 'content-range', 'accept-ranges']
 
         const headers = new Headers()
-        for (const name of ['content-type', 'content-length', 'accept-ranges', 'content-range', 'last-modified', 'etag']) {
+        for (const name of ['content-type', 'last-modified', 'etag', ...byteHeaders]) {
             const value = upstream.headers.get(name)
             if (value) headers.set(name, value)
         }

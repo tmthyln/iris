@@ -476,7 +476,81 @@ describe('GET /api/feeditem/:guid/media', () => {
         expect(calls).toHaveLength(1)
         expect(calls[0].url).toBe('https://cdn.example.com/ep.mp3')
         expect(calls[0].headers.get('user-agent')).toBe(FETCH_USER_AGENT)
+        expect(calls[0].headers.get('accept-encoding')).toBe('identity')
         expect(calls[0].headers.get('range')).toBe('bytes=0-4')
+    })
+
+    test('refetches a content-encoded partial body in full and serves it as a 200 without byte counts', async () => {
+        // Workers decodes a compressed upstream body before handing it over, so the origin's
+        // content-length/content-range/accept-ranges describe bytes we do not send, and a
+        // decoded slice is not the range the client asked for.
+        await seedFeed({guid: 'feed-a'})
+        await seedFeedItem('feed-a', {guid: 'item-gzip', enclosure_url: 'https://cdn.example.com/gzip.mp3'})
+        await seedFeedItem('feed-a', {guid: 'item-identity', enclosure_url: 'https://cdn.example.com/identity.mp3'})
+        const upstreamResponse = (request: Request, encoding: string) => request.headers.has('range')
+            ? new Response('audio', {status: 206, headers: {
+                'content-type': 'audio/mpeg',
+                'content-encoding': encoding,
+                'content-length': '5',
+                'accept-ranges': 'bytes',
+                'content-range': 'bytes 0-4/100',
+                'etag': '"abc"',
+            }})
+            : new Response('the whole audio file', {status: 200, headers: {
+                'content-type': 'audio/mpeg',
+                'content-encoding': encoding,
+                'content-length': '20',
+                'accept-ranges': 'bytes',
+                'etag': '"abc"',
+            }})
+        const {calls} = mockFetch({
+            'https://cdn.example.com/gzip.mp3': request => upstreamResponse(request, 'GZIP'),
+            'https://cdn.example.com/identity.mp3': request => upstreamResponse(request, 'identity'),
+        })
+        const {env} = testEnv()
+
+        const decoded = await app.request('/api/feeditem/item-gzip/media', {headers: {range: 'bytes=0-4'}}, env)
+        expect(decoded.status).toBe(200)
+        expect(await decoded.text()).toBe('the whole audio file')
+        expect(decoded.headers.get('content-type')).toBe('audio/mpeg')
+        expect(decoded.headers.get('etag')).toBe('"abc"')
+        expect(decoded.headers.get('content-encoding')).toBeNull()
+        expect(decoded.headers.get('content-length')).toBeNull()
+        expect(decoded.headers.get('content-range')).toBeNull()
+        expect(decoded.headers.get('accept-ranges')).toBeNull()
+        expect(calls.map(call => call.headers.get('range'))).toEqual(['bytes=0-4', null])
+        expect(calls[1].headers.get('accept-encoding')).toBe('identity')
+
+        // "identity" is not a transformation: the partial response and its byte counts stand.
+        calls.length = 0
+        const raw = await app.request('/api/feeditem/item-identity/media', {headers: {range: 'bytes=0-4'}}, env)
+        expect(raw.status).toBe(206)
+        expect(await raw.text()).toBe('audio')
+        expect(raw.headers.get('content-length')).toBe('5')
+        expect(raw.headers.get('content-range')).toBe('bytes 0-4/100')
+        expect(raw.headers.get('accept-ranges')).toBe('bytes')
+        expect(calls).toHaveLength(1)
+    })
+
+    test('drops the byte-count headers from a content-encoded full body', async () => {
+        await seedFeed({guid: 'feed-a'})
+        await seedFeedItem('feed-a', {guid: 'item-a', enclosure_url: 'https://cdn.example.com/ep.mp3'})
+        const {calls} = mockFetch({
+            'https://cdn.example.com/ep.mp3': new Response('audio', {status: 200, headers: {
+                'content-type': 'audio/mpeg',
+                'content-encoding': 'br',
+                'content-length': '3',
+                'accept-ranges': 'bytes',
+            }}),
+        })
+        const {env} = testEnv()
+
+        const response = await app.request('/api/feeditem/item-a/media', {}, env)
+        expect(response.status).toBe(200)
+        expect(await response.text()).toBe('audio')
+        expect(response.headers.get('content-length')).toBeNull()
+        expect(response.headers.get('accept-ranges')).toBeNull()
+        expect(calls).toHaveLength(1)
     })
 
     test('does not forward a range header when the client sent none', async () => {
