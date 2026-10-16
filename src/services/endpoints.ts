@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { validator } from 'hono/validator';
+import { createMiddleware } from 'hono/factory';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
     ClientFeed,
@@ -44,6 +45,7 @@ import {fanOutPushWithContext, loadPushFanOutContext} from "./utils/push";
 import {getQueue} from "./queue";
 import {TRANSCRIPT_DEFAULT_MODEL} from "./flows";
 import {dispatchTasks} from "./tasks";
+import {log, sanitizeId, traced, withLogContext} from "./utils/log";
 
 type Bindings = {Bindings: Env}
 
@@ -161,15 +163,15 @@ const feedRoutes = new Hono<Bindings>()
         // look up feed source by URL,
         const existingFeedSource = await ServerFeedSource.get(db, metadata.requestUrl)
         if (existingFeedSource) {
-            await queue.send({
+            await queue.send(traced({
                 type: 'refresh-feed',
                 feedGuid: existingFeedSource.referenced_feed,
-            } satisfies RefreshFeedTask)
+            } satisfies RefreshFeedTask))
 
-            await queue.send({
+            await queue.send(traced({
                 type: 'plan-feed-archives',
                 feedGuid: existingFeedSource.referenced_feed,
-            } satisfies PlanFeedArchivesTask)
+            } satisfies PlanFeedArchivesTask))
 
             return c.json({message: 'Feed already exists, refreshing feed...'}, 202)
         }
@@ -203,10 +205,10 @@ const feedRoutes = new Hono<Bindings>()
             return entity.persistTo(db)
         }))
 
-        await queue.send({
+        await queue.send(traced({
             type: 'plan-feed-archives',
             feedGuid: feed.guid,
-        } satisfies PlanFeedArchivesTask)
+        } satisfies PlanFeedArchivesTask))
 
         return c.json({message: 'Feed loaded.'}, 200)
     })
@@ -346,7 +348,13 @@ const feedItemRoutes = new Hono<Bindings>()
         const range = c.req.header('range')
         if (range) upstreamHeaders.set('range', range)
 
-        let upstream = await fetch(upstreamUrl.toString(), {headers: upstreamHeaders})
+        let upstream: Response
+        try {
+            upstream = await fetch(upstreamUrl.toString(), {headers: upstreamHeaders})
+        } catch (err) {
+            log.error('Media proxy: upstream fetch failed', {feedItemGuid: guid, enclosureUrl: feedItem.enclosure_url, range, error: err})
+            return apiError(c, 502, `Upstream fetch failed: ${err instanceof Error ? err.message : String(err)}`)
+        }
 
         // Workers decompresses a content-encoded upstream body transparently (content-encoding
         // is not forwarded, so the client receives the decoded bytes). If the origin compressed
@@ -354,10 +362,28 @@ const feedItemRoutes = new Hono<Bindings>()
         // below. A compressed partial body cannot be served at all: decoded, it is not the
         // requested range, and a slice from mid-stream does not decode. So fetch the whole
         // file again and serve it as a plain 200.
-        if (upstream.status === 206 && isContentEncoded(upstream)) {
+        const refetchedWhole = upstream.status === 206 && isContentEncoded(upstream)
+        if (refetchedWhole) {
             await upstream.body?.cancel()
             upstreamHeaders.delete('range')
             upstream = await fetch(upstreamUrl.toString(), {headers: upstreamHeaders})
+        }
+
+        const upstreamFields = {
+            feedItemGuid: guid,
+            enclosureUrl: feedItem.enclosure_url,
+            finalUrl: upstream.url,
+            range,
+            refetchedWhole,
+            status: upstream.status,
+            contentType: upstream.headers.get('content-type'),
+            contentLength: upstream.headers.get('content-length'),
+            contentEncoding: upstream.headers.get('content-encoding'),
+        }
+        if (upstream.ok) {
+            log.info('Media proxy: upstream responded', upstreamFields)
+        } else {
+            log.warn('Media proxy: upstream returned an error status', upstreamFields)
         }
         // Without the byte counts the client streams the body to its end instead of
         // truncating it or waiting for bytes that never come.
@@ -369,6 +395,8 @@ const feedItemRoutes = new Hono<Bindings>()
             if (value) headers.set(name, value)
         }
 
+        // The body is passed through untouched (and so not observed here): the
+        // client reports a short or failed transfer under this requestId.
         return new Response(upstream.body, {status: upstream.status, headers})
     })
     .get('/feeditem/:guid/transcript', async (c) => {
@@ -405,10 +433,10 @@ const feedItemRoutes = new Hono<Bindings>()
             c.env.DB, guid, model, body.language ?? null,
         )
 
-        await c.env.FEED_PROCESSING_QUEUE.send({
+        await c.env.FEED_PROCESSING_QUEUE.send(traced({
             type: 'transcribe-feed-item',
             transcriptId: transcript.id,
-        } satisfies TranscribeFeedItemTask)
+        } satisfies TranscribeFeedItemTask))
 
         return c.json(new ClientTranscript(transcript), 202)
     })
@@ -570,10 +598,10 @@ const commandRoutes = new Hono<Bindings>()
         const feed = await ServerFeed.get(db, feedGuid)
         if (!feed) return apiError(c, 404, `No feed found with guid: ${feedGuid}`)
 
-        await c.env.FEED_PROCESSING_QUEUE.send({
+        await c.env.FEED_PROCESSING_QUEUE.send(traced({
             type: 'refresh-feed',
             feedGuid,
-        } satisfies RefreshFeedTask)
+        } satisfies RefreshFeedTask))
 
         return c.body(null, 202)
     })
@@ -584,10 +612,10 @@ const commandRoutes = new Hono<Bindings>()
         const feed = await ServerFeed.get(db, feedGuid)
         if (!feed) return apiError(c, 404, `No feed found with guid: ${feedGuid}`)
 
-        await c.env.FEED_PROCESSING_QUEUE.send({
+        await c.env.FEED_PROCESSING_QUEUE.send(traced({
             type: 'plan-feed-archives',
             feedGuid,
-        } satisfies PlanFeedArchivesTask)
+        } satisfies PlanFeedArchivesTask))
 
         return c.body(null, 202)
     })
@@ -756,8 +784,124 @@ const pushRoutes = new Hono<Bindings>()
  * App
  *****************************************************************************/
 
+/******************************************************************************
+ * Request context and client error reports
+ *
+ * Every API request runs in a log context carrying the frontend's
+ * X-Request-Id (one per API call) and X-Client-Session (one per page load), so
+ * all backend log lines it causes — including queue tasks it enqueues — can be
+ * found by either id. See utils/log.ts.
+ *****************************************************************************/
+
+const CLIENT_LOG_PATH = '/api/client-log'
+
+const requestContext = createMiddleware<Bindings>(async (c, next) => {
+    const requestId = sanitizeId(c.req.header('X-Request-Id')) ?? crypto.randomUUID()
+    const sessionId = sanitizeId(c.req.header('X-Client-Session'))
+    const started = Date.now()
+    await withLogContext({requestId, sessionId}, async () => {
+        await next()
+        // Reports are logged as their own lines; a summary of each would be noise.
+        if (c.req.path === CLIENT_LOG_PATH) return
+        const status = c.res.status
+        const fields = {
+            method: c.req.method,
+            path: c.req.path,
+            query: new URL(c.req.url).search || undefined,
+            status,
+            durationMs: Date.now() - started,
+            cfRay: c.req.header('cf-ray'),
+        }
+        if (status >= 500) log.error('API request failed', fields)
+        else if (status >= 400) log.warn('API request rejected', fields)
+        else log.info('API request', fields)
+    })
+    c.header('X-Request-Id', requestId)
+})
+
+const MAX_CLIENT_LOG_EVENTS = 25
+const MAX_CLIENT_LOG_DETAILS = 30
+const MAX_CLIENT_LOG_STRING = 2000
+const MAX_CLIENT_LOG_STACK = 8000
+
+type ClientLogLevel = 'error' | 'warn' | 'info'
+type ClientLogDetail = string | number | boolean | null
+
+/** One frontend report; see src/telemetry.ts. */
+interface ClientLogEvent {
+    level: ClientLogLevel
+    message: string
+    /** The X-Request-Id of the API call the report is about, if any. */
+    requestId?: string
+    stack?: string
+    /** The page the report came from. */
+    url?: string
+    /** When the client saw it (ISO timestamp). */
+    at?: string
+    details?: Record<string, ClientLogDetail>
+}
+
+function truncate(value: string, max = MAX_CLIENT_LOG_STRING) {
+    return value.length > max ? `${value.slice(0, max)}…` : value
+}
+
+function parseClientLogEvent(value: unknown): ClientLogEvent | null {
+    if (!isRecord(value)) return null
+    const message = optionalString(value.message)
+    if (!message) return null
+    const level = value.level === 'warn' || value.level === 'info' ? value.level : 'error'
+    const stack = optionalString(value.stack)
+    const url = optionalString(value.url)
+    const at = optionalString(value.at)
+    let details: Record<string, ClientLogDetail> | undefined
+    if (isRecord(value.details)) {
+        details = {}
+        for (const [key, detail] of Object.entries(value.details).slice(0, MAX_CLIENT_LOG_DETAILS)) {
+            if (typeof detail === 'string') details[truncate(key, 100)] = truncate(detail)
+            else if (typeof detail === 'number' || typeof detail === 'boolean' || detail === null) details[truncate(key, 100)] = detail
+        }
+    }
+    return {
+        level,
+        message: truncate(message),
+        requestId: sanitizeId(optionalString(value.requestId)),
+        stack: stack ? truncate(stack, MAX_CLIENT_LOG_STACK) : undefined,
+        url: url ? truncate(url) : undefined,
+        at: at ? truncate(at, 40) : undefined,
+        details,
+    }
+}
+
+const clientLogRoutes = new Hono<Bindings>()
+    .post('/client-log', validator('json', (value: unknown, c) => {
+        const events = isRecord(value) ? value.events : undefined
+        if (!Array.isArray(events)) return apiError(c, 400, 'events must be an array')
+        return {
+            events: events.slice(0, MAX_CLIENT_LOG_EVENTS)
+                .map(parseClientLogEvent)
+                .filter((event): event is ClientLogEvent => event !== null),
+        }
+    }), (c) => {
+        const userAgent = c.req.header('user-agent')
+        for (const event of c.req.valid('json').events) {
+            // A report about an API call is filed under that call's requestId,
+            // next to the backend's own lines for it.
+            withLogContext({requestId: event.requestId ?? null}, () => log[event.level](`Client: ${event.message}`, {
+                source: 'client',
+                pageUrl: event.url,
+                clientTime: event.at,
+                userAgent,
+                stack: event.stack,
+                details: event.details,
+            }))
+        }
+        return c.body(null, 204)
+    })
+
 export const app = new Hono<Bindings>()
     .basePath('/api')
+    .use(requestContext)
+    .route('/', clientLogRoutes)
     .route('/', searchRoutes)
     .route('/', feedRoutes)
     .route('/', feedItemRoutes)
@@ -768,7 +912,7 @@ export const app = new Hono<Bindings>()
 
 app.onError((err, c) => {
     if (err instanceof HTTPException) return c.json({error: err.message}, err.status)
-    console.error('Unhandled API error:', err)
+    log.error('Unhandled API error', {error: err})
     if (err instanceof SyntaxError) return c.json({error: 'Invalid JSON in request body'}, 400)
     return c.json({error: 'Internal server error'}, 500)
 })

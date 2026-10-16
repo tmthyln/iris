@@ -2,6 +2,7 @@ import {app} from './services/endpoints'
 import {getFeeds} from './services/crud'
 import {enqueueTasks, retryDelaySeconds, runTask} from './services/tasks'
 import type {FeedProcessingTask, RefreshFeedTask} from './services/types'
+import {log, withLogContext} from './services/utils/log'
 export {ItemQueue} from './services/queue'
 
 // noinspection JSUnusedGlobalSymbols
@@ -15,25 +16,36 @@ export default {
     async queue(batch, env, ctx): Promise<void> {
         for (const msg of batch.messages) {
             const task = msg.body as FeedProcessingTask
-            try {
-                console.log(`Processing ${task.type} task (message ${msg.id}, attempt ${msg.attempts})`)
-                await runTask(task, env, ctx)
-                msg.ack()
-            } catch (err) {
-                const delaySeconds = retryDelaySeconds(msg.attempts)
-                console.error(`Task ${task.type} failed on attempt ${msg.attempts}; retrying in ${delaySeconds}s`, err)
-                msg.retry({delaySeconds})
-            }
+            // The task's trace keeps the ids of the request that enqueued it.
+            await withLogContext({
+                ...task.trace,
+                taskType: task.type,
+                messageId: msg.id,
+                attempt: msg.attempts,
+            }, async () => {
+                try {
+                    log.info('Processing task', {task})
+                    await runTask(task, env, ctx)
+                    msg.ack()
+                } catch (err) {
+                    const delaySeconds = retryDelaySeconds(msg.attempts)
+                    log.error('Task failed; retrying', {delaySeconds, error: err})
+                    msg.retry({delaySeconds})
+                }
+            })
         }
     },
 
-    async scheduled(_event, env, _ctx) {
-        const feeds = await getFeeds(env.DB)
-        console.log(`Enqueuing a refresh for ${feeds.length} active feeds`)
-        // TODO selectively refresh feeds based on update frequency
-        await enqueueTasks(env.FEED_PROCESSING_QUEUE, feeds.map((feed): RefreshFeedTask => ({
-            type: 'refresh-feed',
-            feedGuid: feed.guid,
-        })))
+    async scheduled(event, env, _ctx) {
+        // The cron run gets its own requestId, which its tasks carry along.
+        await withLogContext({requestId: crypto.randomUUID(), trigger: 'cron', cron: event.cron}, async () => {
+            const feeds = await getFeeds(env.DB)
+            log.info('Enqueuing a refresh for every active feed', {feedCount: feeds.length})
+            // TODO selectively refresh feeds based on update frequency
+            await enqueueTasks(env.FEED_PROCESSING_QUEUE, feeds.map((feed): RefreshFeedTask => ({
+                type: 'refresh-feed',
+                feedGuid: feed.guid,
+            })))
+        })
     },
 } satisfies ExportedHandler<Env>

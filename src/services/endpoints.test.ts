@@ -224,7 +224,7 @@ describe('POST /api/feed', () => {
         const response = await json('/api/feed', 'POST', {url}, env)
         expect(response.status).toBe(202)
         expect(await read<unknown>(response)).toEqual({message: 'Feed already exists, refreshing feed...'})
-        expect(queue.messages.map(m => m.body)).toEqual([
+        expect(queue.tasks()).toEqual([
             {type: 'refresh-feed', feedGuid: 'feed-a'},
             {type: 'plan-feed-archives', feedGuid: 'feed-a'},
         ])
@@ -267,7 +267,7 @@ describe('POST /api/feed', () => {
             {guid: 'post-2', title: 'Second', encoded_content: ''},
         ])
 
-        expect(queue.messages.map(m => m.body)).toEqual([{type: 'plan-feed-archives', feedGuid: 'blog-guid'}])
+        expect(queue.tasks()).toEqual([{type: 'plan-feed-archives', feedGuid: 'blog-guid'}])
     })
 
     test('adds a second source when the same content is served from another URL', async () => {
@@ -607,7 +607,7 @@ describe('transcripts', () => {
         const transcript = await read<Record<string, unknown>>(response)
         expect(transcript).toMatchObject({id: 1, feed_item_guid: 'item-a', model: TRANSCRIPT_DEFAULT_MODEL, language: null, status: 'pending'})
         expect(Object.keys(transcript).sort()).toEqual(CLIENT_TRANSCRIPT_KEYS)
-        expect(queue.messages.map(m => m.body)).toEqual([{type: 'transcribe-feed-item', transcriptId: 1}])
+        expect(queue.tasks()).toEqual([{type: 'transcribe-feed-item', transcriptId: 1}])
         expect(await db.prepare('SELECT status, model FROM transcript WHERE id = 1').first()).toEqual({status: 'pending', model: TRANSCRIPT_DEFAULT_MODEL})
     })
 
@@ -817,7 +817,7 @@ describe('command routes', () => {
         const response = await app.request('/api/command/refresh-feed/feed-a', {method: 'POST'}, env)
         expect(response.status).toBe(202)
         expect(await response.text()).toBe('')
-        expect(queue.messages.map(m => m.body)).toEqual([{type: 'refresh-feed', feedGuid: 'feed-a'}])
+        expect(queue.tasks()).toEqual([{type: 'refresh-feed', feedGuid: 'feed-a'}])
     })
 
     test('plan-feed-archives enqueues a planning task for a known feed', async () => {
@@ -828,7 +828,7 @@ describe('command routes', () => {
 
         const response = await app.request('/api/command/plan-feed-archives/feed-a', {method: 'POST'}, env)
         expect(response.status).toBe(202)
-        expect(queue.messages.map(m => m.body)).toEqual([{type: 'plan-feed-archives', feedGuid: 'feed-a'}])
+        expect(queue.tasks()).toEqual([{type: 'plan-feed-archives', feedGuid: 'feed-a'}])
     })
 
     test('refresh-all-feeds enqueues a refresh task for every active feed', async () => {
@@ -840,7 +840,7 @@ describe('command routes', () => {
         const response = await app.request('/api/command/refresh-all-feeds', {method: 'POST'}, env)
         expect(response.status).toBe(202)
         expect(await read<unknown>(response)).toEqual({queuedCount: 2})
-        expect(queue.messages.map(m => m.body).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))).toEqual([
+        expect(queue.tasks().sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))).toEqual([
             {type: 'refresh-feed', feedGuid: 'feed-a'},
             {type: 'refresh-feed', feedGuid: 'feed-b'},
         ])
@@ -1100,6 +1100,157 @@ describe('push routes', () => {
  * App-level behaviour
  *****************************************************************************/
 
+describe('request context', () => {
+    function post(path: string, env: Env, headers: Record<string, string>) {
+        return app.request(path, {method: 'POST', headers}, env)
+    }
+
+    test('echoes the client request id and tags log lines and enqueued tasks with it and the session id', async () => {
+        await seedFeed({guid: 'feed-a'})
+        const info = vi.spyOn(console, 'log').mockImplementation(() => {})
+        const {env, queue} = testEnv()
+
+        const response = await post('/api/command/refresh-feed/feed-a', env, {'X-Request-Id': 'req-1', 'X-Client-Session': 'sess-1'})
+
+        expect(response.status).toBe(202)
+        expect(response.headers.get('X-Request-Id')).toBe('req-1')
+        expect(queue.messages.map(m => m.body)).toEqual([
+            {type: 'refresh-feed', feedGuid: 'feed-a', trace: {requestId: 'req-1', sessionId: 'sess-1'}},
+        ])
+        expect(info).toHaveBeenCalledWith({
+            message: 'API request',
+            requestId: 'req-1',
+            sessionId: 'sess-1',
+            method: 'POST',
+            path: '/api/command/refresh-feed/feed-a',
+            status: 202,
+            durationMs: expect.any(Number),
+        })
+    })
+
+    test('generates a request id when the client sends none or an unusable one', async () => {
+        vi.spyOn(console, 'log').mockImplementation(() => {})
+        const {env} = testEnv()
+
+        const cases: Record<string, string>[] = [{}, {'X-Request-Id': 'not an id!'}]
+        for (const headers of cases) {
+            const response = await app.request('/api/feed', {headers}, env)
+            expect(response.headers.get('X-Request-Id')).toMatch(/^[0-9a-f-]{36}$/)
+        }
+    })
+
+    test('logs rejected requests as warnings and failed ones as errors', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const {env} = testEnv()
+        const {env: brokenEnv} = testEnv({DB: {prepare() { throw new Error('boom') }} as unknown as D1Database})
+
+        await app.request('/api/feed/nope', {headers: {'X-Request-Id': 'req-404'}}, env)
+        await app.request('/api/feed', {headers: {'X-Request-Id': 'req-500'}}, brokenEnv)
+
+        expect(warn).toHaveBeenCalledWith(expect.objectContaining({message: 'API request rejected', requestId: 'req-404', status: 404}))
+        expect(error).toHaveBeenCalledWith(expect.objectContaining({message: 'API request failed', requestId: 'req-500', status: 500}))
+    })
+
+    test('the media proxy logs the upstream response and answers a failed upstream fetch with a 502', async () => {
+        await seedFeed({guid: 'feed-a'})
+        await seedFeedItem('feed-a', {guid: 'item-a', enclosure_url: 'https://cdn.example.com/ep.mp3'})
+        const info = vi.spyOn(console, 'log').mockImplementation(() => {})
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const {env} = testEnv()
+
+        mockFetch({'https://cdn.example.com/ep.mp3': new Response('audio', {headers: {'content-type': 'audio/mpeg', 'content-length': '5'}})})
+        const ok = await app.request('/api/feeditem/item-a/media', {headers: {'X-Request-Id': 'req-ok'}}, env)
+        expect(await ok.text()).toBe('audio')
+        expect(info).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Media proxy: upstream responded',
+            requestId: 'req-ok',
+            feedItemGuid: 'item-a',
+            status: 200,
+            contentType: 'audio/mpeg',
+            contentLength: '5',
+        }))
+
+        vi.unstubAllGlobals()
+        mockFetch({})  // unknown URL → fetch rejects
+        const failed = await app.request('/api/feeditem/item-a/media', {headers: {'X-Request-Id': 'req-down'}}, env)
+        expect(failed.status).toBe(502)
+        expect((await read<ErrorBody>(failed)).error).toMatch(/^Upstream fetch failed: /)
+        expect(error).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Media proxy: upstream fetch failed',
+            requestId: 'req-down',
+            enclosureUrl: 'https://cdn.example.com/ep.mp3',
+        }))
+    })
+})
+
+describe('POST /api/client-log', () => {
+    function report(body: unknown, env: Env) {
+        return app.request('/api/client-log', {
+            method: 'POST',
+            headers: {'content-type': 'application/json', 'X-Client-Session': 'sess-1', 'user-agent': 'TestBrowser/1'},
+            body: JSON.stringify(body),
+        }, env)
+    }
+
+    test('logs each event under the request id it is about, with the session id', async () => {
+        const info = vi.spyOn(console, 'log').mockImplementation(() => {})
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const {env} = testEnv()
+
+        const response = await report({events: [
+            {
+                level: 'error',
+                message: 'Episode download failed',
+                requestId: 'req-download',
+                url: 'https://iris.example/feed/a',
+                at: '2026-10-16T00:00:00.000Z',
+                stack: 'Error: HTTP 502',
+                details: {feedItemGuid: 'item-a', receivedBytes: 10, truncated: true, missing: null, nested: {dropped: 1}},
+            },
+            {level: 'warn', message: 'Something odd'},
+        ]}, env)
+
+        expect(response.status).toBe(204)
+        expect(error).toHaveBeenCalledWith({
+            message: 'Client: Episode download failed',
+            requestId: 'req-download',
+            sessionId: 'sess-1',
+            source: 'client',
+            pageUrl: 'https://iris.example/feed/a',
+            clientTime: '2026-10-16T00:00:00.000Z',
+            userAgent: 'TestBrowser/1',
+            stack: 'Error: HTTP 502',
+            details: {feedItemGuid: 'item-a', receivedBytes: 10, truncated: true, missing: null},
+        })
+        expect(warn).toHaveBeenCalledWith(expect.objectContaining({message: 'Client: Something odd', requestId: null, sessionId: 'sess-1'}))
+        // The report request itself gets no summary line.
+        expect(info).not.toHaveBeenCalled()
+    })
+
+    test('drops malformed events, defaults the level and caps sizes', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const {env} = testEnv()
+
+        const valid = Array.from({length: 30}, (_, i) => ({level: 'fatal', message: `event ${i}`}))
+        const response = await report({events: [null, {message: 5}, {level: 'error', message: 'x'.repeat(5000), requestId: 'bad id!'}, ...valid]}, env)
+
+        expect(response.status).toBe(204)
+        // At most 25 events are read, and the first two are not events.
+        expect(error).toHaveBeenCalledTimes(23)
+        const [long] = error.mock.calls[0] as [{message: string, requestId: unknown}]
+        expect(long.message).toHaveLength('Client: '.length + 2001)
+        expect(long.requestId).toBeNull()
+        expect(error).toHaveBeenLastCalledWith(expect.objectContaining({message: 'Client: event 21'}))
+    })
+
+    test('rejects a body without an events array', async () => {
+        const {env} = testEnv()
+        await expectError(await report({event: {}}, env), 400, 'events must be an array')
+    })
+})
+
 describe('app', () => {
     test('unknown routes return a JSON 404', async () => {
         const {env} = testEnv()
@@ -1121,6 +1272,10 @@ describe('app', () => {
         const {env} = testEnv({DB: {prepare() { throw new Error('boom') }} as unknown as D1Database})
 
         await expectError(await app.request('/api/feed', {}, env), 500, 'Internal server error')
-        expect(error).toHaveBeenCalledWith('Unhandled API error:', expect.any(Error))
+        expect(error).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Unhandled API error',
+            requestId: expect.any(String),
+            error: expect.objectContaining({name: 'Error', message: 'boom'}),
+        }))
     })
 })

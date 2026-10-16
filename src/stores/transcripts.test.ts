@@ -2,6 +2,7 @@ import {createPinia, setActivePinia} from 'pinia'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import client from '../client.ts'
 import {err, makeFullTranscript, makeTranscript, ok, stubClient} from '../testing/helpers.ts'
+import {flush} from '../telemetry.ts'
 import {useTranscriptStore} from './transcripts.ts'
 
 const POLL_MS = 5000
@@ -55,6 +56,31 @@ describe('refresh', () => {
         // poller has stopped
         await vi.advanceTimersByTimeAsync(POLL_MS * 3)
         expect(spy).toHaveBeenCalledTimes(3)
+    })
+
+    it('reports a transcript it saw fail, but not one that had already failed', async () => {
+        const reported = stubClient('reportClientEvents', ok(undefined))
+        vi.spyOn(console, 'error').mockImplementation(() => undefined)
+        const old = makeTranscript({status: 'error', error_message: 'old failure'})
+        const pending = makeTranscript({status: 'pending'})
+        const spy = stubClient('listTranscripts', ok([pending, old]))
+        const store = useTranscriptStore()
+        await store.refresh('item-a')
+
+        spy.mockResolvedValue(ok([{...pending, status: 'error', error_message: 'Upstream fetch failed: HTTP 403'}, old]))
+        await vi.advanceTimersByTimeAsync(POLL_MS)
+        flush()
+
+        expect(reported.mock.calls.flatMap(([batch]) => batch)).toEqual([expect.objectContaining({
+            level: 'error',
+            message: 'Transcription failed',
+            details: {
+                transcriptId: pending.id,
+                feedItemGuid: 'item-a',
+                model: pending.model,
+                errorMessage: 'Upstream fetch failed: HTTP 403',
+            },
+        })])
     })
 
     it('gives up polling after five consecutive failures', async () => {

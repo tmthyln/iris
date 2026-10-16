@@ -2,7 +2,7 @@ import {hc} from 'hono/client'
 import type {ClientRequestOptions, ClientResponse} from 'hono/client'
 import type {SuccessStatusCode} from 'hono/utils/http-status'
 import type {AppType} from './services/endpoints'
-import type {ApiResult, FeedItemUpdate, FeedUpdate} from './types.ts'
+import type {ApiResult, ClientLogEvent, FeedItemUpdate, FeedUpdate} from './types.ts'
 
 const TIMEOUT_MS = 10000
 
@@ -18,6 +18,49 @@ export const REAUTH_PARAM = 'reauth'
 
 let reauthenticating = false
 
+// Correlation ids, logged by the Worker on every line an API call causes (see
+// src/services/utils/log.ts): one per page load, and one per request.
+export const SESSION_ID_HEADER = 'X-Client-Session'
+export const REQUEST_ID_HEADER = 'X-Request-Id'
+export const sessionId = newRequestId()
+
+export function newRequestId(): string {
+    return crypto.randomUUID()
+}
+
+/** An API call that failed; reported to the Worker by src/telemetry.ts. */
+export interface ApiFailure {
+    requestId: string
+    method: string
+    path: string
+    /** null when no response arrived (offline, timeout, CORS). */
+    status: number | null
+    error: string
+}
+
+type ApiFailureListener = (failure: ApiFailure) => void
+let apiFailureListener: ApiFailureListener | null = null
+
+export function onApiFailure(listener: ApiFailureListener | null) {
+    apiFailureListener = listener
+}
+
+function notifyFailure(failure: ApiFailure) {
+    try {
+        apiFailureListener?.(failure)
+    } catch { /* reporting must never break the call */ }
+}
+
+// The {error} message of a failed API response, read from a copy so the
+// caller can still consume the body.
+async function errorMessage(response: Response): Promise<string> {
+    try {
+        const body = await response.clone().json() as {error?: unknown} | null
+        if (typeof body?.error === 'string') return body.error
+    } catch { /* non-JSON error body */ }
+    return `HTTP ${response.status}`
+}
+
 // The Worker has no auth of its own, so a 401 — or a redirect towards the
 // Access login page — can only come from Cloudflare Access. Re-authenticate by
 // navigating the document: Access logs the user in (silently if the global
@@ -32,19 +75,42 @@ function reauthenticate() {
     window.location.assign(url.toString())
 }
 
-// fetch() for same-origin API calls. Adds the Access header and re-authenticates
-// when the Access session has expired; all other handling is left to the
-// caller. Also the fetch behind `rpc`.
+// fetch() for same-origin API calls. Adds the Access header and the
+// correlation ids (a caller may set its own X-Request-Id to refer to the call
+// later), re-authenticates when the Access session has expired, and notifies
+// the failure listener of errors; all other handling is left to the caller.
+// Also the fetch behind `rpc`.
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers)
     headers.set(...ACCESS_AJAX_HEADER)
-    // An expired session can also surface as a redirect to Access's
-    // (cross-origin) login page; following it from fetch() would only fail
-    // CORS and look like a network error. With 'manual' the redirect comes
-    // back as an opaqueredirect response instead — and since the API never
-    // redirects, any redirect here means the session is gone.
-    const response = await fetch(input, {...init, headers, redirect: 'manual'})
-    if (response.status === 401 || response.type === 'opaqueredirect') reauthenticate()
+    headers.set(SESSION_ID_HEADER, sessionId)
+    if (!headers.has(REQUEST_ID_HEADER)) headers.set(REQUEST_ID_HEADER, newRequestId())
+    const requestId = headers.get(REQUEST_ID_HEADER) ?? ''
+    const method = (init.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+    const path = new URL(input instanceof Request ? input.url : input.toString(), 'http://origin.invalid').pathname
+
+    let response: Response
+    try {
+        // An expired session can also surface as a redirect to Access's
+        // (cross-origin) login page; following it from fetch() would only fail
+        // CORS and look like a network error. With 'manual' the redirect comes
+        // back as an opaqueredirect response instead — and since the API never
+        // redirects, any redirect here means the session is gone.
+        response = await fetch(input, {...init, headers, redirect: 'manual'})
+    } catch (err) {
+        // A caller's own abort (e.g. a cancelled download) is not a failure.
+        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+            const error = err instanceof DOMException && err.name === 'TimeoutError' ? 'Request timed out' : String(err)
+            notifyFailure({requestId, method, path, status: null, error})
+        }
+        throw err
+    }
+    if (response.status === 401 || response.type === 'opaqueredirect') {
+        reauthenticate()
+    } else if (!response.ok) {
+        const {status} = response
+        void errorMessage(response).then(error => notifyFailure({requestId, method, path, status, error}))
+    }
     return response
 }
 
@@ -63,6 +129,8 @@ interface RequestOptions {
     /** 'none' for endpoints that respond with an empty body on success. */
     parse?: 'json' | 'none'
     timeoutMs?: number
+    /** Let the request outlive the page (fetch keepalive; bodies up to 64 KiB). */
+    keepalive?: boolean
 }
 
 // Runs one RPC call and folds the outcome into an ApiResult: the parsed 2xx
@@ -71,10 +139,10 @@ function request<R extends ClientResponse<unknown>>(call: RpcCall<R>, options?: 
 function request<R extends ClientResponse<unknown>>(call: RpcCall<R>, options: RequestOptions & {parse: 'none'}): Promise<ApiResult<void>>
 async function request<R extends ClientResponse<unknown>>(
     call: RpcCall<R>,
-    {parse = 'json', timeoutMs = TIMEOUT_MS}: RequestOptions = {},
+    {parse = 'json', timeoutMs = TIMEOUT_MS, keepalive}: RequestOptions = {},
 ): Promise<ApiResult<SuccessJson<R> | void>> {
     try {
-        const response = await call({init: {signal: AbortSignal.timeout(timeoutMs)}})
+        const response = await call({init: {signal: AbortSignal.timeout(timeoutMs), keepalive}})
         if (response.ok) {
             const data = parse === 'json' ? await response.json() as SuccessJson<R> : undefined
             return {ok: true, status: response.status, data}
@@ -214,6 +282,10 @@ const client = {
     getTranscript(transcriptId: number) {
         return request(o => rpc.api.transcript[':id'].$get({param: {id: String(transcriptId)}}, o))
     },
+    /** Frontend error reports (src/telemetry.ts); kept alive so a flush on page hide still arrives. */
+    reportClientEvents(events: ClientLogEvent[]) {
+        return request(o => rpc.api['client-log'].$post({json: {events}}, o), {parse: 'none', keepalive: true})
+    },
 }
 
 export default client
@@ -223,7 +295,7 @@ export default client
  *****************************************************************************/
 
 if (import.meta.vitest) {
-    const {it, expect, describe, vi, afterEach} = import.meta.vitest
+    const {it, expect, describe, vi, afterEach, beforeEach} = import.meta.vitest
 
     describe('apiFetch', () => {
         afterEach(() => vi.unstubAllGlobals())
@@ -239,6 +311,60 @@ if (import.meta.vitest) {
             expect(init.redirect).toBe('manual')
         })
 
+        it('sends the session id and a fresh request id, keeping one the caller set', async () => {
+            const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', {status: 200})))
+            vi.stubGlobal('fetch', fetchMock)
+            await apiFetch('/api/feed')
+            await apiFetch('/api/feed')
+            await apiFetch('/api/feed', {headers: {[REQUEST_ID_HEADER]: 'mine'}})
+            const sent = (fetchMock.mock.calls as unknown as [string, RequestInit][]).map(([, init]) => new Headers(init.headers))
+            expect(sent.map(h => h.get(SESSION_ID_HEADER))).toEqual([sessionId, sessionId, sessionId])
+            const [first, second, third] = sent.map(h => h.get(REQUEST_ID_HEADER))
+            expect(first).toMatch(/^[0-9a-f-]{36}$/)
+            expect(second).not.toBe(first)
+            expect(third).toBe('mine')
+        })
+
+        describe('failure listener', () => {
+            const failures: ApiFailure[] = []
+            beforeEach(() => {
+                failures.length = 0
+                onApiFailure(failure => failures.push(failure))
+            })
+            afterEach(() => onApiFailure(null))
+
+            it('reports error responses with their message and the request id', async () => {
+                vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(
+                    new Response('{"error":"Upstream fetch failed: boom"}', {status: 502}),
+                )))
+                const response = await apiFetch('/api/feeditem/a%2Fb/media?x=1', {headers: {[REQUEST_ID_HEADER]: 'req-1'}})
+                // The caller can still read the body.
+                expect(await response.json()).toEqual({error: 'Upstream fetch failed: boom'})
+                await vi.waitFor(() => expect(failures).toHaveLength(1))
+                expect(failures[0]).toEqual({
+                    requestId: 'req-1',
+                    method: 'GET',
+                    path: '/api/feeditem/a%2Fb/media',
+                    status: 502,
+                    error: 'Upstream fetch failed: boom',
+                })
+            })
+
+            it('reports requests that got no response, but not ones the caller aborted', async () => {
+                vi.stubGlobal('fetch', vi.fn()
+                    .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+                    .mockRejectedValueOnce(new DOMException('signal timed out', 'TimeoutError'))
+                    .mockRejectedValueOnce(new DOMException('aborted', 'AbortError')))
+                await expect(apiFetch('/api/feed', {method: 'post'})).rejects.toThrow('Failed to fetch')
+                await expect(apiFetch('/api/feed')).rejects.toThrow('signal timed out')
+                await expect(apiFetch('/api/feed')).rejects.toThrow('aborted')
+                expect(failures.map(({method, status, error}) => ({method, status, error}))).toEqual([
+                    {method: 'POST', status: null, error: 'TypeError: Failed to fetch'},
+                    {method: 'GET', status: null, error: 'Request timed out'},
+                ])
+            })
+        })
+
         it('navigates once to re-authenticate on an expired session, keeping the current URL', async () => {
             // First call: Access redirects to its login page (no session at
             // all — the header's AJAX-401 behaviour does not apply); second
@@ -249,9 +375,14 @@ if (import.meta.vitest) {
                 .mockResolvedValue(new Response(null, {status: 401})))
             const assign = vi.fn()
             vi.stubGlobal('window', {location: {href: 'https://iris.example/feed/abc?page=2#top', assign}})
+            const failure = vi.fn()
+            onApiFailure(failure)
             await apiFetch('/api/feed')
             await apiFetch('/api/queue')
+            onApiFailure(null)
             expect(assign).toHaveBeenCalledOnce()
+            // An expired session is handled by signing in again, not reported.
+            expect(failure).not.toHaveBeenCalled()
             const target = new URL(assign.mock.calls[0][0] as string)
             expect(target.pathname).toBe('/feed/abc')
             expect(target.searchParams.get('page')).toBe('2')

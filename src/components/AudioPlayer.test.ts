@@ -5,6 +5,8 @@ import client from '../client.ts'
 import {useDownloadStore} from '../stores/downloads.ts'
 import {useQueueStore} from '../stores/queue.ts'
 import {makeItem, ok, stubClient, mountApp} from '../testing/helpers.ts'
+import {flush} from '../telemetry.ts'
+import type {ClientLogEvent} from '../types.ts'
 import AudioPlayer from './AudioPlayer.vue'
 
 // jsdom's media element implements none of the playback machinery.
@@ -214,5 +216,34 @@ describe('queue popover', () => {
         await wrapper.find('[title="Clear queue"]').trigger('click')
         await flushPromises()
         expect(vi.mocked(client.clearQueue)).toHaveBeenCalledExactlyOnceWith(false)   // paused → drop everything
+    })
+})
+
+describe('error reporting', () => {
+    it('reports a remote source that fails to load, and a media error, with the episode and element state', async () => {
+        const reported = stubClient('reportClientEvents', ok(undefined))
+        vi.spyOn(console, 'error').mockImplementation(() => undefined)
+        const item = episode({guid: 'ep-broken'})
+        const {wrapper} = await mountPlayer([item])
+        const audio = wrapper.find('audio').element as HTMLAudioElement
+
+        // vueuse applies src as <source> children; a failed load fires on the <source>.
+        audio.querySelector('source')?.dispatchEvent(new Event('error'))
+        Object.defineProperty(audio, 'error', {configurable: true, value: {code: 3, message: 'PIPELINE_ERROR_DECODE'}})
+        audio.dispatchEvent(new Event('error'))
+        flush()
+
+        const events: ClientLogEvent[] = reported.mock.calls.flatMap(([batch]) => batch)
+        expect(events.map(e => e.message)).toEqual([
+            'Audio playback failed: source could not be loaded',
+            'Audio playback failed: media error',
+        ])
+        expect(events[1].details).toEqual(expect.objectContaining({
+            feedItemGuid: 'ep-broken',
+            enclosureUrl: 'https://cdn.example.com/episode.mp3',
+            source: 'remote',
+            mediaErrorCode: 3,
+            mediaErrorMessage: 'PIPELINE_ERROR_DECODE',
+        }))
     })
 })

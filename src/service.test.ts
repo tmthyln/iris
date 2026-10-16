@@ -105,7 +105,7 @@ describe('queue', () => {
 
         await worker.queue(batch([msg]), testenv, createExecutionContext())
 
-        expect(queue.messages.map(m => m.body)).toEqual([{
+        expect(queue.tasks()).toEqual([{
             type: 'fetch-archive-snapshot',
             feedSourceUrl: SOURCE_URL,
             feedGuid: 'feed-a',
@@ -113,6 +113,50 @@ describe('queue', () => {
             snapshotUrl: SNAPSHOT_URL,
         }])
         expect(msg.ack).toHaveBeenCalledTimes(1)
+    })
+
+    test('runs a task under the ids of the request that enqueued it, and passes them on', async () => {
+        await seedFeed({guid: 'feed-a'})
+        await seedFeedSource('feed-a', {feed_url: SOURCE_URL})
+        mockFetch(request => request.url.startsWith(CDX_URL_PREFIX)
+            ? new Response(JSON.stringify([
+                ['timestamp', 'original', 'digest'],
+                ['20240101000000', SOURCE_URL, 'AAA'],
+            ]))
+            : undefined)
+        const info = vi.spyOn(console, 'log').mockImplementation(() => {})
+        const {env: testenv, queue} = testEnv()
+        const trace = {requestId: 'req-1', sessionId: 'sess-1'}
+        const msg = message({type: 'plan-feed-archives', feedGuid: 'feed-a', trace}, 'msg-7', 2)
+
+        await worker.queue(batch([msg]), testenv, createExecutionContext())
+
+        expect(info).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Processing task',
+            requestId: 'req-1',
+            sessionId: 'sess-1',
+            taskType: 'plan-feed-archives',
+            messageId: 'msg-7',
+            attempt: 2,
+        }))
+        expect(queue.messages.map(m => m.body.trace)).toEqual([trace])
+    })
+
+    test('logs a failed task with its trace before retrying it', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const {env: testenv} = testEnv({DB: brokenDb})
+        const msg = message({type: 'refresh-feed', feedGuid: 'feed-a', trace: {requestId: 'req-2'}})
+
+        await worker.queue(batch([msg]), testenv, createExecutionContext())
+
+        expect(error).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Task failed; retrying',
+            requestId: 'req-2',
+            taskType: 'refresh-feed',
+            delaySeconds: 60,
+            error: expect.objectContaining({message: 'D1 unavailable'}),
+        }))
+        expect(msg.retry).toHaveBeenCalledWith({delaySeconds: 60})
     })
 
     test('fetch-archive-snapshot stores the snapshot as an archive feed file', async () => {
@@ -230,12 +274,29 @@ describe('scheduled', () => {
 
         await worker.scheduled(controller, testenv, createExecutionContext())
 
-        expect(queue.messages.map(m => m.body).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))).toEqual([
+        expect(queue.tasks().sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))).toEqual([
             {type: 'refresh-feed', feedGuid: 'feed-a'},
             {type: 'refresh-feed', feedGuid: 'feed-b'},
         ])
         expect(queue.sendBatch).toHaveBeenCalledTimes(1)
         expect(queue.send).not.toHaveBeenCalled()
+    })
+
+    test('gives the run a request id that its tasks carry', async () => {
+        await seedFeed({guid: 'feed-a', active: true})
+        const info = vi.spyOn(console, 'log').mockImplementation(() => {})
+        const {env: testenv, queue} = testEnv()
+
+        await worker.scheduled(controller, testenv, createExecutionContext())
+
+        const [{body}] = queue.messages
+        expect(body.trace).toEqual({requestId: expect.stringMatching(/^[0-9a-f-]{36}$/)})
+        expect(info).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Enqueuing a refresh for every active feed',
+            requestId: body.trace?.requestId,
+            trigger: 'cron',
+            feedCount: 1,
+        }))
     })
 
     test('sends nothing when there are no feeds', async () => {

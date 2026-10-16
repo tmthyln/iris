@@ -2,6 +2,7 @@ import {XMLParser} from "fast-xml-parser";
 import {type FetchFileResult} from "../types";
 import {sha256Encode} from "./crypto";
 import {FETCH_USER_AGENT} from "./files";
+import {log} from "./log";
 
 const RSS_ACCEPT_MIMES = [
     'application/rss+xml',
@@ -16,13 +17,13 @@ const MAX_FEED_LINK_HOPS = 3
 
 export async function fetchRssFile(url: string, hops = 0): Promise<FetchFileResult> {
     if (hops > MAX_FEED_LINK_HOPS) {
-        console.log(`[fetchRssFile] Gave up after following ${MAX_FEED_LINK_HOPS} feed links (url: ${url})`)
+        log.warn('fetchRssFile: gave up following feed links', {url, maxHops: MAX_FEED_LINK_HOPS})
         return {status: 'error', content: null, reason: 'too-many-feed-links'}
     }
 
     const knownFeedUrl = resolveKnownFeedUrl(url)
     if (knownFeedUrl) {
-        console.log(`[fetchRssFile] Resolved known feed URL: ${url} -> ${knownFeedUrl}`)
+        log.info('fetchRssFile: resolved known feed URL', {url, feedUrl: knownFeedUrl})
         return fetchRssFile(knownFeedUrl, hops + 1)
     }
 
@@ -46,21 +47,21 @@ export async function fetchRssFile(url: string, hops = 0): Promise<FetchFileResu
                 },
             }
         } else {
-            console.log(`[fetchRssFile] Content appears to be HTML, not RSS (url: ${url})`)
+            log.info('fetchRssFile: content appears to be HTML, not RSS', {url})
 
             if (isBotChallengePage(text)) {
-                console.log(`[fetchRssFile] Detected bot challenge page (url: ${url})`)
+                log.warn('fetchRssFile: bot challenge page', {url})
                 return {status: 'error', content: null, reason: 'blocked-by-bot-protection'}
             }
 
             const rssUrl = extractRssLinkFromHtml(text, response.url || url)
             if (rssUrl) {
-                console.log(`[fetchRssFile] Found RSS link in HTML: ${rssUrl}`)
+                log.info('fetchRssFile: found RSS link in HTML', {url, rssUrl})
                 return fetchRssFile(rssUrl, hops + 1)
             }
         }
     } else {
-        console.log(`[fetchRssFile] Non-ok response from upstream: ${response.status} ${response.statusText} (url: ${url})`)
+        log.warn('fetchRssFile: upstream returned an error status', {url, status: response.status})
     }
 
     const htmlResponse = await fetch(url, {
@@ -74,13 +75,13 @@ export async function fetchRssFile(url: string, hops = 0): Promise<FetchFileResu
         const htmlText = await htmlResponse.text()
 
         if (isBotChallengePage(htmlText)) {
-            console.log(`[fetchRssFile] Detected bot challenge page in HTML fallback (url: ${url})`)
+            log.warn('fetchRssFile: bot challenge page in HTML fallback', {url})
             return {status: 'error', content: null, reason: 'blocked-by-bot-protection'}
         }
 
         const rssUrl = extractRssLinkFromHtml(htmlText, htmlResponse.url || url)
         if (rssUrl) {
-            console.log(`[fetchRssFile] Found RSS link in HTML fallback: ${rssUrl}`)
+            log.info('fetchRssFile: found RSS link in HTML fallback', {url, rssUrl})
             return fetchRssFile(rssUrl, hops + 1)
         }
     }

@@ -1,7 +1,8 @@
 import {defineStore} from "pinia";
 import {reactive, ref} from "vue";
 import type {FeedItemPreview} from "../types.ts";
-import {apiFetch} from "../client.ts";
+import {apiFetch, newRequestId, REQUEST_ID_HEADER} from "../client.ts";
+import {report} from "../telemetry.ts";
 
 /* ── Types ── */
 
@@ -162,8 +163,8 @@ export const useDownloadStore = defineStore('downloads', () => {
                     setTimeout(() => void deleteDownload(record.guid), remainingMs)
                 }
             }
-        } catch (_err) {
-            console.error('Failed to initialize download store:', _err)
+        } catch (err) {
+            report('error', 'Failed to initialize the download store', {error: err})
         }
     }
 
@@ -172,6 +173,11 @@ export const useDownloadStore = defineStore('downloads', () => {
 
         const abortController = new AbortController()
         statuses[item.guid] = {state: 'downloading', progress: 0, abortController}
+        // Ties the failure report to the Worker's media proxy logs for this request.
+        const requestId = newRequestId()
+        let httpStatus: number | null = null
+        let contentLength = 0
+        let received = 0
 
         try {
             // Check storage quota before downloading
@@ -188,15 +194,25 @@ export const useDownloadStore = defineStore('downloads', () => {
             }
 
             const proxiedUrl = `/api/feeditem/${encodeURIComponent(item.guid)}/media`
-            const response = await apiFetch(proxiedUrl, {signal: abortController.signal})
-            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+            const response = await apiFetch(proxiedUrl, {
+                signal: abortController.signal,
+                headers: {[REQUEST_ID_HEADER]: requestId},
+            })
+            httpStatus = response.status
+            if (!response.ok) {
+                let detail = ''
+                try {
+                    const body = await response.json() as {error?: string} | null
+                    if (body?.error) detail = `: ${body.error}`
+                } catch { /* non-JSON error body */ }
+                throw new Error(`HTTP ${response.status}${detail}`)
+            }
 
-            const contentLength = Number(response.headers.get('content-length')) || 0
+            contentLength = Number(response.headers.get('content-length')) || 0
             const reader = response.body?.getReader()
             if (!reader) throw new Error('No response body')
 
             const chunks: Uint8Array<ArrayBuffer>[] = []
-            let received = 0
 
             while (true) {
                 const {done, value} = await reader.read()
@@ -209,6 +225,13 @@ export const useDownloadStore = defineStore('downloads', () => {
                         status.progress = received / contentLength
                     }
                 }
+            }
+
+            // A connection that drops mid-transfer can end the stream without
+            // an error; a short file would otherwise be saved as complete.
+            if (received === 0) throw new Error('Download was empty')
+            if (contentLength > 0 && received < contentLength) {
+                throw new Error(`Download ended early: received ${received} of ${contentLength} bytes`)
             }
 
             const blob = new Blob(chunks, {type: item.enclosure_type ?? 'audio/mpeg'})
@@ -234,6 +257,18 @@ export const useDownloadStore = defineStore('downloads', () => {
                 statuses[item.guid] = 'idle'
             } else {
                 statuses[item.guid] = {state: 'error', message: (err as Error).message}
+                report('error', 'Episode download failed', {
+                    requestId,
+                    error: err,
+                    details: {
+                        feedItemGuid: item.guid,
+                        enclosureUrl: item.enclosure_url,
+                        enclosureType: item.enclosure_type,
+                        httpStatus,
+                        receivedBytes: received,
+                        expectedBytes: contentLength || null,
+                    },
+                })
             }
         }
     }
@@ -260,8 +295,8 @@ export const useDownloadStore = defineStore('downloads', () => {
             }
             statuses[guid] = 'idle'
             delete downloadedItems[guid]
-        } catch (_err) {
-            console.error('Failed to delete download:', _err)
+        } catch (err) {
+            report('error', 'Failed to delete a download', {error: err, details: {feedItemGuid: guid}})
         }
     }
 

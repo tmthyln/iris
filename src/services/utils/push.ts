@@ -2,6 +2,7 @@ import webpush, {WebPushError} from 'web-push'
 import type {D1Database} from '@cloudflare/workers-types'
 import {type ServerPushSubscription} from '../models'
 import {deletePushSubscription, getAllPushSubscriptions, touchPushSubscription} from '../crud'
+import {log} from './log'
 
 export interface PushNotificationPayload {
     type: 'new_item' | 'updated_item'
@@ -51,7 +52,7 @@ export async function sendWebPush(
             await deletePushSubscription(db, sub.endpoint)
             return
         }
-        console.error('Web push send failed', error)
+        log.error('Web push send failed', {endpoint: sub.endpoint, error})
     }
 }
 

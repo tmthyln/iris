@@ -3,6 +3,7 @@ import {reactive, ref} from "vue"
 import {useDocumentVisibility, useIntervalFn} from "@vueuse/core"
 import client from "../client"
 import type {Transcript, TranscriptFull} from "../types"
+import {report} from "../telemetry"
 
 const POLL_INTERVAL_MS = 5000
 // Stop polling after this many consecutive failed fetches; a later
@@ -17,6 +18,27 @@ export const useTranscriptStore = defineStore('transcripts', () => {
     const byItem = reactive<Record<string, Transcript[]>>({})
     const fullById = reactive<Record<number, TranscriptFull>>({})
     const loading = ref<Record<string, boolean>>({})
+
+    // Stores a fetched list, reporting transcripts this page saw fail (not
+    // ones that had already failed before it loaded them). The Worker logs
+    // the transcription under the same transcriptId.
+    function setList(itemGuid: string, list: Transcript[]) {
+        const previous = new Map((byItem[itemGuid] ?? []).map(t => [t.id, t.status]))
+        for (const transcript of list) {
+            const was = previous.get(transcript.id)
+            if (transcript.status === 'error' && (was === 'pending' || was === 'processing')) {
+                report('error', 'Transcription failed', {
+                    details: {
+                        transcriptId: transcript.id,
+                        feedItemGuid: itemGuid,
+                        model: transcript.model,
+                        errorMessage: transcript.error_message,
+                    },
+                })
+            }
+        }
+        byItem[itemGuid] = list
+    }
 
     const visibility = useDocumentVisibility()
     // One poller per item; the map value is the interval's pause handle so
@@ -40,7 +62,7 @@ export const useTranscriptStore = defineStore('transcripts', () => {
                 return
             }
             failures = 0
-            byItem[itemGuid] = list
+            setList(itemGuid, list)
             if (!hasInProgress(list)) stopPolling(itemGuid)
         }
         const {pause} = useIntervalFn(() => void poll(), POLL_INTERVAL_MS)
@@ -53,7 +75,7 @@ export const useTranscriptStore = defineStore('transcripts', () => {
         const list = result.ok ? result.data : null
         loading.value[itemGuid] = false
         if (list) {
-            byItem[itemGuid] = list
+            setList(itemGuid, list)
             if (hasInProgress(list)) {
                 ensurePolling(itemGuid)
             } else {

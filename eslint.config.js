@@ -66,8 +66,12 @@ export default defineConfig([
         "vue/max-attributes-per-line": ["error", { singleline: { max: 3 }, multiline: { max: 1 } }],
     } },
     // In tests, `expect(vi.mocked(obj.method))` and helpers passing spies around reference methods
-    // without a receiver — unbound-method's documented false positive for mock assertions.
+    // without a receiver — unbound-method's documented false positive for mock assertions. Vitest
+    // types asymmetric matchers (`expect.objectContaining(…)`, `expect.any(…)`) as `any`, so an
+    // expected value with a matcher nested inside is an "unsafe" assignment by construction.
     { files: ["src/**/*.test.ts", "src/testing/**", "src/services/testing/**"], rules: {
         "@typescript-eslint/unbound-method": "off",
+        "@typescript-eslint/no-unsafe-assignment": "off",
+        "@typescript-eslint/no-unsafe-return": "off",
     } },
 ]);

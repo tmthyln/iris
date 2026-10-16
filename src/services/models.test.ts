@@ -117,7 +117,12 @@ describe('ServerFeed', () => {
         const feed = new ServerFeed(rawFeed({update_frequency: 'often' as unknown as number}))
 
         await expect(feed.persistTo(db)).rejects.toThrow()
-        expect(error).toHaveBeenCalledWith('[D1 Error] Failed to persist to table "feed"')
+        expect(error).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'D1: failed to persist row',
+            table: 'feed',
+            statement: expect.stringContaining('INSERT INTO feed'),
+            error: expect.objectContaining({message: expect.any(String)}),
+        }))
     })
 
     test('get returns null for an unknown guid and reports has_archives', async () => {

@@ -1,5 +1,6 @@
 import {ref, computed, onMounted} from 'vue'
 import client from '../client.ts'
+import {report} from '../telemetry.ts'
 
 function urlBase64ToUint8Array(base64String: string) {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -48,7 +49,7 @@ export function usePushSubscription() {
                 permission.value = Notification.permission
             }
         } catch (err) {
-            console.error('Failed to refresh push subscription state', err)
+            report('error', 'Failed to refresh push subscription state', {error: err})
         }
     }
 
@@ -104,7 +105,7 @@ export function usePushSubscription() {
             isSubscribed.value = true
             return true
         } catch (err) {
-            console.error('Push subscribe failed', err)
+            report('error', 'Push subscribe failed', {error: err})
             lastError.value = err instanceof Error ? err.message : 'Failed to enable push notifications.'
             return false
         } finally {
@@ -135,7 +136,7 @@ export function usePushSubscription() {
             isSubscribed.value = !removedLocally
             return removedLocally
         } catch (err) {
-            console.error('Push unsubscribe failed', err)
+            report('error', 'Push unsubscribe failed', {error: err})
             lastError.value = err instanceof Error ? err.message : 'Failed to disable push notifications.'
             return false
         } finally {

@@ -1,7 +1,8 @@
 import {IDBFactory} from 'fake-indexeddb'
 import {createPinia, setActivePinia} from 'pinia'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {makeItem} from '../testing/helpers.ts'
+import {flush} from '../telemetry.ts'
+import {makeItem, ok, stubClient} from '../testing/helpers.ts'
 import {useDownloadStore} from './downloads.ts'
 
 const AUDIO_BYTES = 1000
@@ -92,6 +93,58 @@ describe('downloadItem', () => {
         await store.downloadItem(item)
         expect(store.getStatus(item.guid)).toEqual({state: 'error', message: 'HTTP 502'})
         expect(store.totalStorageUsed).toBe(0)
+    })
+
+    it('reports a failed download with the request id it sent and what arrived', async () => {
+        const item = audioItem()
+        const fetchMock = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(
+            new Response('{"error":"Upstream fetch failed: timeout"}', {status: 502}),
+        ))
+        vi.stubGlobal('fetch', fetchMock)
+        const reported = stubClient('reportClientEvents', ok(undefined))
+        vi.spyOn(console, 'error').mockImplementation(() => undefined)
+        const store = useDownloadStore()
+        await store.init()
+
+        await store.downloadItem(item)
+        flush()
+
+        expect(store.getStatus(item.guid)).toEqual({state: 'error', message: 'HTTP 502: Upstream fetch failed: timeout'})
+        const sentRequestId = new Headers(fetchMock.mock.calls[0][1]?.headers).get('X-Request-Id')
+        const events = reported.mock.calls.flatMap(([batch]) => batch)
+        expect(events).toContainEqual(expect.objectContaining({
+            message: 'Episode download failed',
+            requestId: sentRequestId,
+            details: expect.objectContaining({
+                feedItemGuid: item.guid,
+                enclosureUrl: item.enclosure_url,
+                httpStatus: 502,
+                receivedBytes: 0,
+                error: 'Error: HTTP 502: Upstream fetch failed: timeout',
+            }),
+        }))
+    })
+
+    it('fails a download whose body ends before its declared length instead of saving it', async () => {
+        const item = audioItem()
+        vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(new Uint8Array(400), {
+            status: 200,
+            headers: {'content-length': String(AUDIO_BYTES)},
+        }))))
+        const reported = stubClient('reportClientEvents', ok(undefined))
+        vi.spyOn(console, 'error').mockImplementation(() => undefined)
+        const store = useDownloadStore()
+        await store.init()
+
+        await store.downloadItem(item)
+        flush()
+
+        expect(store.getStatus(item.guid)).toEqual({state: 'error', message: `Download ended early: received 400 of ${AUDIO_BYTES} bytes`})
+        expect(store.isDownloaded(item.guid)).toBe(false)
+        expect(store.totalStorageUsed).toBe(0)
+        expect(reported.mock.calls.flatMap(([batch]) => batch)).toContainEqual(expect.objectContaining({
+            details: expect.objectContaining({httpStatus: 200, receivedBytes: 400, expectedBytes: AUDIO_BYTES}),
+        }))
     })
 
     it('refuses to download when storage is nearly full', async () => {

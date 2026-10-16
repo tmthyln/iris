@@ -1,5 +1,6 @@
 import {fetchArchiveSnapshot, planFeedArchives, refreshFeed, transcribeFeedItem} from './flows'
 import type {FeedProcessingTask} from './types'
+import {log, traced} from './utils/log'
 
 /** Cloudflare accepts at most this many messages in one sendBatch() call. */
 const SEND_BATCH_LIMIT = 100
@@ -29,7 +30,7 @@ export async function runTask(task: FeedProcessingTask, env: Env, ctx?: Executio
             return
         default:
             // Enqueued by a different deployment; retrying would not help.
-            console.warn(`Ignoring queue task of unknown type: ${String((task as {type?: unknown}).type)}`)
+            log.warn('Ignoring queue task of unknown type', {taskType: String((task as {type?: unknown}).type)})
     }
 }
 
@@ -37,7 +38,7 @@ export async function runTask(task: FeedProcessingTask, env: Env, ctx?: Executio
 export async function enqueueTasks(queue: Queue, tasks: readonly FeedProcessingTask[]): Promise<void> {
     for (let start = 0; start < tasks.length; start += SEND_BATCH_LIMIT) {
         const chunk = tasks.slice(start, start + SEND_BATCH_LIMIT)
-        await queue.sendBatch(chunk.map(body => ({body})))
+        await queue.sendBatch(chunk.map(task => ({body: traced(task)})))
     }
 }
 
@@ -57,7 +58,7 @@ export async function dispatchTasks(env: Env, tasks: readonly FeedProcessingTask
         try {
             await runTask(task, env)
         } catch (err) {
-            console.error(`Inline ${task.type} task failed`, err)
+            log.error('Inline task failed', {taskType: task.type, error: err})
         }
     }
 }

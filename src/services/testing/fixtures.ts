@@ -165,6 +165,12 @@ export function fakeQueue() {
             for (const message of batch) messages.push({body: message.body})
             return Promise.resolve()
         }),
+        /** The enqueued task bodies without their `trace` (the ids of the request that enqueued them). */
+        tasks: () => messages.map(({body}) => {
+            const task: Record<string, unknown> = {...body}
+            delete task.trace
+            return task
+        }),
     }
     return queue
 }

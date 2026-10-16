@@ -111,6 +111,29 @@ Rules that keep the inference working (`src/services/endpoints.ts`):
 - **Cron:** Hourly scheduled feed refresh at `:17` (production only — Previews have no cron)
 - **Environments:** Production is the top level of `wrangler.toml` (Worker `iris-prod`); Workers Previews use the `[previews]` block with separate `-staging` D1/R2/Queue resources. No Wrangler `[env.*]` blocks
 
+### Logging and error reporting
+
+Frontend errors and backend logs are correlated by two ids, both sent by `apiFetch` (`src/client.ts`) on every API call:
+- `X-Request-Id` — one per API call (a caller may set its own, as the downloads store does, to refer to the call later). The Worker generates one when absent and echoes it in the response.
+- `X-Client-Session` — one per page load (`sessionId` in `client.ts`).
+
+Backend (`src/services/utils/log.ts`):
+- Log with `log.info/warn/error(message, fields)`, not bare `console.*`. Each line is one JSON object (Workers Logs indexes the fields); pass a thrown value as `fields.error` and it is serialised with name/message/stack/cause.
+- The `requestContext` middleware (`endpoints.ts`) runs each request inside an `AsyncLocalStorage` log context holding `requestId`/`sessionId`, merged into every line logged during it, and writes one summary line per request (`API request` / `rejected` / `failed`). Add more context for a unit of work with `withLogContext({...}, fn)` (the transcription flow adds `transcriptId`).
+- Queue sends wrap the task in `traced(task)`, which attaches the current ids as `task.trace`; the consumer and the cron handler run each task / run inside a context built from it, so background work logs under the `requestId` of the click that started it (cron runs get a fresh `requestId`).
+
+Frontend (`src/telemetry.ts`):
+- `report(level, message, {requestId?, error?, details?})` mirrors to the console and batches events to `POST /api/client-log` (deduped, capped, flushed on page hide with `keepalive`). Use it instead of `console.error` for anything worth seeing in production.
+- `installErrorReporting()` (called in `main.ts`) reports Vue errors, router errors, uncaught errors, unhandled rejections, and every failed API call (via `onApiFailure` in `client.ts`, with its `requestId`; offline failures and expired sessions are not reported).
+- Also reported: `<audio>` source/media/`play()` errors (the player loads remote episodes directly from the publisher, so the Worker never sees them), download failures including bodies shorter than their `Content-Length`, and transcripts seen moving to `error` (with `transcriptId`).
+- The Worker logs reports with `source: 'client'` under the `requestId` of the API call they are about, so one query by `requestId` shows the backend's lines for a call and the client's report on it together; query by `sessionId` for a whole page load.
+
+Finding logs: in production, Workers Logs (dashboard → Observability) — filter on `requestId`/`sessionId`/`transcriptId`/`source`. In `npm run dev`, Worker and client lines print in the Vite terminal, and the local explorer can query them with SQL (console args are stored as a JSON array, hence `$[0]`):
+```bash
+curl -X POST http://localhost:5173/cdn-cgi/local/explorer/api/local/observability/query -H 'Content-Type: application/json' \
+  -d "{\"sql\":\"SELECT level, message FROM logs WHERE json_extract(message, '\$[0].requestId') = '<id>' ORDER BY ts_ms\"}"
+```
+
 ### Authentication
 
 The API has **no in-app authentication by design** (#205). Production and every Preview hostname (`*.iris.timothylin.me`) sit behind a Cloudflare Access application, which handles login before requests ever reach the Worker. Consequences:
@@ -119,6 +142,7 @@ The API has **no in-app authentication by design** (#205). Production and every 
 - Endpoints reachable without Access (none currently) must be treated as public. Keep `workers_dev`/`preview_urls` off in `wrangler.toml` — `workers.dev` hostnames would bypass Access. The push-subscription endpoints additionally validate input and cap table growth because they were written before Access was in place.
 - Web push delivery is unaffected: notifications arrive via the browser push service, not same-origin fetches.
 - Local dev (`npm run dev` / wrangler) has no Access in front of it — everything is open on localhost, which is expected.
+- `POST /api/client-log` (frontend error reports) is behind Access like everything else; it still validates and caps what it logs (25 events per request, truncated strings, primitive `details` only).
 - Expired Access sessions: `src/client.ts` sends `X-Requested-With: XMLHttpRequest` on every API call so Access answers 401 instead of redirecting to its (cross-origin) login page — but that is unreliable (a fully absent session still gets the redirect), so `apiFetch` also fetches with `redirect: 'manual'` and treats any redirect (`opaqueredirect`, the API itself never redirects) as an expired session. Either signal triggers a document navigation with a throwaway `?reauth=` param (stripped by the router, and never precached by the service worker) to log in again. Frontend code must call the API through `client.ts` (`request`/`apiFetch`), and the Worker must never return 401 itself.
 
 ### Database
@@ -144,12 +168,14 @@ Conventions for frontend tests (`src/testing/helpers.ts` has the helpers):
 - Factories `makeFeed`/`makeItem`/`makeFullItem`/`makeNotification`/`makeTranscript` build the **frontend** (JSON-serialised) shapes from `src/types.ts`; note `client.getFeedItems` returns full items (`makeFullItem`), not previews.
 - Browser APIs jsdom lacks: IndexedDB via `fake-indexeddb` (`globalThis.indexedDB = new IDBFactory()` per test), push via `stubBrowserPush()`/`makeSubscription()` (plus `Reflect.deleteProperty(navigator, 'serviceWorker')` in `afterEach`), `URL.createObjectURL` and `HTMLMediaElement.prototype.play/pause/load` stubbed where needed; media metadata is faked by defining `duration` and dispatching `durationchange` (vueuse's `useMediaControls` applies `src` as `<source>` children).
 - Time-based behaviour (debounce, pollers) uses `vi.useFakeTimers` — pass `toFake` selectively so `Date`/IndexedDB keep working — with `vi.advanceTimersByTimeAsync`.
-- `@typescript-eslint/unbound-method` is off for test files (mock assertions like `expect(vi.mocked(client.x))` trip it).
+- `@typescript-eslint/unbound-method` is off for test files (mock assertions like `expect(vi.mocked(client.x))` trip it), as are `no-unsafe-assignment`/`no-unsafe-return` (Vitest types asymmetric matchers like `expect.objectContaining` as `any`).
+- To assert on telemetry, stub `client.reportClientEvents` and call `flush()` from `src/telemetry.ts`; reports are otherwise sent after a 2s delay. Telemetry dedupe state is per module load, so give each test's reports distinct messages.
 
 Conventions for Worker tests (`src/services/testing/fixtures.ts` has the helpers):
 - Storage is isolated per file; call `resetStorage()` in `beforeEach` to isolate tests within a file (it empties every D1 table, restarts AUTOINCREMENT counters and clears the R2 bucket). The Durable Object queue is separate — clear it with `getQueue(env).clearQueue()` if a test uses it.
 - Seed data through the models (`seedFeed`, `seedFeedItem`, `seedFeedSource`) so FTS rows and conflict handling behave as in production.
 - Endpoints are driven with `app.request(path, init, env)`; `testEnv()` returns the real bindings with `FEED_PROCESSING_QUEUE` replaced by an in-memory fake (`queue.messages`) and accepts overrides (e.g. a fake `AI`).
+- Log lines are objects (see Logging above): assert with `expect(spy).toHaveBeenCalledWith(expect.objectContaining({message: '…', requestId: '…'}))` on a `vi.spyOn(console, 'log' | 'warn' | 'error')` created in the test itself. Enqueued tasks from a request carry `trace`; `queue.tasks()` returns the bodies without it.
 - **Do not use `vi.mock`** — inside the workerd pool it does not reliably replace a module for transitive importers. Stub outbound HTTP with `mockFetch()` (global `fetch`; unknown URLs throw), spy on `webpush.sendNotification` with `stubWebPush()`, and swap bindings through `testEnv()`.
 - No filesystem in workerd: load fixture files with Vite `?raw` imports (typed by `src/services/testing/raw-imports.d.ts`).
 - Coverage uses Istanbul (V8 coverage is unavailable in workerd); `src/services/testing/**` is excluded from the report.
@@ -170,6 +196,7 @@ PATCH  /api/queue                 - Move queue item
 DELETE /api/queue                 - Clear queue
 DELETE /api/queue/:guid           - Remove from queue
 POST   /api/command/refresh-all-feeds - Trigger manual refresh
+POST   /api/client-log            - Frontend error reports (logged, not stored)
 ```
 
 ## Key Patterns

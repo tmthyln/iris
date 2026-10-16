@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {computed, ref, watch, watchEffect} from "vue";
-import {useIntervalFn, useMediaControls, onClickOutside} from "@vueuse/core";
+import {useEventListener, useIntervalFn, useMediaControls, onClickOutside} from "@vueuse/core";
 import {useSortable} from "@vueuse/integrations/useSortable";
 import {useDurationFormat} from "../format.ts";
 import {useQueueStore} from "../stores/queue.ts";
@@ -9,6 +9,7 @@ import {useFeedStore} from "../stores/feeds.ts";
 import {useDownloadStore} from "../stores/downloads.ts";
 import type {FeedItemPreview} from "../types.ts";
 import {useSwipeToDismiss} from "../swipe.ts";
+import {report} from "../telemetry.ts";
 
 const queueStore = useQueueStore()
 const feedItemStore = useFeedItemStore()
@@ -45,9 +46,39 @@ const {
     currentTime,
     duration,
     ended,
+    onSourceError,
+    onPlaybackError,
 } = useMediaControls(audio, {
     src: resolvedSrc,
 })
+
+// The audio element loads remote episodes straight from the publisher, so the
+// Worker never sees these requests; this report is the only trace of them.
+function reportAudioError(kind: string, error?: unknown) {
+    const element = audio.value
+    const mediaError = element?.error
+    report('error', `Audio playback failed: ${kind}`, {
+        error,
+        details: {
+            feedItemGuid: currentItem.value?.guid,
+            enclosureUrl: currentItem.value?.enclosure_url,
+            enclosureType: currentItem.value?.enclosure_type,
+            source: resolvedSrc.value.startsWith('blob:') ? 'download' : 'remote',
+            mediaErrorCode: mediaError?.code ?? null,
+            mediaErrorMessage: mediaError?.message || null,
+            networkState: element?.networkState,
+            readyState: element?.readyState,
+            currentTime: currentTime.value,
+            duration: Number.isFinite(duration.value) ? duration.value : null,
+        },
+    })
+}
+// A <source> that fails to load (bad URL, HTTP error, unsupported type).
+onSourceError(() => reportAudioError('source could not be loaded'))
+// Decode errors and network failures after loading began.
+useEventListener(audio, 'error', () => reportAudioError('media error'))
+// play() rejected (autoplay policy, unsupported source).
+onPlaybackError((err) => reportAudioError('play() was rejected', err))
 
 const currentItemReady = computed(() =>
     !!currentItem.value && resolvedSrc.value !== '' && duration.value > 0 && isFinite(duration.value)

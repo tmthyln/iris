@@ -14,7 +14,7 @@ describe('runTask', () => {
 
         await expect(runTask({type: 'unknown-task'} as unknown as FeedProcessingTask, env)).resolves.toBeUndefined()
 
-        expect(warn).toHaveBeenCalledWith('Ignoring queue task of unknown type: unknown-task')
+        expect(warn).toHaveBeenCalledWith(expect.objectContaining({message: 'Ignoring queue task of unknown type', taskType: 'unknown-task'}))
     })
 })
 

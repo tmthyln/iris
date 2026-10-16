@@ -603,22 +603,30 @@ describe('fetchArchiveSnapshot', () => {
 
     test('gives up when the snapshot cannot be fetched, is not ok, or is not RSS', async () => {
         await seedFeed({guid: 'feed-a'})
-        const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         const {env: testEnvironment} = testEnv()
 
         mockFetch({})  // unknown URL → fetch rejects
         await fetchArchiveSnapshot(task, testEnvironment)
-        expect(log).toHaveBeenLastCalledWith(`Failed to fetch archive snapshot: ${SNAPSHOT_URL}`)
+        expect(warn).toHaveBeenLastCalledWith(expect.objectContaining({
+            message: 'Failed to fetch archive snapshot',
+            snapshotUrl: SNAPSHOT_URL,
+            error: expect.objectContaining({message: expect.stringContaining('Unexpected fetch')}),
+        }))
 
         vi.unstubAllGlobals()
         mockFetch({[SNAPSHOT_URL]: new Response('gone', {status: 404})})
         await fetchArchiveSnapshot(task, testEnvironment)
-        expect(log).toHaveBeenLastCalledWith(`Archive snapshot returned 404: ${SNAPSHOT_URL}`)
+        expect(warn).toHaveBeenLastCalledWith(expect.objectContaining({
+            message: 'Archive snapshot returned an error status',
+            snapshotUrl: SNAPSHOT_URL,
+            status: 404,
+        }))
 
         vi.unstubAllGlobals()
         mockFetch({[SNAPSHOT_URL]: new Response('hello')})
         await fetchArchiveSnapshot(task, testEnvironment)
-        expect(log).toHaveBeenLastCalledWith(`Archive snapshot is not valid RSS: ${SNAPSHOT_URL}`)
+        expect(warn).toHaveBeenLastCalledWith(expect.objectContaining({message: 'Archive snapshot is not valid RSS', snapshotUrl: SNAPSHOT_URL}))
 
         expect(await countRows('feed_source')).toBe(0)
         expect(await countRows('feed_file')).toBe(0)
@@ -950,7 +958,11 @@ describe('transcribeFeedItem', () => {
 
             await transcribeFeedItem(transcript.id, testEnvironment)
 
-            expect(error).toHaveBeenCalledWith('[transcribe] poll error', expect.any(Error))
+            expect(error).toHaveBeenCalledWith(expect.objectContaining({
+                message: 'Polling the Whisper batch request failed; will retry',
+                transcriptId: transcript.id,
+                error: expect.objectContaining({message: 'network'}),
+            }))
             expect(await transcriptRow(transcript.id)).toMatchObject({status: 'processing'})
             expect(queue.messages).toEqual([
                 {body: {type: 'transcribe-feed-item', transcriptId: transcript.id}, options: {delaySeconds: 30}},

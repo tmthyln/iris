@@ -17,6 +17,7 @@ import {computeFeedItemContentHash, fetchRssFile, parseRssText, sha256Encode, FE
 import {fetchArchiveList, waybackSnapshotUrl} from "./utils/wayback";
 import {fanOutPushWithContext, loadPushFanOutContext, type PushFanOutContext, type PushNotificationPayload} from "./utils/push";
 import type {FetchArchiveSnapshotTask} from "./types";
+import {log, traced, withLogContext} from "./utils/log";
 
 export type FeedItemClassification = 'new' | 'updated' | 'skip'
 
@@ -197,13 +198,13 @@ export async function planFeedArchives(feedGuid: string, env: Env) {
 
         for (const snapshot of selected) {
             const snapshotUrl = waybackSnapshotUrl(snapshot.timestamp, snapshot.original)
-            await env.FEED_PROCESSING_QUEUE.send({
+            await env.FEED_PROCESSING_QUEUE.send(traced({
                 type: 'fetch-archive-snapshot',
                 feedSourceUrl: feedSource.feed_url,
                 feedGuid,
                 timestamp: snapshot.timestamp,
                 snapshotUrl,
-            } satisfies FetchArchiveSnapshotTask)
+            } satisfies FetchArchiveSnapshotTask))
         }
     }
 }
@@ -274,13 +275,13 @@ export async function fetchArchiveSnapshot(task: FetchArchiveSnapshotTask, env: 
     let response: Response
     try {
         response = await fetch(task.snapshotUrl)
-    } catch {
-        console.log(`Failed to fetch archive snapshot: ${task.snapshotUrl}`)
+    } catch (err) {
+        log.warn('Failed to fetch archive snapshot', {snapshotUrl: task.snapshotUrl, error: err})
         return
     }
 
     if (!response.ok) {
-        console.log(`Archive snapshot returned ${response.status}: ${task.snapshotUrl}`)
+        log.warn('Archive snapshot returned an error status', {snapshotUrl: task.snapshotUrl, status: response.status})
         return
     }
 
@@ -291,7 +292,7 @@ export async function fetchArchiveSnapshot(task: FetchArchiveSnapshotTask, env: 
     try {
         parsed = parseRssText(content)
     } catch {
-        console.log(`Archive snapshot is not valid RSS: ${task.snapshotUrl}`)
+        log.warn('Archive snapshot is not valid RSS', {snapshotUrl: task.snapshotUrl})
         return
     }
 
@@ -376,9 +377,18 @@ async function whisperPollBatch(env: Env, model: string, requestId: string) {
 
 async function reenqueueTranscriptPoll(env: Env, transcriptId: number) {
     await env.FEED_PROCESSING_QUEUE.send(
-        {type: 'transcribe-feed-item', transcriptId} as const,
+        traced({type: 'transcribe-feed-item', transcriptId} as const),
         {delaySeconds: TRANSCRIPT_POLL_DELAY_SEC},
     )
+}
+
+async function failTranscript(db: D1Database, transcriptId: number, message: string, details: Record<string, unknown> = {}) {
+    log.error('Transcription failed', {reason: message, ...details})
+    await updateTranscriptStatus(db, transcriptId, {
+        status: 'error',
+        error_message: message,
+        completed_at: new Date().toISOString(),
+    })
 }
 
 /**
@@ -389,31 +399,43 @@ async function reenqueueTranscriptPoll(env: Env, transcriptId: number) {
  * timeout (504), which is why we go through batch.
  */
 export async function transcribeFeedItem(transcriptId: number, env: Env) {
+    await withLogContext({transcriptId}, () => transcribe(transcriptId, env))
+}
+
+async function transcribe(transcriptId: number, env: Env) {
     const db = env.DB
     const transcript = await ServerTranscript.get(db, transcriptId)
-    if (!transcript) return
+    if (!transcript) {
+        log.warn('Transcript to process no longer exists')
+        return
+    }
     if (transcript.status === 'complete' || transcript.status === 'error') return
 
     const feedItem = await ServerFeedItem.get(db, transcript.feed_item_guid)
     if (!feedItem?.enclosure_url) {
-        await updateTranscriptStatus(db, transcriptId, {
-            status: 'error',
-            error_message: 'Feed item has no enclosure_url',
-            completed_at: new Date().toISOString(),
-        })
+        await failTranscript(db, transcriptId, 'Feed item has no enclosure_url', {feedItemGuid: transcript.feed_item_guid})
         return
     }
 
     if (transcript.status === 'pending') {
+        const enclosureUrl = feedItem.enclosure_url
         try {
-            const upstream = await fetch(feedItem.enclosure_url, {
+            const upstream = await fetch(enclosureUrl, {
                 headers: {'User-Agent': FETCH_USER_AGENT},
+            })
+            log.info('Fetched audio for transcription', {
+                enclosureUrl,
+                finalUrl: upstream.url,
+                status: upstream.status,
+                contentType: upstream.headers.get('content-type'),
+                contentLength: upstream.headers.get('content-length'),
             })
             if (!upstream.ok) throw new Error(`Upstream fetch failed: HTTP ${upstream.status}`)
             const audioBuf = await upstream.arrayBuffer()
             const audioBase64 = Buffer.from(audioBuf).toString('base64')
 
             const submitted = await whisperSubmitBatch(env, transcript.model, audioBase64, transcript.language)
+            log.info('Submitted Whisper batch request', {model: transcript.model, audioBytes: audioBuf.byteLength, response: submitted})
             if (!submitted.request_id) {
                 throw new Error('Batch submission returned no request_id')
             }
@@ -425,35 +447,29 @@ export async function transcribeFeedItem(transcriptId: number, env: Env) {
             })
             await reenqueueTranscriptPoll(env, transcriptId)
         } catch (err) {
-            await updateTranscriptStatus(db, transcriptId, {
-                status: 'error',
-                error_message: err instanceof Error ? err.message : String(err),
-                completed_at: new Date().toISOString(),
-            })
+            await failTranscript(db, transcriptId, err instanceof Error ? err.message : String(err), {enclosureUrl, error: err})
         }
         return
     }
 
     // status === 'processing'
     if (!transcript.batch_request_id) {
-        await updateTranscriptStatus(db, transcriptId, {
-            status: 'error',
-            error_message: 'Processing transcript has no batch_request_id',
-            completed_at: new Date().toISOString(),
-        })
+        await failTranscript(db, transcriptId, 'Processing transcript has no batch_request_id')
         return
     }
     if (transcript.started_at && Date.now() - transcript.started_at.getTime() > TRANSCRIPT_MAX_AGE_MS) {
-        await updateTranscriptStatus(db, transcriptId, {
-            status: 'error',
-            error_message: 'Timed out waiting for Whisper batch result',
-            completed_at: new Date().toISOString(),
-        })
+        await failTranscript(db, transcriptId, 'Timed out waiting for Whisper batch result', {batchRequestId: transcript.batch_request_id})
         return
     }
 
     try {
         const poll = await whisperPollBatch(env, transcript.model, transcript.batch_request_id)
+        log.info('Polled Whisper batch request', {
+            batchRequestId: transcript.batch_request_id,
+            status: poll.status,
+            success: poll.responses?.[0]?.success ?? poll.success,
+            hasResult: Boolean(poll.responses?.[0]?.result ?? poll.result),
+        })
         const arrayResponse = poll.responses?.[0]
         const result = arrayResponse?.result ?? poll.result
         const success = arrayResponse?.success ?? poll.success
@@ -469,12 +485,12 @@ export async function transcribeFeedItem(transcriptId: number, env: Env) {
                 language: detectedLanguage,
                 completed_at: new Date().toISOString(),
             })
+            log.info('Transcription complete', {textLength: result.text.length})
             await feedItem.refreshTextSearch(db)
         } else if (success === false || error) {
-            await updateTranscriptStatus(db, transcriptId, {
-                status: 'error',
-                error_message: error ? JSON.stringify(error) : 'Inference failed',
-                completed_at: new Date().toISOString(),
+            await failTranscript(db, transcriptId, error ? JSON.stringify(error) : 'Inference failed', {
+                batchRequestId: transcript.batch_request_id,
+                pollResponse: poll,
             })
         } else {
             // Still queued/running — poll again later.
@@ -482,7 +498,7 @@ export async function transcribeFeedItem(transcriptId: number, env: Env) {
         }
     } catch (err) {
         // Treat transient poll failures as retriable up to the max-age cap above.
-        console.error('[transcribe] poll error', err)
+        log.error('Polling the Whisper batch request failed; will retry', {batchRequestId: transcript.batch_request_id, error: err})
         await reenqueueTranscriptPoll(env, transcriptId)
     }
 }

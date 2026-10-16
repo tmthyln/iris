@@ -42,6 +42,9 @@ export type Transcript = Json<Rpc['api']['feeditem'][':guid']['transcript']['$ge
 export type TranscriptFull = Json<Rpc['api']['transcript'][':id']['$get']>
 export type TranscriptStatus = Transcript['status']
 
+/** A frontend error report, as POST /api/client-log accepts it (src/telemetry.ts). */
+export type ClientLogEvent = InferRequestType<Rpc['api']['client-log']['$post']>['json']['events'][number]
+
 /** One entry of a transcript's `segments_json` once parsed. */
 export interface TranscriptSegment {
     start?: number

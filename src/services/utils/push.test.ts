@@ -83,7 +83,11 @@ describe('sendWebPush', () => {
 
         await sendWebPush(db, vapid, sub, payload)
 
-        expect(error).toHaveBeenCalledWith('Web push send failed', failure)
+        expect(error).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Web push send failed',
+            endpoint: 'https://push/1',
+            error: expect.objectContaining({message: failure.message}),
+        }))
         expect(await subscriptionRows()).toEqual([{endpoint: 'https://push/1', last_used_at: null}])
     })
 
@@ -95,7 +99,11 @@ describe('sendWebPush', () => {
 
         await sendWebPush(db, vapid, sub, payload)
 
-        expect(error).toHaveBeenCalledWith('Web push send failed', failure)
+        expect(error).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Web push send failed',
+            endpoint: 'https://push/1',
+            error: expect.objectContaining({message: failure.message}),
+        }))
         expect(await subscriptionRows()).toEqual([{endpoint: 'https://push/1', last_used_at: null}])
     })
 })

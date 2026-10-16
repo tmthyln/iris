@@ -1,3 +1,5 @@
+import type {TaskTrace} from './utils/log'
+
 
 export interface RefreshFeedTask {
     readonly type: 'refresh-feed'
@@ -22,7 +24,12 @@ export interface TranscribeFeedItemTask {
     readonly transcriptId: number
 }
 
-export type FeedProcessingTask = RefreshFeedTask | PlanFeedArchivesTask | FetchArchiveSnapshotTask | TranscribeFeedItemTask
+/** Ids of the request (or cron run) that caused a task; see utils/log.ts. */
+export interface Traced {
+    readonly trace?: TaskTrace
+}
+
+export type FeedProcessingTask = (RefreshFeedTask | PlanFeedArchivesTask | FetchArchiveSnapshotTask | TranscribeFeedItemTask) & Traced
 
 export interface FetchSuccessFileResult {
     readonly status: 'success'

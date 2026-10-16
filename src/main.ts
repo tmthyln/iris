@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
 import {createPinia} from "pinia";
+import {installErrorReporting} from './telemetry'
 
 import './assets/styles.scss'
 
@@ -22,7 +23,8 @@ registerSW({
     },
 })
 
-createApp(App)
-    .use(createPinia())
+const app = createApp(App)
+installErrorReporting(app, router)
+app.use(createPinia())
     .use(router)
     .mount('#app')
