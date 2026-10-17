@@ -1,5 +1,5 @@
 import {defineStore} from "pinia";
-import {reactive, ref} from "vue";
+import {reactive, ref, toRaw} from "vue";
 import type {FeedItemPreview} from "../types.ts";
 import {apiFetch, newRequestId, REQUEST_ID_HEADER} from "../client.ts";
 import {report} from "../telemetry.ts";
@@ -243,7 +243,8 @@ export const useDownloadStore = defineStore('downloads', () => {
                 enclosure_type: item.enclosure_type,
                 size: blob.size,
                 downloaded_at: now,
-                item_data: item,
+                // Callers pass items out of reactive state; IndexedDB cannot clone a Proxy.
+                item_data: toRaw(item),
             })
 
             statuses[item.guid] = {state: 'downloaded', size: blob.size, downloadedAt: now}

@@ -1,6 +1,7 @@
 import {IDBFactory} from 'fake-indexeddb'
 import {createPinia, setActivePinia} from 'pinia'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
+import {reactive, toRaw} from 'vue'
 import {flush} from '../telemetry.ts'
 import {makeItem, ok, stubClient} from '../testing/helpers.ts'
 import {useDownloadStore} from './downloads.ts'
@@ -66,6 +67,22 @@ describe('downloadItem', () => {
         expect(store.totalStorageUsed).toBe(AUDIO_BYTES)
         expect(store.downloadedItems[item.guid]).toEqual(item)
         expect(store.blobUrls[item.guid]).toMatch(/^blob:mock-/)
+    })
+
+    it('stores items that come from reactive state', async () => {
+        // Callers pass items out of Pinia state; IndexedDB cannot clone a Proxy.
+        const item = reactive(audioItem())
+        stubMediaFetch()
+        const store = useDownloadStore()
+        await store.init()
+
+        await store.downloadItem(item)
+
+        expect(store.isDownloaded(item.guid)).toBe(true)
+        setActivePinia(createPinia())
+        const nextSession = useDownloadStore()
+        await nextSession.init()
+        expect(nextSession.downloadedItems[item.guid]).toEqual(toRaw(item))
     })
 
     it('persists the download so a later session sees it', async () => {
