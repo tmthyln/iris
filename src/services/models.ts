@@ -671,7 +671,6 @@ export interface RawTranscript {
     text: string | null
     segments_json: string | null
     error_message: string | null
-    batch_request_id: string | null
     requested_at: string | Date
     started_at: string | Date | null
     completed_at: string | Date | null
@@ -687,7 +686,6 @@ export class ServerTranscript {
     text: string | null
     segments_json: string | null
     error_message: string | null
-    batch_request_id: string | null
     requested_at: Date
     started_at: Date | null
     completed_at: Date | null
@@ -702,7 +700,6 @@ export class ServerTranscript {
         this.text = data.text
         this.segments_json = data.segments_json
         this.error_message = data.error_message
-        this.batch_request_id = data.batch_request_id
         this.requested_at = asDate(data.requested_at)
         this.started_at = data.started_at ? asDate(data.started_at) : null
         this.completed_at = data.completed_at ? asDate(data.completed_at) : null

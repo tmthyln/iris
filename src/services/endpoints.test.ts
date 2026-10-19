@@ -3,7 +3,7 @@ import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest'
 import {app} from './endpoints'
 import {createNotification, createTranscriptRequest, updateTranscriptStatus} from './crud'
 import {getQueue} from './queue'
-import {TRANSCRIPT_DEFAULT_MODEL} from './flows'
+import {TRANSCRIPT_DEFAULT_MODEL} from './transcription'
 import {FETCH_USER_AGENT} from './utils/files'
 import {
     buildRss,
@@ -591,50 +591,150 @@ describe('transcripts', () => {
 
     test('POST /api/feeditem/:guid/transcript validates the item', async () => {
         await seedPodcastItem()
-        const {env, queue} = testEnv()
+        const {env, workflow} = testEnv()
 
         await expectError(await json('/api/feeditem/nope/transcript', 'POST', {}, env), 404, 'No feed item found with guid: nope')
         await expectError(await json('/api/feeditem/item-silent/transcript', 'POST', {}, env), 400, 'Feed item has no audio enclosure')
-        expect(queue.messages).toEqual([])
+        expect(workflow.created).toEqual([])
     })
 
-    test('POST /api/feeditem/:guid/transcript creates a pending request and enqueues it', async () => {
+    test('POST /api/feeditem/:guid/transcript is unavailable without the Workflow binding', async () => {
         await seedPodcastItem()
-        const {env, queue} = testEnv()
+        const {env} = testEnv({TRANSCRIBE_WORKFLOW: undefined})
 
-        const response = await app.request('/api/feeditem/item-a/transcript', {method: 'POST'}, env)
+        await expectError(await json('/api/feeditem/item-a/transcript', 'POST', {}, env), 503, 'Transcription is not available in this deployment')
+        expect(await countRows('transcript')).toBe(0)
+    })
+
+    test('POST /api/feeditem/:guid/transcript fails the request when the Workflow cannot be started', async () => {
+        await seedPodcastItem()
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+        const {env, workflow} = testEnv()
+        workflow.create.mockRejectedValue(new Error('workflows down'))
+
+        await expectError(await json('/api/feeditem/item-a/transcript', 'POST', {}, env), 500, 'Failed to start transcription')
+        expect(await db.prepare('SELECT status, error_message FROM transcript WHERE id = 1').first())
+            .toEqual({status: 'error', error_message: 'Failed to start transcription'})
+    })
+
+    test('POST /api/feeditem/:guid/transcript creates a pending request and starts the Workflow', async () => {
+        await seedPodcastItem()
+        const {env, workflow} = testEnv()
+
+        const headers = {'X-Request-Id': 'req-1', 'X-Client-Session': 'sess-1'}
+        const response = await app.request('/api/feeditem/item-a/transcript', {method: 'POST', headers}, env)
         expect(response.status).toBe(202)
         const transcript = await read<Record<string, unknown>>(response)
         expect(transcript).toMatchObject({id: 1, feed_item_guid: 'item-a', model: TRANSCRIPT_DEFAULT_MODEL, language: null, status: 'pending'})
         expect(Object.keys(transcript).sort()).toEqual(CLIENT_TRANSCRIPT_KEYS)
-        expect(queue.tasks()).toEqual([{type: 'transcribe-feed-item', transcriptId: 1}])
+        // the Workflow logs under the ids of the request that started it
+        expect(workflow.created).toEqual([{id: 'transcript-1', params: {transcriptId: 1, trace: {requestId: 'req-1', sessionId: 'sess-1'}}}])
         expect(await db.prepare('SELECT status, model FROM transcript WHERE id = 1').first()).toEqual({status: 'pending', model: TRANSCRIPT_DEFAULT_MODEL})
     })
 
     test('POST /api/feeditem/:guid/transcript honours model and language', async () => {
         await seedPodcastItem()
-        const {env, queue} = testEnv()
+        const {env, workflow} = testEnv()
 
         const response = await json('/api/feeditem/item-a/transcript', 'POST', {model: 'custom', language: 'de'}, env)
         expect(response.status).toBe(202)
         expect(await read<Record<string, unknown>>(response)).toMatchObject({model: 'custom', language: 'de'})
-        expect(queue.messages).toHaveLength(1)
+        expect(workflow.created).toHaveLength(1)
     })
 
     test('POST /api/feeditem/:guid/transcript returns an active request instead of a duplicate', async () => {
         await seedPodcastItem()
-        const {env, queue} = testEnv()
+        const {env, workflow} = testEnv()
 
         const first = await read<{id: number}>(await json('/api/feeditem/item-a/transcript', 'POST', {model: 'custom'}, env))
         const second = await json('/api/feeditem/item-a/transcript', 'POST', {model: 'custom'}, env)
         expect(second.status).toBe(200)
         expect((await read<{id: number}>(second)).id).toBe(first.id)
-        expect(queue.messages).toHaveLength(1)
+        expect(workflow.created).toHaveLength(1)
         expect(await countRows('transcript')).toBe(1)
 
         // a different model is a new request
         expect((await json('/api/feeditem/item-a/transcript', 'POST', {model: 'other'}, env)).status).toBe(202)
         expect(await countRows('transcript')).toBe(2)
+    })
+
+    describe('requests whose Workflow is gone', () => {
+        async function ageTranscript(id: number, minutes: number) {
+            const requestedAt = new Date(Date.now() - minutes * 60 * 1000).toISOString()
+            await db.prepare('UPDATE transcript SET requested_at = ? WHERE id = ?').bind(requestedAt, id).run()
+        }
+
+        async function statusOf(id: number) {
+            return db.prepare('SELECT status, error_message FROM transcript WHERE id = ?').bind(id).first()
+        }
+
+        beforeEach(() => {
+            vi.spyOn(console, 'warn').mockImplementation(() => {})
+        })
+
+        test('GET /api/feeditem/:guid/transcript fails them so they stop being polled', async () => {
+            await seedPodcastItem()
+            const {env, workflow} = testEnv()
+            const neverStarted = await createTranscriptRequest(db, 'item-a', 'm1')  // e.g. left by the queue pipeline
+            const terminated = await createTranscriptRequest(db, 'item-a', 'm2')
+            const running = await createTranscriptRequest(db, 'item-a', 'm3')
+            const justCreated = await createTranscriptRequest(db, 'item-a', 'm4')
+            const finished = await createTranscriptRequest(db, 'item-a', 'm5')
+            await updateTranscriptStatus(db, finished.id, {status: 'complete', text: 'words'})
+            for (const t of [neverStarted, terminated, running, finished]) await ageTranscript(t.id, 10)
+            workflow.statuses.set(`transcript-${terminated.id}`, 'terminated')
+            workflow.statuses.set(`transcript-${running.id}`, 'running')
+
+            const transcripts = await read<{id: number, status: string}[]>(await app.request('/api/feeditem/item-a/transcript', {}, env))
+
+            const failed = 'Transcription stopped unexpectedly; request it again'
+            expect(Object.fromEntries(transcripts.map(t => [t.id, t.status]))).toEqual({
+                [neverStarted.id]: 'error',
+                [terminated.id]: 'error',
+                [running.id]: 'pending',
+                // may not have reached workflow.create yet
+                [justCreated.id]: 'pending',
+                [finished.id]: 'complete',
+            })
+            expect(await statusOf(neverStarted.id)).toEqual({status: 'error', error_message: failed})
+            expect(workflow.get).not.toHaveBeenCalledWith(`transcript-${justCreated.id}`)
+            expect(workflow.get).not.toHaveBeenCalledWith(`transcript-${finished.id}`)
+        })
+
+        test('a failed lookup leaves the request alone', async () => {
+            await seedPodcastItem()
+            const {env, workflow} = testEnv()
+            const transcript = await createTranscriptRequest(db, 'item-a', 'm1')
+            await ageTranscript(transcript.id, 10)
+            workflow.get.mockRejectedValue(new Error('workflows down'))
+
+            const [listed] = await read<{status: string}[]>(await app.request('/api/feeditem/item-a/transcript', {}, env))
+            expect(listed.status).toBe('pending')
+        })
+
+        test('POST /api/feeditem/:guid/transcript starts a new request instead of returning one', async () => {
+            await seedPodcastItem()
+            const {env, workflow} = testEnv()
+            const orphan = await createTranscriptRequest(db, 'item-a', 'custom')
+            await ageTranscript(orphan.id, 10)
+
+            const response = await json('/api/feeditem/item-a/transcript', 'POST', {model: 'custom'}, env)
+            expect(response.status).toBe(202)
+            const created = await read<{id: number}>(response)
+            expect(created.id).not.toBe(orphan.id)
+            expect(workflow.created).toEqual([expect.objectContaining({id: `transcript-${created.id}`})])
+            expect(await statusOf(orphan.id)).toMatchObject({status: 'error'})
+        })
+
+        test('Previews, which have no Workflow binding, still list transcripts', async () => {
+            await seedPodcastItem()
+            const {env} = testEnv({TRANSCRIBE_WORKFLOW: undefined})
+            const transcript = await createTranscriptRequest(db, 'item-a', 'm1')
+            await ageTranscript(transcript.id, 10)
+
+            const [listed] = await read<{status: string}[]>(await app.request('/api/feeditem/item-a/transcript', {}, env))
+            expect(listed.status).toBe('pending')
+        })
     })
 
     test('GET /api/transcript/:id returns the full transcript', async () => {

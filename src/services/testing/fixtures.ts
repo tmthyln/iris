@@ -10,7 +10,7 @@
  * own imports only), so tests do not use it. Instead:
  *  - outbound HTTP: `mockFetch()` stubs the global `fetch`
  *  - web push: `stubWebPush()` spies on the shared `web-push` object
- *  - queue / AI bindings: `testEnv()` swaps them for in-memory fakes
+ *  - queue / workflow / AI bindings: `testEnv()` swaps them for in-memory fakes
  */
 import {env} from 'cloudflare:workers'
 import {vi} from 'vitest'
@@ -178,14 +178,46 @@ export function fakeQueue() {
 export type FakeQueue = ReturnType<typeof fakeQueue>
 
 /**
- * The real test bindings with the queue producer replaced by an in-memory fake
- * (so tests can assert on enqueued tasks), plus any per-test overrides.
+ * In-memory stand-in for the TRANSCRIBE_WORKFLOW binding: records the
+ * instances it is asked to create, which then report `running` until a test
+ * changes `statuses`. `get` of an unknown id fails as the real binding does.
+ */
+export function fakeWorkflow() {
+    const created: WorkflowInstanceCreateOptions[] = []
+    const statuses = new Map<string, InstanceStatus['status']>()
+    return {
+        created,
+        statuses,
+        create: vi.fn((options: WorkflowInstanceCreateOptions = {}) => {
+            created.push(options)
+            if (options.id) statuses.set(options.id, 'running')
+            return Promise.resolve({id: options.id})
+        }),
+        get: vi.fn((id: string) => {
+            const status = statuses.get(id)
+            if (!status) return Promise.reject(new Error('instance.not_found'))
+            return Promise.resolve({id, status: () => Promise.resolve({status})})
+        }),
+    }
+}
+
+/**
+ * The real test bindings with the queue producer and the transcription
+ * Workflow replaced by in-memory fakes (so tests can assert on enqueued tasks
+ * and started instances), plus any per-test overrides.
  */
 export function testEnv(overrides: Partial<Env> = {}) {
     const queue = fakeQueue()
+    const workflow = fakeWorkflow()
     return {
-        env: {...env, FEED_PROCESSING_QUEUE: queue as unknown as Queue, ...overrides} as Env,
+        env: {
+            ...env,
+            FEED_PROCESSING_QUEUE: queue as unknown as Queue,
+            TRANSCRIBE_WORKFLOW: workflow as unknown as Env['TRANSCRIBE_WORKFLOW'],
+            ...overrides,
+        } as Env,
         queue,
+        workflow,
     }
 }
 

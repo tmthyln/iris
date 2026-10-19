@@ -41,6 +41,12 @@ durable_objects.bindings = [
 migrations = [
     { tag = "v1", new_sqlite_classes = ["ItemQueue"] }
 ]
+# Podcast transcription (src/services/transcription.ts). Deliberately absent
+# from [previews]: a Preview binding would run this production Workflow's
+# deployed code against the production bindings.
+workflows = [
+    { name = "iris-transcribe-prod", binding = "TRANSCRIBE_WORKFLOW", class_name = "TranscribeWorkflow" }
+]
 
 [observability]
 enabled = true
@@ -72,7 +78,8 @@ crons = ["17 * * * *"]  # run every hour, 17 minutes past the hour
 # Not covered by Previews: the cron trigger and the queue consumer only run in
 # production. TASK_RUNNER = "inline" makes refresh-all-feeds run its tasks
 # inside the request instead; the other producers (single-feed refresh,
-# archive planning, transcription) still enqueue with nothing consuming (#247).
+# archive planning) still enqueue with nothing consuming (#247). Transcription
+# has no Workflow binding here (see above), so requesting one answers 503.
 # The VAPID_PRIVATE_KEY secret is set once with
 # `wrangler preview base-config secret put VAPID_PRIVATE_KEY`.
 [previews]

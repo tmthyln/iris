@@ -2,7 +2,7 @@ import {createExecutionContext} from 'cloudflare:test'
 import {env} from 'cloudflare:workers'
 import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest'
 import worker from './service'
-import {buildRss, countRows, mockFetch, resetStorage, seedFeed, seedFeedItem, seedFeedSource, testEnv} from './services/testing/fixtures'
+import {buildRss, countRows, mockFetch, resetStorage, seedFeed, seedFeedSource, testEnv} from './services/testing/fixtures'
 import {type FeedProcessingTask} from './services/types'
 
 const db = env.DB
@@ -39,12 +39,6 @@ const brokenDb = {prepare: () => { throw new Error('D1 unavailable') }} as unkno
 
 function batch(messages: FakeMessage[]) {
     return {queue: 'iris-feed-proc-prod', messages, ackAll: vi.fn(), retryAll: vi.fn()} as unknown as MessageBatch<FeedProcessingTask>
-}
-
-async function transcriptStatus(id: number) {
-    const row = await db.prepare('SELECT status, error_message FROM transcript WHERE id = ?').bind(id)
-        .first<{status: string, error_message: string | null}>()
-    return row
 }
 
 beforeEach(async () => {
@@ -178,22 +172,6 @@ describe('queue', () => {
         const source = await db.prepare('SELECT archive FROM feed_source WHERE feed_url = ?').bind(SNAPSHOT_URL).first<{archive: number}>()
         expect(source?.archive).toBe(1)
         expect(await countRows('feed_item')).toBe(2)
-        expect(msg.ack).toHaveBeenCalledTimes(1)
-    })
-
-    test('transcribe-feed-item advances the transcript', async () => {
-        await seedFeed({guid: 'feed-a', type: 'podcast'})
-        await seedFeedItem('feed-a', {guid: 'item-a', enclosure_url: null})
-        await db.prepare(`INSERT INTO transcript (feed_item_guid, model, status, requested_at) VALUES (?, ?, 'pending', ?)`)
-            .bind('item-a', 'whisper', new Date().toISOString()).run()
-        const ai = {run: vi.fn()}
-        const {env: testenv} = testEnv({AI: ai as unknown as Ai})
-        const msg = message({type: 'transcribe-feed-item', transcriptId: 1})
-
-        await worker.queue(batch([msg]), testenv, createExecutionContext())
-
-        expect(await transcriptStatus(1)).toEqual({status: 'error', error_message: 'Feed item has no enclosure_url'})
-        expect(ai.run).not.toHaveBeenCalled()
         expect(msg.ack).toHaveBeenCalledTimes(1)
     })
 

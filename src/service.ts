@@ -4,6 +4,7 @@ import {enqueueTasks, retryDelaySeconds, runTask} from './services/tasks'
 import type {FeedProcessingTask, RefreshFeedTask} from './services/types'
 import {log, withLogContext} from './services/utils/log'
 export {ItemQueue} from './services/queue'
+export {TranscribeWorkflow} from './services/transcription'
 
 // noinspection JSUnusedGlobalSymbols
 export default {

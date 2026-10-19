@@ -19,17 +19,12 @@ export interface FetchArchiveSnapshotTask {
     readonly snapshotUrl: string
 }
 
-export interface TranscribeFeedItemTask {
-    readonly type: 'transcribe-feed-item'
-    readonly transcriptId: number
-}
-
 /** Ids of the request (or cron run) that caused a task; see utils/log.ts. */
 export interface Traced {
     readonly trace?: TaskTrace
 }
 
-export type FeedProcessingTask = (RefreshFeedTask | PlanFeedArchivesTask | FetchArchiveSnapshotTask | TranscribeFeedItemTask) & Traced
+export type FeedProcessingTask = (RefreshFeedTask | PlanFeedArchivesTask | FetchArchiveSnapshotTask) & Traced
 
 export interface FetchSuccessFileResult {
     readonly status: 'success'

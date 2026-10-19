@@ -831,7 +831,6 @@ describe('createTranscriptRequest', () => {
                 language: 'en',
                 status: 'pending',
                 text: null,
-                batch_request_id: null,
                 started_at: null,
                 completed_at: null,
             })
@@ -904,13 +903,12 @@ describe('updateTranscriptStatus', () => {
             text: 'spoken words',
             segments_json: '[{"start":0}]',
             language: 'en',
-            batch_request_id: 'req-1',
             started_at: dateAt(1),
             completed_at: dateAt(2),
         })
 
         const transcript = (await ServerTranscript.get(db, id))!
-        expect(transcript).toMatchObject({status: 'complete', text: 'spoken words', segments_json: '[{"start":0}]', language: 'en', batch_request_id: 'req-1'})
+        expect(transcript).toMatchObject({status: 'complete', text: 'spoken words', segments_json: '[{"start":0}]', language: 'en'})
         expect(transcript.started_at).toEqual(new Date(dateAt(1)))
         expect(transcript.completed_at).toEqual(new Date(dateAt(2)))
     })

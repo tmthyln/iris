@@ -29,6 +29,7 @@ import {
     getFeedItemsForFeed,
     createFeedFile,
     listTranscriptsForItem,
+    updateTranscriptStatus,
     searchFeedItems,
     getAdjacentFeedItems,
     getNotifications,
@@ -39,11 +40,11 @@ import {
     deletePushSubscription,
     countPushSubscriptions,
 } from './crud'
-import type { RefreshFeedTask, PlanFeedArchivesTask, TranscribeFeedItemTask } from "./types";
+import type { RefreshFeedTask, PlanFeedArchivesTask } from "./types";
 import {fetchRssFile, parseRssText, FETCH_USER_AGENT} from "./utils/files";
 import {fanOutPushWithContext, loadPushFanOutContext} from "./utils/push";
 import {getQueue} from "./queue";
-import {TRANSCRIPT_DEFAULT_MODEL} from "./flows";
+import {failIfOrphaned, TRANSCRIPT_DEFAULT_MODEL, transcriptInstanceId, type TranscribeParams} from "./transcription";
 import {dispatchTasks} from "./tasks";
 import {log, sanitizeId, traced, withLogContext} from "./utils/log";
 
@@ -401,7 +402,10 @@ const feedItemRoutes = new Hono<Bindings>()
     })
     .get('/feeditem/:guid/transcript', async (c) => {
         const guid = c.req.param('guid')
-        const transcripts = await listTranscriptsForItem(c.env.DB, guid)
+        const workflow = c.env.TRANSCRIBE_WORKFLOW as Workflow<TranscribeParams> | undefined
+        let transcripts = await listTranscriptsForItem(c.env.DB, guid)
+        // Without this, a request whose Workflow died would be polled forever.
+        if (workflow) transcripts = await Promise.all(transcripts.map(t => failIfOrphaned(c.env, workflow, t)))
         return c.json(transcripts.map(t => new ClientTranscript(t)), 200)
     })
     .post('/feeditem/:guid/transcript', validator('json', (value: unknown): {model?: string, language?: string} => ({
@@ -419,13 +423,21 @@ const feedItemRoutes = new Hono<Bindings>()
             return apiError(c, 400, 'Feed item has no audio enclosure')
         }
 
+        // Previews have no Workflow binding: one would run the production
+        // Workflow's code against the production bindings.
+        const workflow = c.env.TRANSCRIBE_WORKFLOW as Workflow<TranscribeParams> | undefined
+        if (!workflow) {
+            return apiError(c, 503, 'Transcription is not available in this deployment')
+        }
+
         const model = body.model ?? TRANSCRIPT_DEFAULT_MODEL
 
         // A transcription job is expensive (full audio download + billed Whisper
         // batch), so an already-active request for this item+model is returned
-        // as-is instead of enqueuing a duplicate.
-        const existing = await getActiveTranscriptRequest(c.env.DB, guid, model)
-        if (existing) {
+        // as-is instead of starting a duplicate.
+        const active = await getActiveTranscriptRequest(c.env.DB, guid, model)
+        const existing = active && await failIfOrphaned(c.env, workflow, active)
+        if (existing && existing.status !== 'error') {
             return c.json(new ClientTranscript(existing), 200)
         }
 
@@ -433,10 +445,17 @@ const feedItemRoutes = new Hono<Bindings>()
             c.env.DB, guid, model, body.language ?? null,
         )
 
-        await c.env.FEED_PROCESSING_QUEUE.send(traced({
-            type: 'transcribe-feed-item',
-            transcriptId: transcript.id,
-        } satisfies TranscribeFeedItemTask))
+        try {
+            await workflow.create({id: transcriptInstanceId(transcript.id), params: traced({transcriptId: transcript.id})})
+        } catch (err) {
+            log.error('Failed to start the transcription Workflow', {transcriptId: transcript.id, error: err})
+            await updateTranscriptStatus(c.env.DB, transcript.id, {
+                status: 'error',
+                error_message: 'Failed to start transcription',
+                completed_at: new Date().toISOString(),
+            })
+            return apiError(c, 500, 'Failed to start transcription')
+        }
 
         return c.json(new ClientTranscript(transcript), 202)
     })

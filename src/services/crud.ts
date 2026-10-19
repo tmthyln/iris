@@ -412,7 +412,6 @@ interface UpdateTranscriptPatch {
     text?: string | null
     segments_json?: string | null
     error_message?: string | null
-    batch_request_id?: string | null
     started_at?: string | null
     completed_at?: string | null
 }

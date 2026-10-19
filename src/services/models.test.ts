@@ -413,7 +413,6 @@ describe('ServerTranscript', () => {
         text: 'hello',
         segments_json: '[]',
         error_message: null,
-        batch_request_id: 'req-1',
         requested_at: '2024-01-01T00:00:00.000Z',
         started_at: '2024-01-01T00:01:00.000Z',
         completed_at: null,
@@ -443,7 +442,6 @@ describe('ServerTranscript', () => {
         const summary = new ClientTranscript(transcript)
         expect(summary).not.toHaveProperty('text')
         expect(summary).not.toHaveProperty('segments_json')
-        expect(summary).not.toHaveProperty('batch_request_id')
         expect(summary).toMatchObject({id: 1, status: 'processing', language: 'en', requested_at: transcript.requested_at})
 
         const full = new ClientTranscriptFull(transcript)

@@ -78,14 +78,15 @@ Frontend and backend share `src/` but are **separated by TypeScript project refe
 - Local dev uses the top-level (production-named) bindings, but D1/R2/Queues/Durable Objects are all local Miniflare state under `.wrangler/state/`; only `AI` is remote
 - `access.dev` at the top level of `wrangler.toml` simulates a Cloudflare Access identity locally (`ctx.access` in the Worker); `aud` is the Access application's audience tag; the Worker doesn't read it yet
 - Production build/deploy is two steps: `vite build` to `dist/`, then `wrangler deploy` (the plugin writes `dist/<worker>/wrangler.json` and a `.wrangler/deploy/config.json` redirect, which is what `wrangler deploy`/`wrangler preview` pick up)
-- Previews: `vite build` then `wrangler preview [--name <name>]` deploys the checkout as a Preview at `<name>.iris.timothylin.me` with the `[previews]` bindings (staging D1/R2/Queue). Cron and the queue consumer don't run in Previews; the `[previews]` block sets `TASK_RUNNER = "inline"` so `refresh-all-feeds` still does its work inside the request, but the other producers enqueue with nothing consuming (#247). Previews are the replacement for the old `staging` Wrangler environment; there is no `[env.*]` config anymore
+- Previews: `vite build` then `wrangler preview [--name <name>]` deploys the checkout as a Preview at `<name>.iris.timothylin.me` with the `[previews]` bindings (staging D1/R2/Queue). Cron and the queue consumer don't run in Previews; the `[previews]` block sets `TASK_RUNNER = "inline"` so `refresh-all-feeds` still does its work inside the request, but the other producers enqueue with nothing consuming (#247). Previews also have no `TRANSCRIBE_WORKFLOW` binding (a Preview Workflow binding would run the *production* Workflow's deployed code and bindings), so requesting a transcript in a Preview answers 503. Previews are the replacement for the old `staging` Wrangler environment; there is no `[env.*]` config anymore
 
 ### Backend (Cloudflare Workers)
-- **Entry Point:** `src/service.ts` — exports `fetch` (Hono app), `queue` (consumer), and `scheduled` (cron) handlers
+- **Entry Point:** `src/service.ts` — exports `fetch` (Hono app), `queue` (consumer), and `scheduled` (cron) handlers, plus the `ItemQueue` Durable Object and `TranscribeWorkflow` classes
 - **API Framework:** Hono for routing (`src/services/endpoints.ts`)
 - **Request flow:** `endpoints.ts` → `flows.ts` (business logic) → `crud.ts` (DB ops) → `models.ts` (entities) → D1/R2
 - **Background processing:** Hourly cron → `scheduled()` → sends feed refresh tasks to Queue → `queue()` consumer → `refreshFeed()` flow. `src/services/tasks.ts` holds the per-task dispatcher (`runTask`), the batched producer (`enqueueTasks`) and `dispatchTasks()`, which endpoints use to hand off tasks: it enqueues where `TASK_RUNNER` is `"queue"` and runs the tasks inside the request where it is `"inline"` (Previews, which have no consumer)
 - **Durable Objects:** `ItemQueue` in `src/services/queue.ts` — persistent queue with SQL storage for podcast playback queue
+- **Transcription:** `TranscribeWorkflow` in `src/services/transcription.ts` — a Cloudflare Workflow (binding `TRANSCRIBE_WORKFLOW`, instance id `transcript-<id>`) started by `POST /api/feeditem/:guid/transcript`. Steps: stream the enclosure to R2 as a multipart upload (`transcribe/<id>/…` in `RSS_CACHE_BUCKET`, never buffering the episode) → submit one Whisper batch request per ~20 MiB R2 range read (only MP3/ADTS audio is split) → `step.sleep`/poll until every chunk is done → stitch segment timestamps and persist. The `transcript` table stays the API-facing record (`pending` → `processing` → `complete`/`error`); the Workflow updates it and deletes its R2 working files. The transcript endpoints fail an unfinished row whose instance is missing or has ended (`failIfOrphaned`), so a Workflow that died never leaves a request "in progress" forever or blocks a new one. Ingest stays on Queues — Workflows are only for tasks that must wait/poll. `runTranscription()` holds the logic and takes the `WorkflowStep`, so tests drive it with an inline fake step
 
 ### Type Layers
 
@@ -107,6 +108,7 @@ Rules that keep the inference working (`src/services/endpoints.ts`):
 - **D1:** SQLite database (STRICT mode, migrations in `migrations/`)
 - **R2:** Bucket storage for RSS file cache
 - **Queues:** Background feed refresh processing
+- **Workflows:** `iris-transcribe-prod` for podcast transcription (production and local dev only)
 - **Durable Objects:** ItemQueue for persistent playback queue state
 - **Cron:** Hourly scheduled feed refresh at `:17` (production only — Previews have no cron)
 - **Environments:** Production is the top level of `wrangler.toml` (Worker `iris-prod`); Workers Previews use the `[previews]` block with separate `-staging` D1/R2/Queue resources. No Wrangler `[env.*]` blocks
@@ -174,7 +176,7 @@ Conventions for frontend tests (`src/testing/helpers.ts` has the helpers):
 Conventions for Worker tests (`src/services/testing/fixtures.ts` has the helpers):
 - Storage is isolated per file; call `resetStorage()` in `beforeEach` to isolate tests within a file (it empties every D1 table, restarts AUTOINCREMENT counters and clears the R2 bucket). The Durable Object queue is separate — clear it with `getQueue(env).clearQueue()` if a test uses it.
 - Seed data through the models (`seedFeed`, `seedFeedItem`, `seedFeedSource`) so FTS rows and conflict handling behave as in production.
-- Endpoints are driven with `app.request(path, init, env)`; `testEnv()` returns the real bindings with `FEED_PROCESSING_QUEUE` replaced by an in-memory fake (`queue.messages`) and accepts overrides (e.g. a fake `AI`).
+- Endpoints are driven with `app.request(path, init, env)`; `testEnv()` returns the real bindings with `FEED_PROCESSING_QUEUE` and `TRANSCRIBE_WORKFLOW` replaced by in-memory fakes (`queue.messages`, `workflow.created`) and accepts overrides (e.g. a fake `AI`). The real Workflows engine is available through `introspectWorkflowInstance` from `cloudflare:test`.
 - Log lines are objects (see Logging above): assert with `expect(spy).toHaveBeenCalledWith(expect.objectContaining({message: '…', requestId: '…'}))` on a `vi.spyOn(console, 'log' | 'warn' | 'error')` created in the test itself. Enqueued tasks from a request carry `trace`; `queue.tasks()` returns the bodies without it.
 - **Do not use `vi.mock`** — inside the workerd pool it does not reliably replace a module for transitive importers. Stub outbound HTTP with `mockFetch()` (global `fetch`; unknown URLs throw), spy on `webpush.sendNotification` with `stubWebPush()`, and swap bindings through `testEnv()`.
 - No filesystem in workerd: load fixture files with Vite `?raw` imports (typed by `src/services/testing/raw-imports.d.ts`).
