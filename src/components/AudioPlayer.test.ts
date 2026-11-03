@@ -14,6 +14,8 @@ beforeEach(() => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined)
+    // Nor does its <dialog> have showModal.
+    HTMLDialogElement.prototype.showModal = vi.fn()
 })
 afterEach(() => vi.restoreAllMocks())
 
@@ -219,6 +221,23 @@ describe('pause bookkeeping', () => {
 })
 
 describe('queue popover', () => {
+    it('has no toggle when nothing is queued after the current episode', async () => {
+        const {wrapper} = await mountPlayer([episode()])
+        expect(wrapper.find('.queue-toggle-button').exists()).toBe(false)
+    })
+
+    it('closes when the last queued episode is removed', async () => {
+        const [current, upNext] = [episode(), episode()]
+        stubClient('removeQueueItem', ok([current]))
+        const {wrapper} = await mountPlayer([current, upNext])
+
+        await wrapper.find('.queue-toggle-button').trigger('click')
+        await wrapper.find('.queue-item [title="Remove from queue"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('.queue-popover').exists()).toBe(false)
+        expect(wrapper.find('.queue-toggle-button').exists()).toBe(false)
+    })
+
     it('lists the upcoming items with play-now and remove controls', async () => {
         stubClient('removeQueueItem', ok([]))
         const [current, upNext] = [episode(), episode({title: 'Up Next Episode'})]
@@ -254,6 +273,214 @@ describe('queue popover', () => {
         await wrapper.find('[title="Clear queue"]').trigger('click')
         await flushPromises()
         expect(vi.mocked(client.clearQueue)).toHaveBeenCalledExactlyOnceWith(false)   // paused → drop everything
+    })
+})
+
+describe('full player', () => {
+    async function openFullPlayer(items: ReturnType<typeof makeItem>[], route = '/') {
+        const mounted = await mountPlayer(items)
+        await mounted.router.push(route)
+        await mounted.wrapper.find('.player-layout [title="Open full player"]').trigger('click')
+        await flushPromises()
+        return mounted
+    }
+
+    it('stays closed until asked for', async () => {
+        const {wrapper} = await mountPlayer([episode()])
+        expect(wrapper.find('dialog').exists()).toBe(false)
+    })
+
+    it('opens as a modal on the same page, with its own history entry', async () => {
+        const mounted = await openFullPlayer([episode({title: 'Episode One'})], '/downloads?x=1')
+        expect(mounted.router.currentRoute.value.fullPath).toBe('/downloads?x=1#player')
+        expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalledOnce()
+        expect(mounted.wrapper.find('dialog .episode-title').text()).toBe('Episode One')
+    })
+
+    it('closes back to the page it was opened from', async () => {
+        const mounted = await openFullPlayer([episode()], '/downloads')
+        await mounted.wrapper.find('dialog [title="Close full player"]').trigger('click')
+        await flushPromises()
+        expect(mounted.router.currentRoute.value.fullPath).toBe('/downloads')
+        expect(mounted.wrapper.find('dialog').exists()).toBe(false)
+    })
+
+    it('closes when the browser closes the dialog (Escape, Android back)', async () => {
+        const mounted = await openFullPlayer([episode()], '/downloads')
+        await mounted.wrapper.find('dialog').trigger('close')
+        await flushPromises()
+        expect(mounted.router.currentRoute.value.hash).toBe('')
+    })
+
+    it('controls the same playback as the bottom player', async () => {
+        const mounted = await openFullPlayer([episode()])
+        const audio = await loadMetadata(mounted.wrapper, 300)
+        audio.currentTime = 50
+        audio.dispatchEvent(new Event('timeupdate'))
+        await flushPromises()
+        const dialog = mounted.wrapper.find('dialog')
+
+        expect(dialog.find('.times').text()).toContain('0:50')
+        expect(dialog.find('.times').text()).toContain('-4:10')
+        await dialog.find('[title="Skip forward 30 seconds"]').trigger('click')
+        expect(audio.currentTime).toBe(80)
+        await dialog.find('[title="Rewind 10 seconds"]').trigger('click')
+        expect(audio.currentTime).toBe(70)
+        await dialog.find('[title="Play"]').trigger('click')
+        expect(mounted.queueStore.paused).toBe(false)
+        await dialog.find('[title="Change playback speed"]').trigger('click')
+        expect(dialog.find('[title="Change playback speed"]').text()).toBe('1.25x')
+    })
+
+    it('seeks when a drag of the slider ends, not during it', async () => {
+        const modifyFeedItem = stubClient('modifyFeedItem', ok(undefined))
+        const mounted = await openFullPlayer([episode()])
+        const audio = await loadMetadata(mounted.wrapper, 300)
+        const slider = mounted.wrapper.find<HTMLInputElement>('dialog input[type="range"]')
+
+        slider.element.value = '150'
+        await slider.trigger('input')
+        expect(audio.currentTime).toBe(0)
+        expect(modifyFeedItem).not.toHaveBeenCalled()
+        expect(mounted.wrapper.find('dialog .times').text()).toContain('2:30')
+
+        await slider.trigger('change')
+        expect(audio.currentTime).toBe(150)
+        expect(modifyFeedItem).toHaveBeenCalledOnce()
+    })
+
+    it('shows what is next and offers the queue controls', async () => {
+        stubClient('removeQueueItem', ok([]))
+        const [current, upNext, later] = [episode(), episode({title: 'Next &amp; Best'}), episode()]
+        const mounted = await openFullPlayer([current, upNext, later])
+        const toggle = mounted.wrapper.find('dialog .queue-toggle')
+        expect(toggle.text()).toContain('Up next: Next & Best')
+        expect(toggle.text()).toContain('2')
+
+        await toggle.trigger('click')
+        expect(mounted.wrapper.find('dialog').classes()).toContain('is-queue-shown')
+        await mounted.wrapper.find('dialog .queue-item [title="Remove from queue"]').trigger('click')
+        await flushPromises()
+        expect(vi.mocked(client.removeQueueItem)).toHaveBeenCalledExactlyOnceWith(upNext.guid)
+    })
+
+    it('closes when the top of the screen is dragged far enough down', async () => {
+        const mounted = await openFullPlayer([episode()], '/downloads')
+        const artwork = mounted.wrapper.find('dialog .artwork')
+        const dragTo = (clientY: number) => artwork.trigger('touchmove', {touches: [{clientY}]})
+
+        await artwork.trigger('touchstart', {touches: [{clientY: 100}]})
+        await dragTo(150)
+        expect(mounted.wrapper.find('dialog').attributes('style')).toContain('translateY(50px)')
+        await artwork.trigger('touchend')
+        await flushPromises()
+        expect(mounted.router.currentRoute.value.hash).toBe('#player')
+
+        await artwork.trigger('touchstart', {touches: [{clientY: 100}]})
+        await dragTo(250)
+        await artwork.trigger('touchend')
+        await flushPromises()
+        expect(mounted.router.currentRoute.value.hash).toBe('')
+    })
+
+    it('has no queue controls when nothing is queued after the current episode', async () => {
+        const mounted = await openFullPlayer([episode()])
+        expect(mounted.wrapper.find('dialog').classes()).not.toContain('has-queue')
+        expect(mounted.wrapper.find('dialog .queue-toggle').exists()).toBe(false)
+        expect(mounted.wrapper.find('dialog .queue-panel').exists()).toBe(false)
+    })
+
+    it('goes back to the artwork when the last queued episode is removed', async () => {
+        const [current, upNext] = [episode(), episode()]
+        stubClient('removeQueueItem', ok([current]))
+        const mounted = await openFullPlayer([current, upNext])
+        await mounted.wrapper.find('dialog .queue-toggle').trigger('click')
+        await mounted.wrapper.find('dialog .queue-item [title="Remove from queue"]').trigger('click')
+        await flushPromises()
+
+        expect(mounted.wrapper.find('dialog').classes()).not.toContain('is-queue-shown')
+        expect(mounted.wrapper.find('dialog .queue-panel').exists()).toBe(false)
+    })
+
+    it('closes itself once the queue has run out', async () => {
+        const mounted = await openFullPlayer([episode()], '/downloads')
+        mounted.queueStore.loadState = 'loaded'
+        mounted.queueStore.items = []
+        await flushPromises()
+        expect(mounted.router.currentRoute.value.fullPath).toBe('/downloads')
+    })
+
+    it('leaves a followed link in place, so Back returns to the player', async () => {
+        const item = episode({guid: 'ep-1'})
+        const mounted = await openFullPlayer([item], '/downloads')
+        await mounted.router.push({name: 'item', params: {guid: 'ep-1'}})
+        await flushPromises()
+        expect(mounted.wrapper.find('dialog').exists()).toBe(false)
+        expect(mounted.router.currentRoute.value.hash).toBe('')
+
+        mounted.router.back()
+        await flushPromises()
+        expect(mounted.router.currentRoute.value.fullPath).toBe('/downloads#player')
+        expect(mounted.wrapper.find('dialog').exists()).toBe(true)
+    })
+
+    // Memory history keeps no state, so a browser's is set by hand.
+    function setHistoryState(router: Awaited<ReturnType<typeof mountPlayer>>['router'], state: Record<string, unknown>) {
+        Object.defineProperty(router.options.history, 'state', {configurable: true, value: state})
+    }
+
+    it('undoes its own history entry on close, once only', async () => {
+        const mounted = await openFullPlayer([episode()], '/subscriptions/A%20Show?x=1')
+        setHistoryState(mounted.router, {openedOverPage: true})
+        const back = vi.spyOn(mounted.router, 'back')
+        const replace = vi.spyOn(mounted.router, 'replace')
+
+        const close = mounted.wrapper.find('dialog [title="Close full player"]')
+        await close.trigger('click')
+        expect(back).toHaveBeenCalledOnce()
+        expect(replace).not.toHaveBeenCalled()
+        await flushPromises()
+        expect(mounted.router.currentRoute.value.fullPath).toBe('/subscriptions/A%20Show?x=1')
+    })
+
+    it('stays on the page when there is no entry of its own to undo', async () => {
+        const mounted = await openFullPlayer([episode()], '/downloads')
+        setHistoryState(mounted.router, {})
+        const back = vi.spyOn(mounted.router, 'back')
+
+        await mounted.wrapper.find('dialog [title="Close full player"]').trigger('click')
+        await flushPromises()
+        expect(back).not.toHaveBeenCalled()
+        expect(mounted.router.currentRoute.value.fullPath).toBe('/downloads')
+    })
+
+    it('drops an unfinished drag of the slider when the episode changes', async () => {
+        const seekTarget = stubClient('modifyFeedItem', ok(undefined))
+        const [current, next] = [episode(), episode()]
+        const mounted = await openFullPlayer([current, next])
+        await loadMetadata(mounted.wrapper, 300)
+        const slider = mounted.wrapper.find<HTMLInputElement>('dialog input[type="range"]')
+        slider.element.value = '150'
+        await slider.trigger('input')
+        expect(mounted.wrapper.find('dialog .times').text()).toContain('2:30')
+
+        mounted.queueStore.items = [next]
+        await flushPromises()
+        expect(mounted.wrapper.find('dialog .times').text()).not.toContain('2:30')
+
+        await slider.trigger('change')
+        expect(seekTarget).not.toHaveBeenCalled()
+    })
+
+    it('forgets a drag the browser cancelled', async () => {
+        const mounted = await openFullPlayer([episode()])
+        await loadMetadata(mounted.wrapper, 300)
+        const slider = mounted.wrapper.find<HTMLInputElement>('dialog input[type="range"]')
+        slider.element.value = '150'
+        await slider.trigger('input')
+
+        await slider.trigger('pointercancel')
+        expect(mounted.wrapper.find('dialog .times').text()).toContain('0:00')
     })
 })
 

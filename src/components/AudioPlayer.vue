@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import {computed, ref, watch, watchEffect} from "vue";
 import {useEventListener, useIntervalFn, useMediaControls, onClickOutside} from "@vueuse/core";
-import {useSortable} from "@vueuse/integrations/useSortable";
+import {useRoute, useRouter} from "vue-router";
 import {useDurationFormat} from "../format.ts";
 import {useQueueStore} from "../stores/queue.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
 import {useFeedStore} from "../stores/feeds.ts";
 import {useDownloadStore} from "../stores/downloads.ts";
-import type {FeedItemPreview} from "../types.ts";
-import {useSwipeToDismiss} from "../swipe.ts";
+import {unescapeHTML} from "../htmlproc.ts";
 import {report} from "../telemetry.ts";
+import FullPlayer from "./FullPlayer.vue";
+import QueueList from "./QueueList.vue";
 
 const queueStore = useQueueStore()
 const feedItemStore = useFeedItemStore()
@@ -17,7 +18,7 @@ const feedStore = useFeedStore()
 const downloadStore = useDownloadStore()
 
 const currentItem = computed(() => queueStore.currentlyPlaying)
-const upcomingItems = computed(() => queueStore.items.slice(1))
+const currentTitle = computed(() => unescapeHTML(currentItem.value?.title ?? ''))
 
 const resolvedSrc = ref('')
 let resolvedGuid: string | null = null
@@ -127,21 +128,20 @@ watch(playing, (isPlaying) => {
     }
 })
 
-function setPlaybackPosition(event: Event) {
-    const target = event.currentTarget as HTMLInputElement
-    currentTime.value = Number(target.value)
+function seek(seconds: number) {
+    currentTime.value = seconds
     if (currentItem.value && duration.value > 0) {
         void feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
     }
+}
+function setPlaybackPosition(event: Event) {
+    seek(Number((event.currentTarget as HTMLInputElement).value))
 }
 watch(() => queueStore.pendingSeek, (seconds) => {
     if (seconds === null) return
     queueStore.pendingSeek = null
     if (!currentItemReady.value) return
-    currentTime.value = Math.min(Math.max(0, seconds), duration.value)
-    if (currentItem.value && duration.value > 0) {
-        void feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
-    }
+    seek(Math.min(Math.max(0, seconds), duration.value))
 })
 function fastRewind() {
     currentTime.value = Math.max(0, currentTime.value - 10)
@@ -150,7 +150,7 @@ function fastForward() {
     currentTime.value = Math.min(duration.value, currentTime.value + 30)
 }
 async function skipNext() {
-    if (!currentItem.value || upcomingItems.value.length === 0) return
+    if (!currentItem.value || queueStore.upcoming.length === 0) return
     autoPlayNext.value = playing.value
     if (duration.value > 0) {
         await feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
@@ -174,7 +174,7 @@ watch(ended, async () => {
     if (ended.value && currentItem.value) {
         const completedGuid = currentItem.value.guid
         await feedItemStore.updateItemProgress(currentItem.value, 1)
-        autoPlayNext.value = upcomingItems.value.length > 0
+        autoPlayNext.value = queueStore.upcoming.length > 0
         await queueStore.removeItem(currentItem.value)
         if (downloadStore.isDownloaded(completedGuid)) {
             void downloadStore.scheduleDelete(completedGuid, 60_000)
@@ -214,37 +214,38 @@ onClickOutside(queuePopover, () => {
     showQueue.value = false
 }, {ignore: ['.queue-toggle-button']})
 
-const queueListEl = ref<HTMLElement>()
-useSortable(queueListEl, upcomingItems, {
-    watchElement: true, // required: queue list is inside a v-if and may not exist at mount time
-    handle: '.drag-handle',
-    animation: 150,
-    delay: 100,
-    delayOnTouchOnly: true,
-    onUpdate() {}, // suppress default which tries to write to the readonly computed
-    onEnd(event) {
-        if (event.oldIndex != null && event.newIndex != null && event.oldIndex !== event.newIndex) {
-            const item = upcomingItems.value[event.oldIndex]
-            // offset by 1 since items[0] is the currently playing item
-            void queueStore.moveItem(item, event.newIndex + 1)
-        }
-    },
+watch(() => queueStore.upcoming.length, (count) => {
+    if (count === 0) showQueue.value = false
 })
 
-function playNow(item: FeedItemPreview) {
-    void queueStore.playItem(item)
+/* Full screen player */
+// Open while the URL says so, which gives it a history entry: Back closes it,
+// and Back from a page reached through one of its links returns to it.
+const FULL_PLAYER_HASH = '#player'
+const route = useRoute()
+const router = useRouter()
+const fullPlayerOpen = computed(() => route.hash === FULL_PLAYER_HASH)
+
+function openFullPlayer() {
+    showQueue.value = false
+    void router.push({path: route.path, query: route.query, hash: FULL_PLAYER_HASH, state: {openedOverPage: true}})
 }
 
-function removeFromQueue(item: FeedItemPreview) {
-    void queueStore.removeItem(item)
+let closingFullPlayer = false
+function closeFullPlayer() {
+    if (!fullPlayerOpen.value || closingFullPlayer) return
+    closingFullPlayer = true
+    // Opened over this page: undo the entry. Otherwise (a shared link) there is nothing to go back to.
+    if (router.options.history.state.openedOverPage) router.back()
+    else void router.replace({path: route.path, query: route.query})
 }
+watch(fullPlayerOpen, () => { closingFullPlayer = false })
 
-function clearQueue() {
-    const keepFirst = !queueStore.paused
-    void queueStore.clearQueue(keepFirst)
-}
-
-const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(removeFromQueue, {ignoreSelector: '.drag-handle'})
+// The last episode finished or was removed, or a reload found the queue empty.
+watchEffect(() => {
+    const settled = queueStore.loadState !== 'unloaded' && queueStore.loadState !== 'loading'
+    if (settled && queueStore.items.length === 0) closeFullPlayer()
+})
 </script>
 
 <template>
@@ -265,7 +266,9 @@ const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(re
         <audio ref="audio" />
 
         <div class="player-left">
-          {{ currentItem?.title }}
+          <button class="player-title" title="Open full player" @click="openFullPlayer">
+            {{ currentTitle }}
+          </button>
         </div>
         <div class="player-center">
           <button class="tag button" :disabled="isLoading" @click="cyclePlaybackRate">
@@ -304,7 +307,7 @@ const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(re
           <button
             class="button is-rounded px-2 control-button"
             title="Skip to next in queue"
-            :disabled="isLoading || upcomingItems.length === 0"
+            :disabled="isLoading || queueStore.upcoming.length === 0"
             @click="skipNext"
           >
             <span class="material-symbols-outlined">skip_next</span>
@@ -312,7 +315,7 @@ const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(re
         </div>
         <div class="player-right">
           <span>{{ useDurationFormat(currentTime).value }} / {{ useDurationFormat(duration).value }}</span>
-          <div class="queue-toggle-wrapper">
+          <div v-if="queueStore.upcoming.length" class="queue-toggle-wrapper">
             <button
               class="button is-rounded px-2 control-button queue-toggle-button"
               :class="{'has-text-info': showQueue}"
@@ -323,55 +326,34 @@ const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(re
             </button>
 
             <div v-if="showQueue" ref="queuePopover" class="queue-popover box p-0">
-              <div class="queue-popover-header px-4 py-3 is-flex is-align-items-center is-justify-content-space-between">
-                <strong>Up Next</strong>
-                <button
-                  v-if="upcomingItems.length"
-                  class="button is-small control-button"
-                  title="Clear queue"
-                  @click="clearQueue"
-                >
-                  <span class="material-symbols-outlined is-size-6">playlist_remove</span>
-                </button>
-              </div>
-              <div v-if="upcomingItems.length === 0" class="px-4 py-3 has-text-grey">
-                Nothing queued
-              </div>
-              <div ref="queueListEl" class="queue-list">
-                <div
-                  v-for="item in upcomingItems"
-                  :key="item.guid"
-                  class="queue-item is-flex is-align-items-center px-3 py-2 is-gap-2"
-                  :style="swipeStyle(item)"
-                  @touchstart="onTouchStart(item, $event)"
-                  @touchmove="onTouchMove"
-                  @touchend="onTouchEnd(item)"
-                >
-                  <span class="material-symbols-outlined drag-handle has-text-grey" style="cursor: grab; touch-action: none;">
-                    drag_indicator
-                  </span>
-                  <span class="is-flex-grow-1 is-size-7 queue-item-title">{{ item.title }}</span>
-                  <button
-                    class="button is-small px-1 control-button"
-                    title="Play now"
-                    @click="playNow(item)"
-                  >
-                    <span class="material-symbols-outlined is-size-6">play_arrow</span>
-                  </button>
-                  <button
-                    class="button is-small px-1 control-button is-hidden-mobile"
-                    title="Remove from queue"
-                    @click="removeFromQueue(item)"
-                  >
-                    <span class="material-symbols-outlined is-size-6">close</span>
-                  </button>
-                </div>
-              </div>
+              <QueueList />
             </div>
           </div>
+          <button
+            class="button is-rounded px-2 control-button"
+            title="Open full player"
+            @click="openFullPlayer"
+          >
+            <span class="material-symbols-outlined">open_in_full</span>
+          </button>
         </div>
       </div>
     </footer>
+    <FullPlayer
+      v-if="fullPlayerOpen"
+      :playing="playing"
+      :is-loading="isLoading"
+      :current-time="currentTime"
+      :duration="duration"
+      :rate="rate"
+      @close="closeFullPlayer"
+      @toggle-play="playing = !playing"
+      @rewind="fastRewind"
+      @forward="fastForward"
+      @skip-next="skipNext"
+      @cycle-rate="cyclePlaybackRate"
+      @seek="seek"
+    />
   </template>
 </template>
 
@@ -402,6 +384,21 @@ const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(re
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+}
+
+.player-title {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+    font: inherit;
+    text-align: inherit;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: inherit;
+    background: none;
+    cursor: pointer;
 }
 
 .player-center {
@@ -507,28 +504,5 @@ input[type="range"].playback-progress {
         left: 5vw;
         right: 5vw;
     }
-}
-
-.queue-popover-header {
-    border-bottom: 1px solid var(--bulma-border);
-}
-
-.queue-item {
-    border-bottom: 1px solid var(--bulma-border-weak);
-    transition: transform 0.2s, opacity 0.2s;
-
-    &:last-child {
-        border-bottom: none;
-    }
-
-    &:hover {
-        background-color: var(--bulma-background);
-    }
-}
-
-.queue-item-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 </style>

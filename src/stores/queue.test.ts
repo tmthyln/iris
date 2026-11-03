@@ -87,6 +87,7 @@ describe('membership getters', () => {
         store.items = [head, tail]
 
         expect(store.currentlyPlaying).toEqual(head)
+        expect(store.upcoming).toEqual([tail])
         expect(store.itemPlaying(head)).toBe(true)
         expect(store.itemQueued(head)).toBe(false)
         expect(store.itemQueued(tail)).toBe(true)

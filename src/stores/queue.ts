@@ -51,6 +51,7 @@ export const useQueueStore = defineStore('queue', {
     },
     getters: {
         currentlyPlaying: (state) => state.items[0] ?? null,
+        upcoming: (state) => state.items.slice(1),
     },
     actions: {
         async loadQueue() {
