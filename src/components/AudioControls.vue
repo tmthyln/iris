@@ -146,7 +146,7 @@ function onTranscriptClick() {
         void transcriptStore.request(props.feedItem.guid)
     } else if (status === 'error') {
         void transcriptStore.request(props.feedItem.guid)
-    } else if (status === 'complete') {
+    } else if (status === 'complete' || transcripts.value.some(t => t.chunks_done > 0)) {
         emit('open-transcript')
     }
 }

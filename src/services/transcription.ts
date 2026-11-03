@@ -43,6 +43,11 @@ const RESUME_TOLERANCE_SECONDS = 0.25
 // languages towards English, which punctuation alone does not.
 const WHISPER_INITIAL_PROMPT = '.,?!'
 
+// On audio with no speech, Whisper answers with part of the prompt, like ' .,'.
+function isPromptEcho(text: string | undefined) {
+    return text !== undefined && /^[\p{P}\s]*$/u.test(text)
+}
+
 const MAX_ERROR_MESSAGE_LENGTH = 500
 
 // An unfinished request younger than this may still be starting its Workflow.
@@ -447,6 +452,8 @@ function majorityLanguage(results: readonly WhisperBatchResult[]) {
  * A chunk without a reported duration is estimated from its byte length at
  * the rate of the chunks that have one; its last segment's end would come up
  * short, as the VAD filter trims trailing silence.
+ *
+ * A chunk with no speech adds no text or segments, but still takes up its time.
  */
 export function stitchResults(results: readonly WhisperBatchResult[], ranges: readonly ByteRange[] = []) {
     let timedBytes = 0
@@ -480,13 +487,14 @@ export function stitchResults(results: readonly WhisperBatchResult[], ranges: re
         const nextOffset = next ? offset + (next.offset - range.offset) * secondsPerByte : offset + duration
         const cut = overlapSeconds > 0 ? nextOffset + overlapSeconds / 2 : Infinity
 
-        const kept = (result.segments ?? []).flatMap((segment): WhisperSegment[] => {
+        const chunkSegments = result.segments ?? []
+        const kept = chunkSegments.flatMap((segment): WhisperSegment[] => {
             const start = shift(segment.start) ?? offset
             if (start >= cut) return []
             if (start >= resumeAt) return [segment]
             const tail = segment.words?.filter(word => (shift(word.start) ?? -Infinity) >= resumeAt) ?? []
             return tail.length > 0 ? [{...segment, start: tail[0].start, words: tail, text: tail.map(word => word.word ?? '').join('')}] : []
-        })
+        }).filter(segment => !isPromptEcho(segment.text))
         for (const segment of kept) {
             // The prompt makes Whisper jitter timestamps on a chunk it misdetects
             // as English (a Mandarin episode's English intro); its text is in order.
@@ -500,7 +508,9 @@ export function stitchResults(results: readonly WhisperBatchResult[], ranges: re
             })
         }
         const trimmed = overlapSeconds > 0 || resumeAt !== -Infinity
-        texts.push(trimmed && kept.length > 0 ? kept.map(segment => segment.text?.trim() ?? '').join(' ') : result.text.trim())
+        const followSegments = chunkSegments.length > 0 && (trimmed || kept.length < chunkSegments.length)
+        if (followSegments) texts.push(kept.map(segment => segment.text?.trim() ?? '').join(' '))
+        else if (!isPromptEcho(result.text)) texts.push(result.text.trim())
 
         resumeAt = overlapSeconds > 0
             ? (segments[segments.length - 1]?.end ?? -Infinity) - RESUME_TOLERANCE_SECONDS

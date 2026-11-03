@@ -222,6 +222,17 @@ describe('transcripts (opt-in via showTranscript)', () => {
         expect(wrapper.emitted('open-transcript')).toHaveLength(1)
     })
 
+    it('opens the partial transcript while transcribing', async () => {
+        const {feed, item} = podcastSetup()
+        const partial = makeTranscript({feed_item_guid: item.guid, status: 'processing', chunks_done: 2, chunks_total: 4})
+        stubClient('listTranscripts', ok([partial]))
+        const {wrapper} = await mountControls(feed, item, {showTranscript: true})
+        await flushPromises()
+
+        await button(wrapper, 'graphic_eq').trigger('click')
+        expect(wrapper.emitted('open-transcript')).toHaveLength(1)
+    })
+
     it('shows progress while transcribing', async () => {
         const {feed, item} = podcastSetup()
         stubClient('listTranscripts', ok([makeTranscript({feed_item_guid: item.guid, status: 'processing'})]))

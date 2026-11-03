@@ -7,6 +7,7 @@ import TranscriptView from './TranscriptView.vue'
 afterEach(() => vi.restoreAllMocks())
 
 const GUID = 'item-under-test'
+const ITEM = makeItem({guid: GUID})
 
 const SEGMENTS = JSON.stringify([
     {start: 0, end: 4, text: 'Hello and welcome.'},
@@ -15,7 +16,7 @@ const SEGMENTS = JSON.stringify([
 ])
 
 async function mountTranscripts({transcripts = [makeTranscript({status: 'complete'})], open = false} = {}) {
-    const mounted = await mountApp(TranscriptView, {props: {feedItemGuid: GUID, open}})
+    const mounted = await mountApp(TranscriptView, {props: {feedItem: ITEM, open}})
     useTranscriptStore().byItem[GUID] = transcripts
     await mounted.wrapper.vm.$nextTick()
     return mounted
@@ -27,23 +28,40 @@ describe('visibility', () => {
         expect(wrapper.find('.transcript-view').exists()).toBe(false)
     })
 
-    it('shows a toggle that asks the parent to open', async () => {
+    it('switches between the show notes and the transcript through the parent', async () => {
         const {wrapper} = await mountTranscripts()
-        const toggle = wrapper.find('button')
-        expect(toggle.text()).toContain('Transcript')
+        const tabs = wrapper.findAll('.tabs a')
+        expect(tabs.map(tab => tab.text())).toEqual(['Show notes', 'Transcript'])
+        expect(wrapper.find('.tabs .is-active').text()).toBe('Show notes')
         expect(wrapper.find('.transcript-body').exists()).toBe(false)
 
-        await toggle.trigger('click')
-        expect(wrapper.emitted('update:open')).toEqual([[true]])
+        await tabs[1].trigger('click')
+        await tabs[0].trigger('click')
+        expect(wrapper.emitted('update:open')).toEqual([[true], [false]])
+    })
+
+    it('hands back to the show notes if no transcript is left to show', async () => {
+        const complete = makeTranscript({status: 'complete'})
+        stubClient('getTranscript', ok(makeFullTranscript({id: complete.id})))
+        const {wrapper} = await mountApp(TranscriptView, {props: {feedItem: ITEM, open: true}})
+        const store = useTranscriptStore()
+        store.byItem[GUID] = [complete]
+        await wrapper.vm.$nextTick()
+        const before = wrapper.emitted('update:open')?.length ?? 0
+
+        store.byItem[GUID] = []
+        await wrapper.vm.$nextTick()
+        expect(wrapper.emitted('update:open')?.slice(before)).toEqual([[false]])
     })
 })
 
 describe('content', () => {
-    it('loads and renders timestamped segments when open', async () => {
+    it('loads and renders timestamped paragraphs when open', async () => {
         const complete = makeTranscript({status: 'complete'})
         stubClient('getTranscript', ok(makeFullTranscript({id: complete.id, segments_json: SEGMENTS})))
         const {wrapper} = await mountTranscripts({transcripts: [complete], open: true})
         await vi.waitFor(() => expect(wrapper.findAll('.transcript-segment')).toHaveLength(3))
+        expect(wrapper.findAll('.transcript-paragraph')).toHaveLength(3)
 
         const stamps = wrapper.findAll('.transcript-timestamp').map(b => b.text())
         expect(stamps).toEqual(['0:00', '1:05', '1:01:40'])
@@ -63,7 +81,7 @@ describe('content', () => {
         const {wrapper} = await mountTranscripts({transcripts: [partial], open: true})
 
         await vi.waitFor(() => expect(wrapper.findAll('.transcript-segment')).toHaveLength(3))
-        expect(wrapper.find('.transcript-progress').text()).toBe('Transcribing… 4 of 8 parts so far')
+        expect(wrapper.find('.transcript-progress').text()).toBe('Transcribing… 4 of 8 parts done')
     })
 
     it('keeps the part transcribed before a failure', async () => {
@@ -84,36 +102,66 @@ describe('content', () => {
         expect(wrapper.find('.transcript-progress').exists()).toBe(false)
     })
 
-    it('offers a picker when several transcripts completed', async () => {
-        const first = makeTranscript({status: 'complete', model: 'openai/whisper-large', language: 'en'})
-        const second = makeTranscript({status: 'complete', model: 'whisper-tiny'})
+    it('offers a picker telling several transcripts apart once open', async () => {
+        const first = makeTranscript({status: 'complete', language: 'en', completed_at: '2026-11-02T12:00:00.000Z'})
+        const partial = makeTranscript({status: 'processing', language: 'zh', chunks_done: 2, chunks_total: 4})
         stubClient('getTranscript', ok(makeFullTranscript({id: first.id})))
-        const {wrapper} = await mountTranscripts({transcripts: [first, second]})
+        const {wrapper} = await mountTranscripts({transcripts: [first, partial], open: true})
 
         const options = wrapper.findAll('option')
         expect(options).toHaveLength(2)
-        expect(options[0].text()).toContain('whisper-large · en')
+        expect(options[0].text()).toMatch(/^English, Nov 2, 2026/)
+        expect(options[1].text()).toMatch(/^Chinese, .*\(in progress\)$/)
+    })
+
+    it('shows no picker for a single transcript', async () => {
+        const complete = makeTranscript({status: 'complete'})
+        stubClient('getTranscript', ok(makeFullTranscript({id: complete.id})))
+        const {wrapper} = await mountTranscripts({transcripts: [complete], open: true})
+        expect(wrapper.find('select').exists()).toBe(false)
     })
 })
 
 describe('seeking', () => {
-    it('seeks through the queue store only while this episode is playing', async () => {
+    async function mountOpen() {
         const complete = makeTranscript({status: 'complete'})
         stubClient('getTranscript', ok(makeFullTranscript({id: complete.id, segments_json: SEGMENTS})))
-        const {wrapper} = await mountTranscripts({transcripts: [complete], open: true})
+        const mounted = await mountTranscripts({transcripts: [complete], open: true})
+        await vi.waitFor(() => expect(mounted.wrapper.findAll('.transcript-timestamp')).toHaveLength(3))
+        return mounted.wrapper
+    }
+
+    it('jumps within the episode while it is playing', async () => {
+        const wrapper = await mountOpen()
         const queueStore = useQueueStore()
-        await vi.waitFor(() => expect(wrapper.findAll('.transcript-timestamp')).toHaveLength(3))
-
-        // Not playing: buttons disabled, click does nothing.
-        expect(wrapper.find('.transcript-timestamp').attributes('disabled')).toBeDefined()
-        await wrapper.findAll('.transcript-timestamp')[1].trigger('click')
-        expect(queueStore.pendingSeek).toBeNull()
-
-        // Playing this item: click requests the seek.
-        queueStore.items = [makeItem({guid: GUID})]
+        queueStore.items = [ITEM]
         await wrapper.vm.$nextTick()
-        expect(wrapper.find('.transcript-timestamp').attributes('disabled')).toBeUndefined()
+
         await wrapper.findAll('.transcript-timestamp')[1].trigger('click')
         expect(queueStore.pendingSeek).toBe(65)
+    })
+
+    it('starts the episode from that point when it is not playing', async () => {
+        const wrapper = await mountOpen()
+        const queueStore = useQueueStore()
+        const playItem = vi.spyOn(queueStore, 'playItem').mockResolvedValue()
+
+        await wrapper.findAll('.transcript-timestamp')[1].trigger('click')
+
+        expect(queueStore.pendingSeek).toBeNull()
+        expect(queueStore.pendingStart).toEqual({guid: GUID, seconds: 65})
+        expect(playItem).toHaveBeenCalledWith(ITEM)
+    })
+
+    it('highlights the segment being spoken only while this episode is loaded', async () => {
+        const wrapper = await mountOpen()
+        const queueStore = useQueueStore()
+        queueStore.playbackPosition = 66
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.is-current').exists()).toBe(false)
+
+        queueStore.items = [ITEM]
+        await wrapper.vm.$nextTick()
+        expect(wrapper.find('.is-current').text()).toBe('One minute in.')
     })
 })
