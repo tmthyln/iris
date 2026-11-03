@@ -1,15 +1,17 @@
 import {type MaybeRefOrGetter, ref, toValue, watchEffect} from "vue";
 
 export function useUnescapedHTML(raw: MaybeRefOrGetter<string>) {
-    const parser = new DOMParser()
     const output = ref<string>('')
 
     watchEffect(() => {
-        const doc = parser.parseFromString(toValue(raw), 'text/html')
-        output.value = doc.documentElement.textContent
+        output.value = unescapeHTML(toValue(raw))
     })
 
     return output
+}
+
+export function unescapeHTML(raw: string) {
+    return new DOMParser().parseFromString(raw, 'text/html').documentElement.textContent
 }
 
 export function prefetchImagesFromHtml(...htmlSources: (string | null | undefined)[]) {

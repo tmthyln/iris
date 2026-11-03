@@ -1,8 +1,8 @@
 import {describe, expect, it, vi} from 'vitest'
 import {useSwipeToDismiss} from './swipe.ts'
 
-function touch(clientX: number, target?: EventTarget): TouchEvent {
-    return {touches: [{clientX}], target} as unknown as TouchEvent
+function touch(clientX: number, target?: EventTarget, clientY = 0): TouchEvent {
+    return {touches: [{clientX, clientY}], target} as unknown as TouchEvent
 }
 
 const item = {guid: 'item-a'}
@@ -60,6 +60,37 @@ describe('useSwipeToDismiss', () => {
         const {onTouchStart, onTouchMove, onTouchEnd} = useSwipeToDismiss(onDismiss, {ignoreSelector: '.drag-handle'})
         onTouchStart(item, touch(0, handle))
         onTouchMove(touch(500))
+        onTouchEnd(item)
+        expect(onDismiss).not.toHaveBeenCalled()
+    })
+
+    it('treats a mostly vertical move as scrolling, even one that ends far sideways', () => {
+        const onDismiss = vi.fn()
+        const {onTouchStart, onTouchMove, onTouchEnd, swipeStyle} = useSwipeToDismiss(onDismiss)
+        onTouchStart(item, touch(100))
+        onTouchMove(touch(105, undefined, 40))
+        expect(swipeStyle(item)).toEqual({})
+        onTouchMove(touch(300, undefined, 60))
+        onTouchEnd(item)
+        expect(onDismiss).not.toHaveBeenCalled()
+    })
+
+    it('keeps a sideways swipe going through a little vertical drift', () => {
+        const onDismiss = vi.fn()
+        const {onTouchStart, onTouchMove, onTouchEnd} = useSwipeToDismiss(onDismiss)
+        onTouchStart(item, touch(100))
+        onTouchMove(touch(250, undefined, 30))
+        onTouchEnd(item)
+        expect(onDismiss).toHaveBeenCalledExactlyOnceWith(item)
+    })
+
+    it('forgets a cancelled touch, leaving the item in place', () => {
+        const onDismiss = vi.fn()
+        const {onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, swipeStyle} = useSwipeToDismiss(onDismiss)
+        onTouchStart(item, touch(100))
+        onTouchMove(touch(300))
+        onTouchCancel()
+        expect(swipeStyle(item)).toEqual({})
         onTouchEnd(item)
         expect(onDismiss).not.toHaveBeenCalled()
     })

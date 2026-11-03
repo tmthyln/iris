@@ -4,20 +4,29 @@ interface SwipeItem {
     guid: string
 }
 
+const VERTICAL_SLOP = 10
+
 export function useSwipeToDismiss<T extends SwipeItem>(
     onDismiss: (item: T) => void,
     {threshold = 100, ignoreSelector}: {threshold?: number, ignoreSelector?: string} = {},
 ) {
-    const swipeState = ref<{guid: string, startX: number, dx: number} | null>(null)
+    const swipeState = ref<{guid: string, startX: number, startY: number, dx: number} | null>(null)
 
     function onTouchStart(item: T, e: TouchEvent) {
         if (ignoreSelector && e.target instanceof Element && e.target.closest(ignoreSelector)) return
-        swipeState.value = {guid: item.guid, startX: e.touches[0].clientX, dx: 0}
+        swipeState.value = {guid: item.guid, startX: e.touches[0].clientX, startY: e.touches[0].clientY, dx: 0}
     }
 
     function onTouchMove(e: TouchEvent) {
         if (!swipeState.value) return
-        swipeState.value.dx = e.touches[0].clientX - swipeState.value.startX
+        const dx = e.touches[0].clientX - swipeState.value.startX
+        const dy = e.touches[0].clientY - swipeState.value.startY
+        // Mostly vertical is someone scrolling the list, not swiping an item away.
+        if (Math.abs(dy) > VERTICAL_SLOP && Math.abs(dy) > Math.abs(dx)) {
+            swipeState.value = null
+            return
+        }
+        swipeState.value.dx = dx
     }
 
     function onTouchEnd(item: T) {
@@ -25,6 +34,10 @@ export function useSwipeToDismiss<T extends SwipeItem>(
         if (Math.abs(swipeState.value.dx) > threshold) {
             onDismiss(item)
         }
+        swipeState.value = null
+    }
+
+    function onTouchCancel() {
         swipeState.value = null
     }
 
@@ -38,5 +51,5 @@ export function useSwipeToDismiss<T extends SwipeItem>(
         return {}
     }
 
-    return {onTouchStart, onTouchMove, onTouchEnd, swipeStyle}
+    return {onTouchStart, onTouchMove, onTouchEnd, onTouchCancel, swipeStyle}
 }
