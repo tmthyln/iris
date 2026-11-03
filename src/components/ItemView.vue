@@ -57,6 +57,7 @@ function navigateTo(guid: string) {
 }
 watch(() => props.guid, () => {
     window.scrollTo(0, 0)
+    transcriptOpen.value = false
     void fetchFeedItem()
 })
 onMounted(fetchFeedItem)
@@ -104,12 +105,14 @@ onMounted(fetchFeedItem)
       show-transcript
       @open-transcript="transcriptOpen = true"
     />
-    <TranscriptView v-if="feedItem?.enclosure_url" :feed-item-guid="feedItem.guid" v-model:open="transcriptOpen" />
+    <TranscriptView v-if="feedItem?.enclosure_url" :feed-item="feedItem" v-model:open="transcriptOpen" />
 
     <hr>
 
-    <div v-if="!feedItem?.encoded_content" class="content" v-html="feedItem?.description" />
-    <div class="content" v-html="feedItem?.encoded_content" />
+    <div v-show="!transcriptOpen">
+      <div v-if="!feedItem?.encoded_content" class="content" v-html="feedItem?.description" />
+      <div class="content" v-html="feedItem?.encoded_content" />
+    </div>
 
     <hr class="my-6">
 
@@ -137,6 +140,10 @@ onMounted(fetchFeedItem)
 </template>
 
 <style scoped>
+/* The transcript tabs already separate the controls from the content. */
+.transcript-view + hr {
+    display: none;
+}
 .adjacent-nav {
     display: flex;
     gap: 0.5rem;

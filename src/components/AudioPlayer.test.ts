@@ -92,6 +92,16 @@ describe('playback controls', () => {
         expect(rateButton.text()).toBe('1.25x')
     })
 
+    it('starts a newly loaded episode from a requested position, over its saved progress', async () => {
+        const item = episode({progress: 0.5})
+        const {wrapper, queueStore} = await mountPlayer([item])
+        queueStore.pendingStart = {guid: item.guid, seconds: 42}
+        await loadMetadata(wrapper, 300)
+
+        expect(wrapper.find<HTMLAudioElement>('audio').element.currentTime).toBe(42)
+        expect(queueStore.pendingStart).toBeNull()
+    })
+
     it('applies a seek requested from outside (transcript timestamps)', async () => {
         stubClient('modifyFeedItem', ok(undefined))
         const item = episode()

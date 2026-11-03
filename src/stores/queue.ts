@@ -42,6 +42,11 @@ export const useQueueStore = defineStore('queue', {
             // Seek position (seconds) requested from outside the player
             // (e.g. transcript timestamps); AudioPlayer applies and clears it.
             pendingSeek: null as number | null,
+            // Where to start an episode that is not loaded yet; AudioPlayer
+            // applies and clears it once that episode's duration is known.
+            pendingStart: null as {guid: string, seconds: number} | null,
+            // Where the player is, for the transcript to follow.
+            playbackPosition: 0,
         }
     },
     getters: {
@@ -145,6 +150,14 @@ export const useQueueStore = defineStore('queue', {
         },
         requestSeek(seconds: number) {
             this.pendingSeek = seconds
+        },
+        async playItemFrom(item: FeedItemPreview, seconds: number) {
+            if (this.itemPlaying(item)) {
+                this.requestSeek(seconds)
+                return
+            }
+            this.pendingStart = {guid: item.guid, seconds}
+            await this.playItem(item)
         },
         async playItem(item: FeedItemPreview) {
             if (!this.itemQueued(item)) {

@@ -102,11 +102,19 @@ watch(duration, (newDuration) => {
         if (currentItem.value.progress > 0 && currentItem.value.progress < 1) {
             currentTime.value = currentItem.value.progress * newDuration
         }
+        if (queueStore.pendingStart?.guid === currentItem.value.guid) {
+            currentTime.value = Math.min(queueStore.pendingStart.seconds, newDuration)
+            queueStore.pendingStart = null
+        }
         if (autoPlayNext.value) {
             playing.value = true
             autoPlayNext.value = false
         }
     }
+})
+
+watch(currentTime, (time) => {
+    queueStore.playbackPosition = time
 })
 
 watch(() => queueStore.paused, (paused) => {
