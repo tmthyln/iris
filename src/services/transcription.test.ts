@@ -37,13 +37,18 @@ function fakeStep() {
 type AiInput = {audio?: string, request_id?: string, language?: string}
 
 /**
- * A fake AI binding: submissions get request ids `req-1`, `req-2`, …; polling
- * a request id answers with the next entry of its script (the last one repeats).
+ * A fake AI binding. Batch submissions get request ids `req-1`, `req-2`, …;
+ * polling a request id answers with the next entry of its script (the last one
+ * repeats). Synchronous calls answer with `transcribe(input)`.
  */
-function fakeAi(scripts: Record<string, unknown[]> = {}) {
+function fakeAi(scripts: Record<string, unknown[]> = {}, transcribe: (input: AiInput) => unknown = () => ({text: 'words'})) {
     const submitted: AiInput[] = []
     const polls: Record<string, number> = {}
-    const run = vi.fn((_model: string, input: AiInput) => {
+    const run = vi.fn((_model: string, input: AiInput, options?: {queueRequest?: boolean}) => {
+        if (input.request_id === undefined && !options?.queueRequest) {
+            const answer = transcribe(input)
+            return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer)
+        }
         if (input.request_id === undefined) {
             submitted.push(input)
             return Promise.resolve({request_id: `req-${submitted.length}`, status: 'queued'})
@@ -72,7 +77,7 @@ async function seedItemWithAudio(enclosureUrl: string | null = AUDIO_URL) {
 
 async function transcriptRow(id: number) {
     return (await db.prepare('SELECT * FROM transcript WHERE id = ?').bind(id)
-        .first<{status: string, error_message: string | null, started_at: string | null, completed_at: string | null, text: string | null, segments_json: string | null, language: string | null}>())!
+        .first<{status: string, error_message: string | null, started_at: string | null, completed_at: string | null, text: string | null, segments_json: string | null, language: string | null, chunks_done: number, chunks_total: number | null}>())!
 }
 
 async function workingFiles() {
@@ -116,18 +121,22 @@ describe('isFrameStream', () => {
 })
 
 describe('planChunks', () => {
-    const limits: TranscriptionLimits = {...DEFAULT_LIMITS, chunkBytes: 100}
+    const limits: TranscriptionLimits = {...DEFAULT_LIMITS, chunkBytes: 100, overlapBytes: 10, batchMaxBytes: 500}
 
     test('keeps a file up to a quarter over the chunk size in one request', () => {
-        expect(planChunks({size: 125, splittable: false}, limits)).toEqual([{offset: 0, length: 125}])
+        expect(planChunks({size: 125, splittable: true}, limits)).toEqual([{offset: 0, length: 125}])
     })
 
-    test('splits a larger frame-based file into equal ranges covering every byte', () => {
+    test('splits a larger frame-based file into overlapping ranges covering every byte', () => {
         expect(planChunks({size: 250, splittable: true}, limits)).toEqual([
-            {offset: 0, length: 84},
-            {offset: 84, length: 84},
+            {offset: 0, length: 94},
+            {offset: 84, length: 94},
             {offset: 168, length: 82},
         ])
+    })
+
+    test('sends other formats whole, up to the batch limit', () => {
+        expect(planChunks({size: 500, splittable: false}, limits)).toEqual([{offset: 0, length: 500}])
     })
 
     test('refuses to split other formats', () => {
@@ -161,15 +170,95 @@ describe('stitchResults', () => {
         })
     })
 
+    test('keeps segment starts in order when Whisper jitters them', () => {
+        const {segments} = stitchResults([{text: '', segments: [{start: 60, end: 62}, {start: 55, end: 57}, {start: 63, end: 64}]}])
+        expect(segments?.map(segment => segment.start)).toEqual([60, 60, 63])
+    })
+
+    test('reports the language most chunks were detected as', () => {
+        const chunk = (language: string) => ({text: '', transcription_info: {language}})
+        expect(stitchResults([chunk('en'), chunk('zh'), chunk('zh')]).language).toBe('zh')
+    })
+
     test('estimates a missing duration from the chunk size at the rate of the others', () => {
         const stitched = stitchResults([
             {text: 'one', transcription_info: {duration: 100}, segments: [{start: 0, end: 90}]},
             // VAD trimmed its trailing silence, so its last segment ends early
             {text: 'two', segments: [{start: 0, end: 20}]},
             {text: 'three', transcription_info: {duration: 25}, segments: [{start: 5, end: 6}]},
-        ], [1000, 500, 250])
+        ], [{offset: 0, length: 1000}, {offset: 1000, length: 500}, {offset: 1500, length: 250}])
 
         expect(stitched.segments).toEqual([{start: 0, end: 90}, {start: 100, end: 120}, {start: 155, end: 156}])
+    })
+
+    describe('overlapping chunks', () => {
+        // 110 seconds of audio each, the last 10 shared with the next chunk.
+        const ranges = [{offset: 0, length: 110}, {offset: 100, length: 110}, {offset: 200, length: 50}]
+        const info = {transcription_info: {duration: 110, language: 'en'}}
+
+        test('switches chunks mid-overlap, dropping the garbled audio around each cut', () => {
+            const stitched = stitchResults([
+                {...info, text: 'unused', segments: [
+                    {start: 0, end: 99, text: ' before the seam'},
+                    {start: 99, end: 104, text: ' across the seam'},
+                    {start: 108, end: 110, text: ' 엄마 garbled end'},
+                ]},
+                {...info, text: 'unused', segments: [
+                    {start: 0, end: 1, text: ' garbled start'},
+                    {start: 1, end: 4, text: ' seam again'},
+                    {start: 4, end: 50, text: ' after the seam'},
+                ]},
+            ], ranges)
+
+            expect(stitched.text).toBe('before the seam across the seam after the seam')
+            expect(stitched.segments).toEqual([
+                {start: 0, end: 99, text: ' before the seam'},
+                {start: 99, end: 104, text: ' across the seam'},
+                {start: 104, end: 150, text: ' after the seam'},
+            ])
+        })
+
+        test('tolerates a next segment starting just before the last kept one ends', () => {
+            const {segments} = stitchResults([
+                {...info, text: '', segments: [{start: 100, end: 104.2, text: ' a'}]},
+                {...info, text: '', segments: [{start: 4, end: 8, text: ' b'}]},
+            ], ranges)
+            expect(segments?.map(segment => segment.text)).toEqual([' a', ' b'])
+        })
+
+        test('recovers the words of a next segment straddling the last kept one', () => {
+            const {text, segments} = stitchResults([
+                {...info, text: '', segments: [{start: 95, end: 102, text: ' those tells have become'}]},
+                {...info, text: '', segments: [{start: 0, end: 5, text: ' tells have become harder to detect', words: [
+                    {word: ' have', start: 0, end: 1},
+                    {word: ' become', start: 1, end: 2},
+                    {word: ' harder', start: 2, end: 3},
+                    {word: ' to', start: 3, end: 4},
+                    {word: ' detect', start: 4, end: 5},
+                ]}]},
+            ], ranges)
+
+            expect(text).toBe('those tells have become harder to detect')
+            expect(segments?.[1]).toMatchObject({start: 102, end: 105, text: ' harder to detect'})
+            expect(segments?.[1].words?.map(word => word.start)).toEqual([102, 103, 104])
+        })
+
+        test('still shifts later chunks when one has no speech', () => {
+            const stitched = stitchResults([
+                {...info, text: 'first', segments: [{start: 1, end: 2, text: ' first'}]},
+                {...info, text: ' ', segments: []},
+                {text: 'third', transcription_info: {duration: 50}, segments: [{start: 6, end: 7, text: ' third'}]},
+            ], ranges)
+            expect(stitched.text).toBe('first third')
+            expect(stitched.segments?.map(segment => segment.start)).toEqual([1, 206])
+        })
+
+        test('ends a partial transcript at the cut into the chunk not yet transcribed', () => {
+            const {segments} = stitchResults([
+                {...info, text: '', segments: [{start: 90, end: 95, text: ' kept'}, {start: 106, end: 108, text: ' dropped'}]},
+            ], ranges)
+            expect(segments?.map(segment => segment.text)).toEqual([' kept'])
+        })
     })
 
     test('yields no segments when the model returned none', () => {
@@ -224,7 +313,7 @@ describe('runTranscription', () => {
         expect(names).toEqual(['start', 'record failure', 'clean up'])
     })
 
-    test('transcribes a short episode in one request', async () => {
+    test('transcribes an episode that cannot be split through one batch request', async () => {
         const item = await seedItemWithAudio()
         const transcript = await createTranscriptRequest(db, 'ep-1', MODEL)
         const {calls} = mockFetch({[AUDIO_URL]: new Response('audio-bytes')})
@@ -242,7 +331,7 @@ describe('runTranscription', () => {
         expect(calls[0].headers.get('User-Agent')).toContain('Iris')
         expect(ai.run).toHaveBeenCalledWith(
             MODEL,
-            {audio: btoa('audio-bytes'), task: 'transcribe', vad_filter: true},
+            expect.objectContaining({audio: btoa('audio-bytes'), task: 'transcribe', vad_filter: true}),
             {queueRequest: true},
         )
         expect(ai.run).toHaveBeenCalledWith(MODEL, {request_id: 'req-1'})
@@ -253,7 +342,7 @@ describe('runTranscription', () => {
             error: expect.objectContaining({message: 'network'}),
         }))
         expect(names).toEqual([
-            'start', 'download audio', 'submit chunk 1',
+            'start', 'download audio', 'record plan', 'submit batch',
             'wait 1', 'poll 1', 'wait 2', 'poll 2', 'wait 3', 'poll 3',
             'persist transcript', 'index transcript', 'clean up',
         ])
@@ -284,41 +373,133 @@ describe('runTranscription', () => {
         expect(await transcriptRow(transcript.id)).toMatchObject({status: 'complete', text: 'inline words', segments_json: null, language: 'de'})
     })
 
-    test('splits a long MP3 into chunks and stitches the timestamps', async () => {
+    test('recognises a finished batch request answering with the bare Whisper result', async () => {
         await seedItemWithAudio()
         const transcript = await createTranscriptRequest(db, 'ep-1', MODEL)
-        const bytes = id3Tagged([...MP3_FRAME, ...new TextEncoder().encode('abcdefghij'.repeat(9))])  // 108 bytes
-        const audio = String.fromCharCode(...bytes)
+        mockFetch({[AUDIO_URL]: new Response('audio-bytes')})
+        const segments = [{start: 0, end: 1, text: 'bare words'}]
+        const ai = fakeAi({'req-1': [
+            {status: 'queued', request_id: 'req-1'},
+            {status: 'running', request_id: 'req-1'},
+            // the shape Workers AI really answers with
+            {transcription_info: {language: 'en', duration: 1}, text: 'bare words', word_count: 2, segments, vtt: 'WEBVTT', meta: {}},
+        ]})
+
+        await runTranscription(transcript.id, transcribeEnv(ai), fakeStep().step)
+
+        expect(await transcriptRow(transcript.id)).toMatchObject({status: 'complete', text: 'bare words', language: 'en', chunks_done: 1, chunks_total: 1})
+    })
+
+    test('transcribes a small MP3 in one synchronous request', async () => {
+        await seedItemWithAudio()
+        const transcript = await createTranscriptRequest(db, 'ep-1', MODEL, 'de')
+        const bytes = id3Tagged(MP3_FRAME)
         mockFetch({[AUDIO_URL]: new Response(bytes)})
-        const ai = fakeAi({
-            'req-1': [done('one', {transcription_info: {language: 'en', duration: 60}, segments: [{start: 0, end: 59, text: 'one'}]})],
-            // the second chunk finishes a round after the others
-            'req-2': [{status: 'running'}, done('two', {transcription_info: {duration: 60}, segments: [{start: 1, end: 58, text: 'two'}]})],
-            'req-3': [done('three', {transcription_info: {duration: 30}, segments: [{start: 2, end: 29, text: 'three'}]})],
-        })
+        const ai = fakeAi({}, () => ({text: 'short', segments: [{start: 0, end: 1, text: 'short'}], vtt: 'WEBVTT'}))
         const {names, step} = fakeStep()
 
-        await runTranscription(transcript.id, transcribeEnv(ai), step, {...DEFAULT_LIMITS, chunkBytes: 40})
+        await runTranscription(transcript.id, transcribeEnv(ai), step)
 
-        expect(ai.submitted.map(input => decode(input.audio))).toEqual([audio.slice(0, 36), audio.slice(36, 72), audio.slice(72)])
-        expect(names).toEqual([
-            'start', 'download audio', 'submit chunk 1', 'submit chunk 2', 'submit chunk 3',
-            'wait 1', 'poll 1', 'wait 2', 'poll 2',
-            'persist transcript', 'index transcript', 'clean up',
-        ])
-        // finished chunks are not polled again
-        expect(ai.run.mock.calls.filter(([, input]) => input.request_id === 'req-1')).toHaveLength(1)
-        expect(await transcriptRow(transcript.id)).toMatchObject({
-            status: 'complete',
-            text: 'one two three',
-            language: 'en',
-            segments_json: JSON.stringify([
-                {start: 0, end: 59, text: 'one'},
-                {start: 61, end: 118, text: 'two'},
-                {start: 122, end: 149, text: 'three'},
-            ]),
+        expect(ai.run).toHaveBeenCalledExactlyOnceWith(MODEL, expect.objectContaining({audio: Buffer.from(bytes).toString('base64'), task: 'transcribe', language: 'de', vad_filter: true}))
+        expect(names).toEqual(['start', 'download audio', 'record plan', 'transcribe chunk 1', 'persist transcript', 'index transcript', 'clean up'])
+        expect(await transcriptRow(transcript.id)).toMatchObject({status: 'complete', text: 'short', language: 'de', chunks_done: 1, chunks_total: 1})
+    })
+
+    describe('a long MP3', () => {
+        // Chunks of 36 bytes overlapping by 4: each is 40 seconds at a second per byte.
+        const LIMITS = {...DEFAULT_LIMITS, chunkBytes: 40, overlapBytes: 4, concurrency: 2}
+        const bytes = id3Tagged([...MP3_FRAME, ...new TextEncoder().encode('abcdefghij'.repeat(19))])  // 208 bytes
+        const audio = String.fromCharCode(...bytes)
+
+        async function start() {
+            await seedItemWithAudio()
+            const transcript = await createTranscriptRequest(db, 'ep-1', MODEL)
+            mockFetch({[AUDIO_URL]: new Response(bytes)})
+            return transcript
+        }
+
+        /** Answers each chunk with one segment naming it, at the chunk's own second 1. */
+        function chunkAi() {
+            const inputs: string[] = []
+            const ai = fakeAi({}, input => {
+                const chunk = inputs.push(decode(input.audio))
+                return {
+                    text: `chunk ${chunk}`,
+                    transcription_info: {language: 'en', duration: decode(input.audio).length},
+                    segments: [{start: 1, end: 2, text: ` chunk ${chunk}`}],
+                }
+            })
+            return {ai, inputs}
+        }
+
+        test('transcribes overlapping chunks in groups and stitches them', async () => {
+            const transcript = await start()
+            const {ai, inputs} = chunkAi()
+            const {names, step} = fakeStep()
+
+            await runTranscription(transcript.id, transcribeEnv(ai), step, LIMITS)
+
+            expect(inputs).toEqual([0, 1, 2, 3, 4, 5].map(i => audio.slice(i * 35, i * 35 + 39)))
+            expect(names).toEqual([
+                'start', 'download audio', 'record plan',
+                'transcribe chunk 1', 'transcribe chunk 2', 'publish 2 chunks',
+                'transcribe chunk 3', 'transcribe chunk 4', 'publish 4 chunks',
+                'transcribe chunk 5', 'transcribe chunk 6',
+                'persist transcript', 'index transcript', 'clean up',
+            ])
+            const row = await transcriptRow(transcript.id)
+            expect(row).toMatchObject({status: 'complete', text: 'chunk 1 chunk 2 chunk 3 chunk 4 chunk 5 chunk 6', language: 'en', chunks_done: 6, chunks_total: 6})
+            expect((JSON.parse(row.segments_json!) as {start: number}[]).map(segment => segment.start)).toEqual([1, 36, 71, 106, 141, 176])
+            expect(await workingFiles()).toEqual([])
         })
-        expect(await workingFiles()).toEqual([])
+
+        test('publishes the partial transcript after each group', async () => {
+            const transcript = await start()
+            const {ai} = chunkAi()
+            const {step} = fakeStep()
+            const seen: unknown[] = []
+            const realDo = step.do.bind(step) as (name: string, ...rest: unknown[]) => Promise<unknown>
+            step.do = (async (name: string, ...rest: unknown[]) => {
+                const result = await realDo(name, ...rest)
+                if (name.startsWith('publish')) {
+                    const row = await transcriptRow(transcript.id)
+                    seen.push({status: row.status, text: row.text, chunks_done: row.chunks_done, segments: (JSON.parse(row.segments_json!) as unknown[]).length})
+                }
+                return result
+            }) as typeof step.do
+
+            await runTranscription(transcript.id, transcribeEnv(ai), step, LIMITS)
+
+            expect(seen).toEqual([
+                {status: 'processing', text: 'chunk 1 chunk 2', chunks_done: 2, segments: 2},
+                {status: 'processing', text: 'chunk 1 chunk 2 chunk 3 chunk 4', chunks_done: 4, segments: 4},
+            ])
+        })
+
+        test('a failing chunk fails the transcript but keeps what was published', async () => {
+            const transcript = await start()
+            vi.spyOn(console, 'error').mockImplementation(() => {})
+            let calls = 0
+            const ai = fakeAi({}, () => ++calls === 4
+                ? new Error('capacity')
+                : {text: `chunk ${calls}`, transcription_info: {duration: 39}, segments: [{start: 1, end: 2, text: ` chunk ${calls}`}]})
+
+            await runTranscription(transcript.id, transcribeEnv(ai), fakeStep().step, LIMITS)
+
+            expect(calls).toBe(4)  // the other chunk of the group finished; no later group started
+            expect(await transcriptRow(transcript.id)).toMatchObject({status: 'error', error_message: 'capacity', text: 'chunk 1 chunk 2', chunks_done: 2, chunks_total: 6})
+            expect(await workingFiles()).toEqual([])
+        })
+
+        test('a response without text fails the chunk', async () => {
+            const transcript = await start()
+            vi.spyOn(console, 'error').mockImplementation(() => {})
+            const ai = fakeAi({}, () => ({errors: ['nope']}))
+
+            await runTranscription(transcript.id, transcribeEnv(ai), fakeStep().step, LIMITS)
+
+            expect(await transcriptRow(transcript.id)).toMatchObject({status: 'error', error_message: 'Whisper returned no text'})
+        })
     })
 
     test('streams a download larger than one R2 part without losing bytes', async () => {
@@ -400,7 +581,7 @@ describe('runTranscription', () => {
 
         test('a long episode in a format that cannot be split', async () => {
             const ai = fakeAi()
-            const message = await failingRun(new Response('\0\0\0 ftypM4A ' + 'x'.repeat(100)), ai, {chunkBytes: 40})
+            const message = await failingRun(new Response('\0\0\0 ftypM4A ' + 'x'.repeat(100)), ai, {batchMaxBytes: 40})
             expect(message).toContain('only MP3 audio can be split')
             expect(ai.run).not.toHaveBeenCalled()
         })

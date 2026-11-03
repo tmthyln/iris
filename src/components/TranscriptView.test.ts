@@ -22,7 +22,7 @@ async function mountTranscripts({transcripts = [makeTranscript({status: 'complet
 }
 
 describe('visibility', () => {
-    it('renders nothing while there is no completed transcript', async () => {
+    it('renders nothing until some of a transcript is available', async () => {
         const {wrapper} = await mountTranscripts({transcripts: [makeTranscript({status: 'pending'})]})
         expect(wrapper.find('.transcript-view').exists()).toBe(false)
     })
@@ -55,6 +55,33 @@ describe('content', () => {
         stubClient('getTranscript', ok(makeFullTranscript({id: complete.id, text: 'Just a wall of text.', segments_json: 'not-json'})))
         const {wrapper} = await mountTranscripts({transcripts: [complete], open: true})
         await vi.waitFor(() => expect(wrapper.find('.transcript-plain').text()).toBe('Just a wall of text.'))
+    })
+
+    it('shows the part transcribed so far while the rest is in progress', async () => {
+        const partial = makeTranscript({status: 'processing', chunks_done: 4, chunks_total: 8})
+        stubClient('getTranscript', ok(makeFullTranscript({...partial, segments_json: SEGMENTS})))
+        const {wrapper} = await mountTranscripts({transcripts: [partial], open: true})
+
+        await vi.waitFor(() => expect(wrapper.findAll('.transcript-segment')).toHaveLength(3))
+        expect(wrapper.find('.transcript-progress').text()).toBe('Transcribing… 4 of 8 parts so far')
+    })
+
+    it('keeps the part transcribed before a failure', async () => {
+        const failed = makeTranscript({status: 'error', error_message: 'capacity', chunks_done: 4, chunks_total: 8})
+        stubClient('getTranscript', ok(makeFullTranscript({...failed, segments_json: SEGMENTS})))
+        const {wrapper} = await mountTranscripts({transcripts: [failed], open: true})
+
+        await vi.waitFor(() => expect(wrapper.findAll('.transcript-segment')).toHaveLength(3))
+        expect(wrapper.find('.transcript-progress').text()).toBe('Stopped after part 4 of 8: capacity')
+    })
+
+    it('hides the progress note once complete', async () => {
+        const complete = makeTranscript({status: 'complete', chunks_done: 8, chunks_total: 8})
+        stubClient('getTranscript', ok(makeFullTranscript({...complete, segments_json: SEGMENTS})))
+        const {wrapper} = await mountTranscripts({transcripts: [complete], open: true})
+
+        await vi.waitFor(() => expect(wrapper.findAll('.transcript-segment')).toHaveLength(3))
+        expect(wrapper.find('.transcript-progress').exists()).toBe(false)
     })
 
     it('offers a picker when several transcripts completed', async () => {

@@ -414,6 +414,9 @@ interface UpdateTranscriptPatch {
     error_message?: string | null
     started_at?: string | null
     completed_at?: string | null
+    chunks_done?: number
+    chunks_total?: number | null
+    last_progress_at?: string | null
 }
 
 export async function updateTranscriptStatus(db: D1Database, id: number, patch: UpdateTranscriptPatch) {

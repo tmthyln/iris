@@ -154,6 +154,8 @@ export function makeTranscript(overrides: Partial<Transcript> = {}): Transcript 
         requested_at: dateAt(n),
         started_at: dateAt(n),
         completed_at: dateAt(n),
+        chunks_done: 0,
+        chunks_total: null,
         ...overrides,
     }
 }

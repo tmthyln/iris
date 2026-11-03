@@ -170,6 +170,45 @@ describe('loadFull', () => {
         expect(vi.mocked(client.getTranscript)).toHaveBeenCalledOnce()
     })
 
+    it('refreshes a loaded transcript as polling reports more of it', async () => {
+        const processing = makeTranscript({status: 'processing', chunks_done: 2, chunks_total: 6})
+        stubClient('listTranscripts', ok([processing]))
+        const getTranscript = stubClient('getTranscript', ok(makeFullTranscript({...processing, text: 'first part'})))
+        const store = useTranscriptStore()
+        await store.refresh('item-a')
+        await store.loadFull(processing.id)
+        expect(getTranscript).toHaveBeenCalledOnce()
+
+        // no progress: nothing to fetch
+        await vi.advanceTimersByTimeAsync(POLL_MS)
+        expect(getTranscript).toHaveBeenCalledOnce()
+
+        const further = {...processing, chunks_done: 4}
+        stubClient('listTranscripts', ok([further]))
+        getTranscript.mockResolvedValue(ok(makeFullTranscript({...further, text: 'first part second part'})))
+        await vi.advanceTimersByTimeAsync(POLL_MS)
+        expect(store.fullById[processing.id].text).toBe('first part second part')
+
+        const finished = {...processing, status: 'complete' as const, chunks_done: 6}
+        stubClient('listTranscripts', ok([finished]))
+        getTranscript.mockResolvedValue(ok(makeFullTranscript({...finished, text: 'all of it'})))
+        await vi.advanceTimersByTimeAsync(POLL_MS)
+        expect(store.fullById[processing.id]).toMatchObject({status: 'complete', text: 'all of it'})
+    })
+
+    it('ignores a slow response with less of the transcript than it already has', async () => {
+        const store = useTranscriptStore()
+        const newer = makeFullTranscript({status: 'processing', chunks_done: 4, text: 'more'})
+        store.fullById[newer.id] = newer
+        stubClient('listTranscripts', ok([{...makeTranscript({id: newer.id}), status: 'processing' as const, chunks_done: 6}]))
+        stubClient('getTranscript', ok({...newer, chunks_done: 2, text: 'less'}))
+
+        await store.refresh('item-a')
+        await vi.advanceTimersByTimeAsync(0)
+
+        expect(store.fullById[newer.id].text).toBe('more')
+    })
+
     it('returns null on failure without caching', async () => {
         stubClient('getTranscript', err(404, 'Not found'))
         const store = useTranscriptStore()

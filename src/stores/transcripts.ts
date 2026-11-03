@@ -38,6 +38,13 @@ export const useTranscriptStore = defineStore('transcripts', () => {
             }
         }
         byItem[itemGuid] = list
+        // Keep a loaded transcript's text current as more of it arrives.
+        for (const transcript of list) {
+            const full = fullById[transcript.id]
+            if (full && (full.status !== transcript.status || full.chunks_done !== transcript.chunks_done)) {
+                void fetchFull(transcript.id)
+            }
+        }
     }
 
     const visibility = useDocumentVisibility()
@@ -98,12 +105,16 @@ export const useTranscriptStore = defineStore('transcripts', () => {
         return created
     }
 
-    async function loadFull(transcriptId: number) {
-        if (fullById[transcriptId]) return fullById[transcriptId]
+    async function fetchFull(transcriptId: number) {
         const result = await client.getTranscript(transcriptId)
         const full = result.ok ? result.data : null
-        if (full) fullById[transcriptId] = full
+        // A slow response must not replace a newer one with less of the transcript.
+        if (full && full.chunks_done >= (fullById[transcriptId]?.chunks_done ?? 0)) fullById[transcriptId] = full
         return full
+    }
+
+    async function loadFull(transcriptId: number) {
+        return fullById[transcriptId] ?? await fetchFull(transcriptId)
     }
 
     function getForItem(itemGuid: string): Transcript[] {

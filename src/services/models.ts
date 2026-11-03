@@ -674,6 +674,9 @@ export interface RawTranscript {
     requested_at: string | Date
     started_at: string | Date | null
     completed_at: string | Date | null
+    chunks_done: number
+    chunks_total: number | null
+    last_progress_at: string | Date | null
 }
 
 export class ServerTranscript {
@@ -689,6 +692,9 @@ export class ServerTranscript {
     requested_at: Date
     started_at: Date | null
     completed_at: Date | null
+    chunks_done: number
+    chunks_total: number | null
+    last_progress_at: Date | null
 
     constructor(data: RawTranscript) {
         this.id = data.id
@@ -703,6 +709,9 @@ export class ServerTranscript {
         this.requested_at = asDate(data.requested_at)
         this.started_at = data.started_at ? asDate(data.started_at) : null
         this.completed_at = data.completed_at ? asDate(data.completed_at) : null
+        this.chunks_done = data.chunks_done
+        this.chunks_total = data.chunks_total
+        this.last_progress_at = data.last_progress_at ? asDate(data.last_progress_at) : null
     }
 
     static async get(db: D1Database, id: number) {
@@ -725,6 +734,8 @@ export class ClientTranscript {
     requested_at: Date
     started_at: Date | null
     completed_at: Date | null
+    chunks_done: number
+    chunks_total: number | null
 
     constructor(data: ServerTranscript) {
         this.id = data.id
@@ -737,6 +748,8 @@ export class ClientTranscript {
         this.requested_at = data.requested_at
         this.started_at = data.started_at
         this.completed_at = data.completed_at
+        this.chunks_done = data.chunks_done
+        this.chunks_total = data.chunks_total
     }
 }
 

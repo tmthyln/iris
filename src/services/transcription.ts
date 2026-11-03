@@ -1,5 +1,5 @@
 import {Buffer} from "node:buffer";
-import {WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep} from "cloudflare:workers";
+import {WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig} from "cloudflare:workers";
 import {NonRetryableError} from "cloudflare:workflows";
 import {updateTranscriptStatus} from "./crud";
 import {ServerFeedItem, ServerTranscript} from "./models";
@@ -14,13 +14,34 @@ const POLL_INTERVAL = '30 seconds'
 // Whisper batch results are polled every POLL_INTERVAL; an hour in total.
 const MAX_POLLS = 120
 
+// A 5 MiB chunk takes about 30 seconds; the retries ride out capacity errors.
+const CHUNK_STEP_CONFIG = {
+    retries: {limit: 5, delay: '10 seconds', backoff: 'exponential'},
+    timeout: '3 minutes',
+} satisfies WorkflowStepConfig
+
 // D1 caps a row at 2 MB; the stitched segments of a very long episode can exceed it.
 const MAX_SEGMENTS_JSON_BYTES = MIB
+
+// Adjacent chunks time the same words slightly differently, so the next chunk
+// may start a segment just before the last kept one ends.
+const RESUME_TOLERANCE_SECONDS = 0.25
+
+// Without a prompt, Whisper picks a style per chunk from how the chunk happens
+// to start: one came back with no capitals or punctuation, another as fragments
+// of a few words per segment. Words in the prompt get echoed or pull other
+// languages towards English, which punctuation alone does not.
+const WHISPER_INITIAL_PROMPT = '.,?!'
 
 const MAX_ERROR_MESSAGE_LENGTH = 500
 
 // An unfinished request younger than this may still be starting its Workflow.
 const ORPHAN_MIN_AGE_MS = 60 * 1000
+
+// Longer than any step can take with its retries. Only a Workflow engine that
+// has lost the instance goes this long without progress: `wrangler dev` does
+// not resume instances after a restart, yet still reports them as running.
+const STALLED_AFTER_MS = 60 * 60 * 1000
 
 export interface TranscribeParams {
     readonly transcriptId: number
@@ -37,20 +58,30 @@ export interface TranscriptionLimits {
     readonly partBytes: number
     /** Audio sent to Whisper per request; longer files are split into byte ranges of about this size. */
     readonly chunkBytes: number
+    /** Audio shared by adjacent chunks. Whisper garbles the audio around a cut, so the transcript switches chunks mid-overlap. */
+    readonly overlapBytes: number
+    /** Chunks transcribed at once; the partial transcript is published after each group. */
+    readonly concurrency: number
+    /** Largest file in a format that cannot be split, which goes to Whisper whole through its batch API. */
+    readonly batchMaxBytes: number
     /** Episodes larger than this are rejected instead of downloaded. */
     readonly maxBytes: number
 }
 
 export const DEFAULT_LIMITS: TranscriptionLimits = {
     partBytes: 10 * MIB,
-    chunkBytes: 20 * MIB,
+    chunkBytes: 5 * MIB,
+    overlapBytes: MIB / 4,
+    concurrency: 4,
+    batchMaxBytes: 25 * MIB,
     maxBytes: 400 * MIB,
 }
 
 interface WhisperSegment {
+    text?: string
     start?: number
     end?: number
-    words?: Array<{start?: number, end?: number}>
+    words?: Array<{word?: string, start?: number, end?: number}>
 }
 
 interface WhisperBatchResult {
@@ -60,11 +91,10 @@ interface WhisperBatchResult {
 }
 
 type WhisperBatchSubmitResponse = {request_id?: string, status?: string}
-type WhisperBatchPollResponse = {
+// A finished request answers with the Whisper result itself at the top level;
+// `result` and `responses` cover the other shapes the batch API documents.
+type WhisperBatchPollResponse = Partial<WhisperBatchResult> & {
     status?: string
-    // Some models return a `responses` array; others (single-input models like
-    // Whisper when submitted without a `requests` wrapper) may inline the
-    // result directly. Handle both.
     responses?: Array<{success: boolean, result?: WhisperBatchResult, error?: unknown}>
     result?: WhisperBatchResult
     success?: boolean
@@ -80,11 +110,6 @@ interface StoredAudio {
 interface ByteRange {
     readonly offset: number
     readonly length: number
-}
-
-interface PendingChunk {
-    readonly index: number
-    readonly requestId: string
 }
 
 function audioKey(transcriptId: number) {
@@ -199,124 +224,194 @@ export async function downloadAudio(env: Env, url: string, key: string, limits: 
 }
 
 /**
- * Byte ranges to transcribe separately. A file up to a quarter over the chunk
- * size still goes in one request rather than leaving a sliver of a chunk.
+ * Byte ranges to transcribe separately, each running `overlapBytes` into the
+ * next. A file up to a quarter over the chunk size still goes in one request
+ * rather than leaving a sliver of a chunk.
  */
 export function planChunks(audio: StoredAudio, limits: TranscriptionLimits): ByteRange[] {
-    const singleMax = limits.chunkBytes * 1.25
-    if (audio.size <= singleMax) return [{offset: 0, length: audio.size}]
     if (!audio.splittable) {
+        if (audio.size <= limits.batchMaxBytes) return [{offset: 0, length: audio.size}]
         throw new NonRetryableError(
-            `Audio is ${megabytes(audio.size)} MB; only MP3 audio can be split, and other formats are limited to ${megabytes(singleMax)} MB`,
+            `Audio is ${megabytes(audio.size)} MB; only MP3 audio can be split, and other formats are limited to ${megabytes(limits.batchMaxBytes)} MB`,
         )
     }
+    if (audio.size <= limits.chunkBytes * 1.25) return [{offset: 0, length: audio.size}]
 
     const count = Math.ceil(audio.size / limits.chunkBytes)
-    const length = Math.ceil(audio.size / count)
+    const stride = Math.ceil(audio.size / count)
     return Array.from({length: count}, (_, i) => ({
-        offset: i * length,
-        length: Math.min(length, audio.size - i * length),
+        offset: i * stride,
+        length: Math.min(stride + limits.overlapBytes, audio.size - i * stride),
     }))
 }
 
-async function submitChunk(env: Env, transcriptId: number, model: string, language: string | null, range: ByteRange) {
+async function readChunkAudio(env: Env, transcriptId: number, range: ByteRange) {
     const object = await env.RSS_CACHE_BUCKET.get(audioKey(transcriptId), {range})
     if (!object) throw new Error('Downloaded audio is missing from storage')
-    const audioBase64 = Buffer.from(await object.arrayBuffer()).toString('base64')
+    return Buffer.from(await object.arrayBuffer()).toString('base64')
+}
 
-    // Whisper's batch input mirrors its sync input — audio/task/language at the
-    // root — with queueRequest:true switching env.AI.run into batch mode.
-    // Podcast-length audio exceeds the synchronous AI.run timeout (504), which
-    // is why this goes through batch.
-    const submitted = await env.AI.run(model as '@cf/openai/whisper-large-v3-turbo', {
-        audio: audioBase64,
-        task: 'transcribe',
-        ...(language ? {language} : {}),
-        vad_filter: true,
-    }, {queueRequest: true} as never) as unknown as WhisperBatchSubmitResponse
+function whisperInput(audio: string, language: string | null) {
+    return {audio, task: 'transcribe', ...(language ? {language} : {}), vad_filter: true, initial_prompt: WHISPER_INITIAL_PROMPT}
+}
+
+/** Parks a chunk's result in R2, as a step may only return 1 MiB; `vtt` repeats the segments. */
+async function storeChunkResult(env: Env, transcriptId: number, index: number, {text, transcription_info, segments}: WhisperBatchResult) {
+    await env.RSS_CACHE_BUCKET.put(chunkResultKey(transcriptId, index), JSON.stringify({text, transcription_info, segments}))
+}
+
+/**
+ * Transcribes one byte range synchronously. Chunks of this size finish in
+ * about 30 seconds, where the same audio spends minutes in the batch API.
+ */
+async function transcribeChunk(env: Env, transcriptId: number, job: {model: string, language: string | null}, index: number, range: ByteRange) {
+    const startedAt = Date.now()
+    const result = await env.AI.run(
+        job.model as '@cf/openai/whisper-large-v3-turbo',
+        whisperInput(await readChunkAudio(env, transcriptId, range), job.language),
+    ) as unknown as WhisperBatchResult
+    if (typeof result.text !== 'string') throw new Error('Whisper returned no text')
+    await storeChunkResult(env, transcriptId, index, result)
+    log.info('Transcribed a chunk', {chunk: index + 1, audioSeconds: result.transcription_info?.duration, durationMs: Date.now() - startedAt})
+}
+
+/** Runs one group of chunk steps to the end, so a failure never leaves others running during clean up. */
+async function transcribeGroup(group: ReadonlyArray<() => Promise<unknown>>) {
+    const settled = await Promise.allSettled(group.map(run => run()))
+    const failed = settled.find(outcome => outcome.status === 'rejected')
+    if (failed) throw failed.reason
+}
+
+async function submitBatch(env: Env, transcriptId: number, job: {model: string, language: string | null}, range: ByteRange) {
+    // queueRequest switches env.AI.run into batch mode, for audio too long for
+    // the synchronous timeout (504) that cannot be cut into shorter chunks.
+    const submitted = await env.AI.run(
+        job.model as '@cf/openai/whisper-large-v3-turbo',
+        whisperInput(await readChunkAudio(env, transcriptId, range), job.language),
+        {queueRequest: true} as never,
+    ) as unknown as WhisperBatchSubmitResponse
     if (!submitted.request_id) throw new Error('Batch submission returned no request_id')
     return submitted.request_id
 }
 
-/**
- * Polls every outstanding chunk once. Finished results are parked in R2 (a
- * step may only return 1 MiB) and their chunk indexes returned.
- */
-async function pollChunks(env: Env, transcriptId: number, model: string, pending: readonly PendingChunk[]) {
-    const polled = await Promise.all(pending.map(async chunk => {
-        let poll: WhisperBatchPollResponse
-        try {
-            poll = await env.AI.run(model as '@cf/openai/whisper-large-v3-turbo', {
-                request_id: chunk.requestId,
-            } as never) as unknown as WhisperBatchPollResponse
-        } catch (err) {
-            // Treat transient poll failures as "not ready"; MAX_POLLS bounds them.
-            log.warn('Polling a Whisper batch request failed; will retry', {chunk: chunk.index + 1, batchRequestId: chunk.requestId, error: err})
-            return null
-        }
+/** Polls a batch request once, parking its result in R2 once finished; returns whether it has. */
+async function pollBatch(env: Env, transcriptId: number, model: string, requestId: string) {
+    let poll: WhisperBatchPollResponse
+    try {
+        poll = await env.AI.run(model as '@cf/openai/whisper-large-v3-turbo', {
+            request_id: requestId,
+        } as never) as unknown as WhisperBatchPollResponse
+    } catch (err) {
+        // Treat transient poll failures as "not ready"; MAX_POLLS bounds them.
+        log.warn('Polling a Whisper batch request failed; will retry', {batchRequestId: requestId, error: err})
+        return false
+    }
 
-        const arrayResponse = poll.responses?.[0]
-        const result = arrayResponse?.result ?? poll.result
-        const success = arrayResponse?.success ?? poll.success
-        const error = arrayResponse?.error ?? poll.error
+    const arrayResponse = poll.responses?.[0]
+    const result = arrayResponse?.result ?? poll.result ?? (typeof poll.text === 'string' ? poll as WhisperBatchResult : undefined)
+    const success = arrayResponse?.success ?? poll.success
+    const error = arrayResponse?.error ?? poll.error
 
-        if (result && (success ?? true)) {
-            await env.RSS_CACHE_BUCKET.put(chunkResultKey(transcriptId, chunk.index), JSON.stringify(result))
-            return chunk.index
-        } else if (success === false || error) {
-            throw new NonRetryableError(error ? JSON.stringify(error) : 'Inference failed')
-        }
-        return null  // still queued/running
-    }))
-    return polled.filter(index => index !== null)
+    if (result && (success ?? true)) {
+        await storeChunkResult(env, transcriptId, 0, result)
+        return true
+    } else if (success === false || error) {
+        throw new NonRetryableError(error ? JSON.stringify(error) : 'Inference failed')
+    }
+    return false  // still queued/running
+}
+
+/** The language most chunks were detected as: an English intro must not label a Mandarin episode. */
+function majorityLanguage(results: readonly WhisperBatchResult[]) {
+    const counts = new Map<string, number>()
+    for (const {transcription_info} of results) {
+        if (transcription_info?.language) counts.set(transcription_info.language, (counts.get(transcription_info.language) ?? 0) + 1)
+    }
+    let majority: string | null = null
+    for (const [language, count] of counts) {
+        if (majority === null || count > counts.get(majority)!) majority = language
+    }
+    return majority
 }
 
 /**
  * Joins per-chunk results into one transcript, shifting each chunk's segment
- * (and word) timestamps by the duration of the audio before it.
+ * (and word) timestamps by the duration of the audio before it. `results` may
+ * be a prefix of `ranges`, for a partial transcript.
+ *
+ * Adjacent chunks overlap, and each has garbled audio at its cut: the
+ * transcript follows a chunk up to the middle of its overlap with the next,
+ * then picks up the next chunk after the last segment kept, from the first
+ * word past it if one of the next chunk's segments straddles that point.
  *
  * A chunk without a reported duration is estimated from its byte length at
  * the rate of the chunks that have one; its last segment's end would come up
  * short, as the VAD filter trims trailing silence.
  */
-export function stitchResults(results: readonly WhisperBatchResult[], chunkBytes: readonly number[] = []) {
+export function stitchResults(results: readonly WhisperBatchResult[], ranges: readonly ByteRange[] = []) {
     let timedBytes = 0
     let timedSeconds = 0
     results.forEach((result, index) => {
         const duration = result.transcription_info?.duration
-        if (duration !== undefined && chunkBytes[index]) {
-            timedBytes += chunkBytes[index]
+        if (duration !== undefined && ranges[index]) {
+            timedBytes += ranges[index].length
             timedSeconds += duration
         }
     })
     const durationOf = (result: WhisperBatchResult, index: number) => {
         const reported = result.transcription_info?.duration
         if (reported !== undefined) return reported
-        if (timedBytes > 0 && chunkBytes[index]) return chunkBytes[index] * timedSeconds / timedBytes
+        if (timedBytes > 0 && ranges[index]) return ranges[index].length * timedSeconds / timedBytes
         const segments = result.segments ?? []
         return segments[segments.length - 1]?.end ?? 0
     }
 
     const segments: WhisperSegment[] = []
+    const texts: string[] = []
     let offset = 0
+    let resumeAt = -Infinity
     for (const [index, result] of results.entries()) {
         const shift = (time: number | undefined) => time === undefined ? time : time + offset
-        const chunkSegments = result.segments ?? []
-        for (const segment of chunkSegments) {
+        const range = ranges[index]
+        const next = ranges[index + 1]
+        const duration = durationOf(result, index)
+        const secondsPerByte = range?.length ? duration / range.length : 0
+        const overlapSeconds = range && next ? (range.offset + range.length - next.offset) * secondsPerByte : 0
+        const nextOffset = next ? offset + (next.offset - range.offset) * secondsPerByte : offset + duration
+        const cut = overlapSeconds > 0 ? nextOffset + overlapSeconds / 2 : Infinity
+
+        const kept = (result.segments ?? []).flatMap((segment): WhisperSegment[] => {
+            const start = shift(segment.start) ?? offset
+            if (start >= cut) return []
+            if (start >= resumeAt) return [segment]
+            const tail = segment.words?.filter(word => (shift(word.start) ?? -Infinity) >= resumeAt) ?? []
+            return tail.length > 0 ? [{...segment, start: tail[0].start, words: tail, text: tail.map(word => word.word ?? '').join('')}] : []
+        })
+        for (const segment of kept) {
+            // The prompt makes Whisper jitter timestamps on a chunk it misdetects
+            // as English (a Mandarin episode's English intro); its text is in order.
+            const start = shift(segment.start)
+            const earliest = segments[segments.length - 1]?.start
             segments.push({
                 ...segment,
-                start: shift(segment.start),
+                start: start !== undefined && earliest !== undefined ? Math.max(start, earliest) : start,
                 end: shift(segment.end),
                 ...(segment.words ? {words: segment.words.map(w => ({...w, start: shift(w.start), end: shift(w.end)}))} : {}),
             })
         }
-        offset += durationOf(result, index)
+        const trimmed = overlapSeconds > 0 || resumeAt !== -Infinity
+        texts.push(trimmed && kept.length > 0 ? kept.map(segment => segment.text?.trim() ?? '').join(' ') : result.text.trim())
+
+        resumeAt = overlapSeconds > 0
+            ? (segments[segments.length - 1]?.end ?? -Infinity) - RESUME_TOLERANCE_SECONDS
+            : -Infinity
+        offset = nextOffset
     }
 
     return {
-        text: results.map(r => r.text.trim()).filter(Boolean).join(' '),
+        text: texts.filter(Boolean).join(' '),
         segments: segments.length > 0 ? segments : null,
-        language: results[0]?.transcription_info?.language ?? null,
+        language: majorityLanguage(results),
     }
 }
 
@@ -333,20 +428,36 @@ export function serializeSegments(segments: readonly WhisperSegment[] | null, ma
     return fits(withoutWords) ? withoutWords : null
 }
 
-async function persistTranscript(env: Env, transcriptId: number, requestedLanguage: string | null, chunks: readonly ByteRange[]) {
+async function stitchStoredChunks(env: Env, transcriptId: number, chunks: readonly ByteRange[], count: number) {
     const results: WhisperBatchResult[] = []
-    for (let index = 0; index < chunks.length; index++) {
+    for (let index = 0; index < count; index++) {
         const object = await env.RSS_CACHE_BUCKET.get(chunkResultKey(transcriptId, index))
         if (!object) throw new Error(`Result of chunk ${index + 1} is missing from storage`)
         results.push(await object.json<WhisperBatchResult>())
     }
+    return stitchResults(results, chunks)
+}
 
-    const {text, segments, language} = stitchResults(results, chunks.map(chunk => chunk.length))
+/** Stores the transcript of the first `count` chunks on the unfinished row, for the UI to show. */
+async function publishPartial(env: Env, transcriptId: number, requestedLanguage: string | null, chunks: readonly ByteRange[], count: number) {
+    const {text, segments, language} = await stitchStoredChunks(env, transcriptId, chunks, count)
+    await updateTranscriptStatus(env.DB, transcriptId, {
+        text,
+        segments_json: serializeSegments(segments),
+        language: language ?? requestedLanguage,
+        chunks_done: count,
+        last_progress_at: new Date().toISOString(),
+    })
+}
+
+async function persistTranscript(env: Env, transcriptId: number, requestedLanguage: string | null, chunks: readonly ByteRange[]) {
+    const {text, segments, language} = await stitchStoredChunks(env, transcriptId, chunks, chunks.length)
     await updateTranscriptStatus(env.DB, transcriptId, {
         status: 'complete',
         text,
         segments_json: serializeSegments(segments),
         language: language ?? requestedLanguage,
+        chunks_done: chunks.length,
         completed_at: new Date().toISOString(),
     })
 }
@@ -359,8 +470,10 @@ async function deleteWorkingFiles(env: Env, transcriptId: number) {
 
 /**
  * The transcription pipeline, as durable Workflow steps:
- *   start -> stream the enclosure to R2 -> submit a Whisper batch request per
- *   chunk -> sleep/poll until every chunk is done -> stitch and persist.
+ *   start -> stream the enclosure to R2 -> transcribe groups of overlapping
+ *   chunks, publishing the partial transcript after each -> stitch and persist.
+ * Audio that cannot be split goes through a Whisper batch request instead,
+ * polled with sleeps until it is done.
  * The `transcript` row is the API-facing record: `processing` once the
  * Workflow starts, then `complete` or `error`.
  */
@@ -394,22 +507,37 @@ export async function runTranscription(transcriptId: number, env: Env, step: Wor
 
         const chunks = planChunks(audio, limits)
         log.info('Downloaded audio for transcription', {audioBytes: audio.size, splittable: audio.splittable, chunks: chunks.length})
-        let pending: PendingChunk[] = []
-        for (const [index, range] of chunks.entries()) {
-            const requestId = await step.do(
-                `submit chunk ${index + 1}`,
-                {retries: {limit: 2, delay: '10 seconds', backoff: 'exponential'}, timeout: '5 minutes'},
-                () => submitChunk(env, transcriptId, job.model, job.language, range),
-            )
-            pending.push({index, requestId})
-        }
+        await step.do('record plan', () => updateTranscriptStatus(env.DB, transcriptId, {
+            chunks_total: chunks.length,
+            last_progress_at: new Date().toISOString(),
+        }))
 
-        for (let round = 1; pending.length > 0; round++) {
-            if (round > MAX_POLLS) throw new Error('Timed out waiting for Whisper batch result')
-            await step.sleep(`wait ${round}`, POLL_INTERVAL)
-            const outstanding = pending
-            const finished = await step.do(`poll ${round}`, () => pollChunks(env, transcriptId, job.model, outstanding))
-            pending = pending.filter(chunk => !finished.includes(chunk.index))
+        if (audio.splittable) {
+            for (let done = 0; done < chunks.length; done += limits.concurrency) {
+                await transcribeGroup(chunks.slice(done, done + limits.concurrency).map((range, i) => () => step.do(
+                    `transcribe chunk ${done + i + 1}`,
+                    CHUNK_STEP_CONFIG,
+                    () => transcribeChunk(env, transcriptId, job, done + i, range),
+                )))
+                const finished = done + limits.concurrency
+                if (finished < chunks.length) {
+                    await step.do(`publish ${finished} chunks`, () => publishPartial(env, transcriptId, job.language, chunks, finished))
+                }
+            }
+        } else {
+            const requestId = await step.do(
+                'submit batch',
+                {retries: {limit: 2, delay: '10 seconds', backoff: 'exponential'}, timeout: '5 minutes'},
+                () => submitBatch(env, transcriptId, job, chunks[0]),
+            )
+            for (let round = 1, finished = false; !finished; round++) {
+                if (round > MAX_POLLS) throw new Error('Timed out waiting for Whisper batch result')
+                await step.sleep(`wait ${round}`, POLL_INTERVAL)
+                finished = await step.do(`poll ${round}`, async () => {
+                    await updateTranscriptStatus(env.DB, transcriptId, {last_progress_at: new Date().toISOString()})
+                    return pollBatch(env, transcriptId, job.model, requestId)
+                })
+            }
         }
 
         await step.do('persist transcript', () => persistTranscript(env, transcriptId, job.language, chunks))
@@ -437,18 +565,20 @@ export async function runTranscription(transcriptId: number, env: Env, step: Wor
 }
 
 /**
- * Fails an unfinished request whose Workflow instance has ended or never
+ * Fails an unfinished request whose Workflow instance has ended, never
  * existed (it was terminated, crashed outside its own error handling, or was
- * left by the old queue pipeline), so it stops counting as in progress.
- * Returns the request as it now stands.
+ * left by the old queue pipeline), or claims to be running but has stopped
+ * advancing, so it stops counting as in progress. Returns the request as it
+ * now stands.
  */
 export async function failIfOrphaned(env: Env, workflow: Workflow<TranscribeParams>, transcript: ServerTranscript) {
     const unfinished = transcript.status === 'pending' || transcript.status === 'processing'
     if (!unfinished || Date.now() - transcript.requested_at.getTime() < ORPHAN_MIN_AGE_MS) return transcript
 
     let instanceStatus: string
+    let instance: WorkflowInstance | null = null
     try {
-        const instance = await workflow.get(transcriptInstanceId(transcript.id))
+        instance = await workflow.get(transcriptInstanceId(transcript.id))
         instanceStatus = (await instance.status()).status
     } catch (err) {
         if (!(err instanceof Error && err.message.includes('instance.not_found'))) {
@@ -458,9 +588,15 @@ export async function failIfOrphaned(env: Env, workflow: Workflow<TranscribePara
         }
         instanceStatus = 'not_found'
     }
-    if (!['complete', 'errored', 'terminated', 'not_found'].includes(instanceStatus)) return transcript
 
-    log.warn('Failing a transcript whose Workflow is gone', {transcriptId: transcript.id, instanceStatus})
+    const ended = ['complete', 'errored', 'terminated', 'not_found'].includes(instanceStatus)
+    const lastProgress = transcript.last_progress_at ?? transcript.started_at ?? transcript.requested_at
+    const stalled = !ended && Date.now() - lastProgress.getTime() > STALLED_AFTER_MS
+    if (!ended && !stalled) return transcript
+
+    log.warn('Failing a transcript whose Workflow is gone', {transcriptId: transcript.id, instanceStatus, stalled})
+    // A stalled instance must not wake up later and overwrite the outcome.
+    if (stalled) await instance?.terminate().catch((err: unknown) => log.warn('Could not terminate a stalled Workflow', {transcriptId: transcript.id, error: err}))
     await updateTranscriptStatus(env.DB, transcript.id, {
         status: 'error',
         error_message: 'Transcription stopped unexpectedly; request it again',

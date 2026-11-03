@@ -64,7 +64,7 @@ const PREVIEW_KEYS = [
 ]
 
 const CLIENT_TRANSCRIPT_KEYS = [
-    'completed_at', 'error_message', 'feed_item_guid', 'id', 'language', 'model', 'requested_at',
+    'chunks_done', 'chunks_total', 'completed_at', 'error_message', 'feed_item_guid', 'id', 'language', 'model', 'requested_at',
     'source_transcript_id', 'started_at', 'status',
 ]
 
@@ -699,6 +699,26 @@ describe('transcripts', () => {
             expect(await statusOf(neverStarted.id)).toEqual({status: 'error', error_message: failed})
             expect(workflow.get).not.toHaveBeenCalledWith(`transcript-${justCreated.id}`)
             expect(workflow.get).not.toHaveBeenCalledWith(`transcript-${finished.id}`)
+        })
+
+        test('a Workflow that reports running but stopped advancing is failed and terminated', async () => {
+            await seedPodcastItem()
+            const {env, workflow} = testEnv()
+            const stalled = await createTranscriptRequest(db, 'item-a', 'm1')
+            const advancing = await createTranscriptRequest(db, 'item-a', 'm2')
+            const hoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+            for (const t of [stalled, advancing]) {
+                await ageTranscript(t.id, 120)
+                workflow.statuses.set(`transcript-${t.id}`, 'running')
+            }
+            await updateTranscriptStatus(db, stalled.id, {status: 'processing', started_at: hoursAgo, last_progress_at: hoursAgo})
+            await updateTranscriptStatus(db, advancing.id, {status: 'processing', started_at: hoursAgo, last_progress_at: new Date().toISOString()})
+
+            const transcripts = await read<{id: number, status: string}[]>(await app.request('/api/feeditem/item-a/transcript', {}, env))
+
+            expect(Object.fromEntries(transcripts.map(t => [t.id, t.status]))).toEqual({[stalled.id]: 'error', [advancing.id]: 'processing'})
+            expect(workflow.statuses.get(`transcript-${stalled.id}`)).toBe('terminated')
+            expect(workflow.statuses.get(`transcript-${advancing.id}`)).toBe('running')
         })
 
         test('a failed lookup leaves the request alone', async () => {

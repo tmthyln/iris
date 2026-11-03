@@ -196,7 +196,14 @@ export function fakeWorkflow() {
         get: vi.fn((id: string) => {
             const status = statuses.get(id)
             if (!status) return Promise.reject(new Error('instance.not_found'))
-            return Promise.resolve({id, status: () => Promise.resolve({status})})
+            return Promise.resolve({
+                id,
+                status: () => Promise.resolve({status}),
+                terminate: () => {
+                    statuses.set(id, 'terminated')
+                    return Promise.resolve()
+                },
+            })
         }),
     }
 }

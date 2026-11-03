@@ -16,11 +16,12 @@ const emit = defineEmits<{
 const transcriptStore = useTranscriptStore()
 
 const transcripts = computed<Transcript[]>(() => transcriptStore.getForItem(props.feedItemGuid))
-const completed = computed(() => transcripts.value.filter(t => t.status === 'complete'))
+// Finished transcripts, and the part of any other that has been transcribed so far.
+const available = computed(() => transcripts.value.filter(t => t.status === 'complete' || t.chunks_done > 0))
 
 const selectedId = ref<number | null>(null)
 
-watch(completed, list => {
+watch(available, list => {
     if (selectedId.value === null && list.length > 0) {
         selectedId.value = list[0].id
     } else if (selectedId.value !== null && !list.some(t => t.id === selectedId.value)) {
@@ -39,6 +40,7 @@ watch(() => props.open, async isOpen => {
 })
 
 const fullTranscript = computed(() => selectedId.value !== null ? transcriptStore.fullById[selectedId.value] : null)
+const selected = computed(() => available.value.find(t => t.id === selectedId.value) ?? null)
 
 const segments = computed<TranscriptSegment[]>(() => {
     const json = fullTranscript.value?.segments_json
@@ -60,6 +62,11 @@ function formatTime(seconds: number | undefined): string {
     return h > 0
         ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
         : `${m}:${String(s).padStart(2, '0')}`
+}
+
+function describeProgress(t: Transcript) {
+    if (t.status === 'error') return `Stopped after part ${t.chunks_done} of ${t.chunks_total}: ${t.error_message}`
+    return `Transcribing… ${t.chunks_done} of ${t.chunks_total} parts so far`
 }
 
 function describeTranscript(t: Transcript) {
@@ -87,7 +94,7 @@ function toggle() {
 </script>
 
 <template>
-  <div v-if="completed.length > 0" class="transcript-view mb-5">
+  <div v-if="available.length > 0" class="transcript-view mb-5">
     <div class="is-flex is-align-items-center is-gap-2 mb-2">
       <button class="button is-small" @click="toggle">
         <span class="material-symbols-outlined mr-2">
@@ -95,19 +102,22 @@ function toggle() {
         </span>
         Transcript
       </button>
-      <div v-if="completed.length > 1" class="select is-small">
+      <div v-if="available.length > 1" class="select is-small">
         <select v-model.number="selectedId">
-          <option v-for="t in completed" :key="t.id" :value="t.id">
+          <option v-for="t in available" :key="t.id" :value="t.id">
             {{ describeTranscript(t) }}
           </option>
         </select>
       </div>
-      <span v-else-if="completed.length === 1 && open" class="has-text-grey is-size-7">
-        {{ describeTranscript(completed[0]) }}
+      <span v-else-if="available.length === 1 && open" class="has-text-grey is-size-7">
+        {{ describeTranscript(available[0]) }}
       </span>
     </div>
 
     <div v-if="open" class="transcript-body box">
+      <p v-if="selected && selected.status !== 'complete'" class="transcript-progress has-text-grey is-size-7 mb-2">
+        {{ describeProgress(selected) }}
+      </p>
       <p v-if="!fullTranscript" class="has-text-grey">
         Loading transcript…
       </p>

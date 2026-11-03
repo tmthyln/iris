@@ -416,6 +416,9 @@ describe('ServerTranscript', () => {
         requested_at: '2024-01-01T00:00:00.000Z',
         started_at: '2024-01-01T00:01:00.000Z',
         completed_at: null,
+        chunks_done: 0,
+        chunks_total: null,
+        last_progress_at: null,
     }
 
     test('normalises dates', () => {
