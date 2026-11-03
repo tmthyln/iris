@@ -5,6 +5,7 @@ import {updateTranscriptStatus} from "./crud";
 import {ServerFeedItem, ServerTranscript} from "./models";
 import {FETCH_USER_AGENT} from "./utils/files";
 import {log, type TaskTrace, withLogContext} from "./utils/log";
+import {ADTS_HEADER_BYTES, adtsHeader, findMoov, firstAdtsFrame, parseAacTrack} from "./utils/mp4";
 
 export const TRANSCRIPT_DEFAULT_MODEL = '@cf/openai/whisper-large-v3-turbo'
 
@@ -14,7 +15,16 @@ const POLL_INTERVAL = '30 seconds'
 // Whisper batch results are polled every POLL_INTERVAL; an hour in total.
 const MAX_POLLS = 120
 
-// A 5 MiB chunk takes about 30 seconds; the retries ride out capacity errors.
+// Audio longer than this is split where it can be. Whisper takes about a tenth
+// of real time however many bytes that is, so low-bitrate audio needs chunks
+// of a duration rather than of a size: 5 MiB at 48 kbit/s is 14 minutes.
+const CHUNK_SECONDS = 330
+const OVERLAP_SECONDS = 16
+
+// Allows for a very long episode: the table of 10 hours of AAC is about 8 MiB.
+const MAX_MOOV_BYTES = 64 * MIB
+
+// A chunk takes under a minute; the retries ride out capacity errors.
 const CHUNK_STEP_CONFIG = {
     retries: {limit: 5, delay: '10 seconds', backoff: 'exponential'},
     timeout: '3 minutes',
@@ -60,6 +70,9 @@ export interface TranscriptionLimits {
     readonly chunkBytes: number
     /** Audio shared by adjacent chunks. Whisper garbles the audio around a cut, so the transcript switches chunks mid-overlap. */
     readonly overlapBytes: number
+    /** Longest audio sent per request, where the duration is known ahead of transcribing. */
+    readonly chunkSeconds: number
+    readonly overlapSeconds: number
     /** Chunks transcribed at once; the partial transcript is published after each group. */
     readonly concurrency: number
     /** Largest file in a format that cannot be split, which goes to Whisper whole through its batch API. */
@@ -72,6 +85,8 @@ export const DEFAULT_LIMITS: TranscriptionLimits = {
     partBytes: 10 * MIB,
     chunkBytes: 5 * MIB,
     overlapBytes: MIB / 4,
+    chunkSeconds: CHUNK_SECONDS,
+    overlapSeconds: OVERLAP_SECONDS,
     concurrency: 4,
     batchMaxBytes: 25 * MIB,
     maxBytes: 400 * MIB,
@@ -102,9 +117,15 @@ type WhisperBatchPollResponse = Partial<WhisperBatchResult> & {
 }
 
 interface StoredAudio {
+    readonly key: string
     readonly size: number
-    /** Whether the file is a stream of self-contained frames (MP3, ADTS AAC) that survives a cut at any byte. */
+    /** Whether the file is a stream of self-contained frames (MP3, ADTS AAC) that can be cut anywhere. */
     readonly splittable: boolean
+    /** An ADTS stream, whose cuts have to be moved to the next frame to decode. */
+    readonly adts?: boolean
+    /** An MP4 container, which may hold AAC that can be turned into an ADTS stream. */
+    readonly mp4?: boolean
+    readonly seconds?: number
 }
 
 interface ByteRange {
@@ -114,6 +135,10 @@ interface ByteRange {
 
 function audioKey(transcriptId: number) {
     return `transcribe/${transcriptId}/audio`
+}
+
+function adtsKey(transcriptId: number) {
+    return `transcribe/${transcriptId}/audio.aac`
 }
 
 function chunkResultKey(transcriptId: number, index: number) {
@@ -131,6 +156,11 @@ function errorMessage(err: unknown) {
     return message.length > MAX_ERROR_MESSAGE_LENGTH ? `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH)}…` : message
 }
 
+/** Layer 00 of an MPEG audio sync word is ADTS (1111 in the high nibble). */
+function isAdtsHeader(bytes: Uint8Array, offset: number) {
+    return offset + 1 < bytes.byteLength && bytes[offset] === 0xFF && (bytes[offset + 1] & 0xF6) === 0xF0
+}
+
 /** An MPEG audio (layer I-III) or ADTS AAC frame header starts at `offset`. */
 function isFrameHeader(bytes: Uint8Array, offset: number) {
     if (offset + 1 >= bytes.byteLength) return false
@@ -138,24 +168,64 @@ function isFrameHeader(bytes: Uint8Array, offset: number) {
     if (first !== 0xFF || (second & 0xE0) !== 0xE0) return false
     const version = (second >> 3) & 0b11
     const layer = (second >> 1) & 0b11
-    // Layer 00 is ADTS (1111 in the high nibble); MPEG version 01 is reserved.
-    return layer === 0 ? (second & 0xF6) === 0xF0 : version !== 0b01
+    // MPEG version 01 is reserved.
+    return layer === 0 ? isAdtsHeader(bytes, offset) : version !== 0b01
+}
+
+/** The offset after any ID3v2 tag. An ID3 tag alone says nothing: FLAC and WAV files carry them too. */
+function afterId3Tag(head: Uint8Array) {
+    if (head.byteLength < 10 || head[0] !== 0x49 || head[1] !== 0x44 || head[2] !== 0x33) return 0
+    // The tag size is a 28-bit "synchsafe" integer, excluding the header and any footer.
+    const size = (head[6] << 21) | (head[7] << 14) | (head[8] << 7) | head[9]
+    const footer = head[5] & 0x10 ? 10 : 0
+    return 10 + size + footer
 }
 
 /**
- * Whether the file starts with an audio frame, after any ID3v2 tag. An ID3
- * tag alone says nothing: FLAC and WAV files carry them too. A tag that runs
- * past `head` (the first R2 part) is treated as unsplittable.
+ * Whether the file starts with an audio frame, after any ID3v2 tag. A tag that
+ * runs past `head` (the first R2 part) is treated as unsplittable.
  */
 export function isFrameStream(head: Uint8Array) {
-    let offset = 0
-    if (head.byteLength >= 10 && head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) {
-        // The tag size is a 28-bit "synchsafe" integer, excluding the header and any footer.
-        const size = (head[6] << 21) | (head[7] << 14) | (head[8] << 7) | head[9]
-        const footer = head[5] & 0x10 ? 10 : 0
-        offset = 10 + size + footer
+    return isFrameHeader(head, afterId3Tag(head))
+}
+
+/** Whether the file starts with the `ftyp` box of an MP4 container. */
+export function isMp4(head: Uint8Array) {
+    return head.byteLength >= 8 && head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70
+}
+
+/** Buffers writes into the equal-sized parts R2 requires, so at most one part is held in memory. */
+async function createPartWriter(env: Env, key: string, partBytes: number, onPart?: (part: Uint8Array) => void) {
+    const upload = await env.RSS_CACHE_BUCKET.createMultipartUpload(key)
+    const parts: R2UploadedPart[] = []
+    const buffer = new Uint8Array(partBytes)
+    let filled = 0
+
+    const flush = async () => {
+        const part = buffer.subarray(0, filled)
+        onPart?.(part)
+        // Awaited before the buffer is refilled, so the view needs no copy.
+        parts.push(await upload.uploadPart(parts.length + 1, part))
+        filled = 0
     }
-    return isFrameHeader(head, offset)
+
+    return {
+        async write(bytes: Uint8Array) {
+            let offset = 0
+            while (offset < bytes.byteLength) {
+                const count = Math.min(bytes.byteLength - offset, buffer.byteLength - filled)
+                buffer.set(bytes.subarray(offset, offset + count), filled)
+                filled += count
+                offset += count
+                if (filled === buffer.byteLength) await flush()
+            }
+        },
+        async complete() {
+            if (filled > 0) await flush()
+            await upload.complete(parts)
+        },
+        abort: () => upload.abort().catch(() => {}),
+    }
 }
 
 /**
@@ -178,22 +248,12 @@ export async function downloadAudio(env: Env, url: string, key: string, limits: 
         throw tooLarge()
     }
 
-    const upload = await env.RSS_CACHE_BUCKET.createMultipartUpload(key)
+    let kind: Pick<StoredAudio, 'splittable' | 'adts' | 'mp4'> | undefined
+    const writer = await createPartWriter(env, key, limits.partBytes, head => {
+        kind ??= {splittable: isFrameStream(head), adts: isAdtsHeader(head, afterId3Tag(head)), mp4: isMp4(head)}
+    })
     try {
-        const parts: R2UploadedPart[] = []
-        const buffer = new Uint8Array(limits.partBytes)
-        let filled = 0
         let size = 0
-        let splittable: boolean | undefined
-
-        const flush = async () => {
-            const part = buffer.subarray(0, filled)
-            splittable ??= isFrameStream(part)
-            // Awaited before the buffer is refilled, so the view needs no copy.
-            parts.push(await upload.uploadPart(parts.length + 1, part))
-            filled = 0
-        }
-
         const reader = upstream.body.getReader() as ReadableStreamDefaultReader<Uint8Array>
         for (;;) {
             const {done, value} = await reader.read()
@@ -203,22 +263,57 @@ export async function downloadAudio(env: Env, url: string, key: string, limits: 
                 await reader.cancel()
                 throw tooLarge()
             }
-            let offset = 0
-            while (offset < value.byteLength) {
-                const count = Math.min(value.byteLength - offset, buffer.byteLength - filled)
-                buffer.set(value.subarray(offset, offset + count), filled)
-                filled += count
-                offset += count
-                if (filled === buffer.byteLength) await flush()
-            }
+            await writer.write(value)
         }
         if (size === 0) throw new NonRetryableError('Audio download was empty')
-        if (filled > 0) await flush()
-
-        await upload.complete(parts)
-        return {size, splittable: splittable ?? false}
+        await writer.complete()
+        return {key, size, ...kind ?? {splittable: false}}
     } catch (err) {
-        await upload.abort().catch(() => {})
+        await writer.abort()
+        throw err
+    }
+}
+
+/**
+ * Rewrites the AAC track of an MP4 as an ADTS stream, by giving each frame a
+ * header in place of the container's tables, without decoding anything. Returns
+ * null for a file without such a track (other codecs, fragmented MP4).
+ */
+export async function extractAdts(env: Env, source: StoredAudio, key: string, limits: TranscriptionLimits): Promise<StoredAudio | null> {
+    const read = async (offset: number, length: number) => {
+        const object = await env.RSS_CACHE_BUCKET.get(source.key, {range: {offset, length}})
+        if (!object) throw new Error('Downloaded audio is missing from storage')
+        return new Uint8Array(await object.arrayBuffer())
+    }
+
+    const moov = await findMoov(read, source.size)
+    if (!moov || moov.length > MAX_MOOV_BYTES) return null
+    const track = parseAacTrack(await read(moov.offset, moov.length))
+    if (!track) return null
+
+    const writer = await createPartWriter(env, key, limits.partBytes)
+    try {
+        let size = 0
+        let window = new Uint8Array()
+        let windowOffset = 0
+        for (const sample of track.samples()) {
+            if (sample.offset + sample.size > source.size) {
+                await writer.abort()
+                return null
+            }
+            if (sample.offset < windowOffset || sample.offset + sample.size > windowOffset + window.byteLength) {
+                windowOffset = sample.offset
+                window = await read(windowOffset, Math.min(Math.max(limits.partBytes, sample.size), source.size - windowOffset))
+            }
+            const start = sample.offset - windowOffset
+            await writer.write(adtsHeader(track, sample.size))
+            await writer.write(window.subarray(start, start + sample.size))
+            size += ADTS_HEADER_BYTES + sample.size
+        }
+        await writer.complete()
+        return {key, size, splittable: true, adts: true, ...track.seconds > 0 ? {seconds: track.seconds} : {}}
+    } catch (err) {
+        await writer.abort()
         throw err
     }
 }
@@ -228,27 +323,32 @@ export async function downloadAudio(env: Env, url: string, key: string, limits: 
  * next. A file up to a quarter over the chunk size still goes in one request
  * rather than leaving a sliver of a chunk.
  */
-export function planChunks(audio: StoredAudio, limits: TranscriptionLimits): ByteRange[] {
+export function planChunks(audio: Pick<StoredAudio, 'size' | 'splittable' | 'seconds'>, limits: TranscriptionLimits): ByteRange[] {
     if (!audio.splittable) {
         if (audio.size <= limits.batchMaxBytes) return [{offset: 0, length: audio.size}]
         throw new NonRetryableError(
-            `Audio is ${megabytes(audio.size)} MB; only MP3 audio can be split, and other formats are limited to ${megabytes(limits.batchMaxBytes)} MB`,
+            `Audio is ${megabytes(audio.size)} MB; only MP3 and AAC audio can be split, and other formats are limited to ${megabytes(limits.batchMaxBytes)} MB`,
         )
     }
-    if (audio.size <= limits.chunkBytes * 1.25) return [{offset: 0, length: audio.size}]
 
-    const count = Math.ceil(audio.size / limits.chunkBytes)
+    const bytesPerSecond = audio.seconds ? audio.size / audio.seconds : Infinity
+    const chunkBytes = Math.min(limits.chunkBytes, Math.ceil(limits.chunkSeconds * bytesPerSecond))
+    const overlapBytes = Math.min(limits.overlapBytes, Math.ceil(limits.overlapSeconds * bytesPerSecond))
+    if (audio.size <= chunkBytes * 1.25) return [{offset: 0, length: audio.size}]
+
+    const count = Math.ceil(audio.size / chunkBytes)
     const stride = Math.ceil(audio.size / count)
     return Array.from({length: count}, (_, i) => ({
         offset: i * stride,
-        length: Math.min(stride + limits.overlapBytes, audio.size - i * stride),
+        length: Math.min(stride + overlapBytes, audio.size - i * stride),
     }))
 }
 
-async function readChunkAudio(env: Env, transcriptId: number, range: ByteRange) {
-    const object = await env.RSS_CACHE_BUCKET.get(audioKey(transcriptId), {range})
+async function readChunkAudio(env: Env, audio: StoredAudio, range: ByteRange) {
+    const object = await env.RSS_CACHE_BUCKET.get(audio.key, {range})
     if (!object) throw new Error('Downloaded audio is missing from storage')
-    return Buffer.from(await object.arrayBuffer()).toString('base64')
+    const bytes = new Uint8Array(await object.arrayBuffer())
+    return Buffer.from(audio.adts ? bytes.subarray(firstAdtsFrame(bytes)) : bytes).toString('base64')
 }
 
 function whisperInput(audio: string, language: string | null) {
@@ -264,11 +364,11 @@ async function storeChunkResult(env: Env, transcriptId: number, index: number, {
  * Transcribes one byte range synchronously. Chunks of this size finish in
  * about 30 seconds, where the same audio spends minutes in the batch API.
  */
-async function transcribeChunk(env: Env, transcriptId: number, job: {model: string, language: string | null}, index: number, range: ByteRange) {
+async function transcribeChunk(env: Env, transcriptId: number, audio: StoredAudio, job: {model: string, language: string | null}, index: number, range: ByteRange) {
     const startedAt = Date.now()
     const result = await env.AI.run(
         job.model as '@cf/openai/whisper-large-v3-turbo',
-        whisperInput(await readChunkAudio(env, transcriptId, range), job.language),
+        whisperInput(await readChunkAudio(env, audio, range), job.language),
     ) as unknown as WhisperBatchResult
     if (typeof result.text !== 'string') throw new Error('Whisper returned no text')
     await storeChunkResult(env, transcriptId, index, result)
@@ -282,12 +382,12 @@ async function transcribeGroup(group: ReadonlyArray<() => Promise<unknown>>) {
     if (failed) throw failed.reason
 }
 
-async function submitBatch(env: Env, transcriptId: number, job: {model: string, language: string | null}, range: ByteRange) {
+async function submitBatch(env: Env, audio: StoredAudio, job: {model: string, language: string | null}, range: ByteRange) {
     // queueRequest switches env.AI.run into batch mode, for audio too long for
     // the synchronous timeout (504) that cannot be cut into shorter chunks.
     const submitted = await env.AI.run(
         job.model as '@cf/openai/whisper-large-v3-turbo',
-        whisperInput(await readChunkAudio(env, transcriptId, range), job.language),
+        whisperInput(await readChunkAudio(env, audio, range), job.language),
         {queueRequest: true} as never,
     ) as unknown as WhisperBatchSubmitResponse
     if (!submitted.request_id) throw new Error('Batch submission returned no request_id')
@@ -470,8 +570,9 @@ async function deleteWorkingFiles(env: Env, transcriptId: number) {
 
 /**
  * The transcription pipeline, as durable Workflow steps:
- *   start -> stream the enclosure to R2 -> transcribe groups of overlapping
- *   chunks, publishing the partial transcript after each -> stitch and persist.
+ *   start -> stream the enclosure to R2 -> rewrite the AAC of an MP4 as ADTS ->
+ *   transcribe groups of overlapping chunks, publishing the partial transcript
+ *   after each -> stitch and persist.
  * Audio that cannot be split goes through a Whisper batch request instead,
  * polled with sleeps until it is done.
  * The `transcript` row is the API-facing record: `processing` once the
@@ -499,14 +600,20 @@ export async function runTranscription(transcriptId: number, env: Env, step: Wor
             return
         }
 
-        const audio = await step.do(
+        const downloaded = await step.do(
             'download audio',
             {retries: {limit: 2, delay: '10 seconds', backoff: 'exponential'}, timeout: '15 minutes'},
             () => downloadAudio(env, job.url, audioKey(transcriptId), limits),
         )
+        const extracted = downloaded.mp4 ? await step.do(
+            'extract AAC frames',
+            {retries: {limit: 2, delay: '10 seconds', backoff: 'exponential'}, timeout: '15 minutes'},
+            () => extractAdts(env, downloaded, adtsKey(transcriptId), limits),
+        ) : null
+        const audio = extracted ?? downloaded
 
         const chunks = planChunks(audio, limits)
-        log.info('Downloaded audio for transcription', {audioBytes: audio.size, splittable: audio.splittable, chunks: chunks.length})
+        log.info('Downloaded audio for transcription', {audioBytes: downloaded.size, extractedBytes: extracted?.size, audioSeconds: audio.seconds, splittable: audio.splittable, chunks: chunks.length})
         await step.do('record plan', () => updateTranscriptStatus(env.DB, transcriptId, {
             chunks_total: chunks.length,
             last_progress_at: new Date().toISOString(),
@@ -517,7 +624,7 @@ export async function runTranscription(transcriptId: number, env: Env, step: Wor
                 await transcribeGroup(chunks.slice(done, done + limits.concurrency).map((range, i) => () => step.do(
                     `transcribe chunk ${done + i + 1}`,
                     CHUNK_STEP_CONFIG,
-                    () => transcribeChunk(env, transcriptId, job, done + i, range),
+                    () => transcribeChunk(env, transcriptId, audio, job, done + i, range),
                 )))
                 const finished = done + limits.concurrency
                 if (finished < chunks.length) {
@@ -528,7 +635,7 @@ export async function runTranscription(transcriptId: number, env: Env, step: Wor
             const requestId = await step.do(
                 'submit batch',
                 {retries: {limit: 2, delay: '10 seconds', backoff: 'exponential'}, timeout: '5 minutes'},
-                () => submitBatch(env, transcriptId, job, chunks[0]),
+                () => submitBatch(env, audio, job, chunks[0]),
             )
             for (let round = 1, finished = false; !finished; round++) {
                 if (round > MAX_POLLS) throw new Error('Timed out waiting for Whisper batch result')

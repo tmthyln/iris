@@ -4,7 +4,8 @@ import {afterEach, beforeEach, describe, expect, test, vi} from 'vitest'
 import {createTranscriptRequest} from './crud'
 import {ServerFeedItem} from './models'
 import {mockFetch, resetStorage, seedFeed, seedFeedItem, testEnv} from './testing/fixtures'
-import {DEFAULT_LIMITS, isFrameStream, planChunks, runTranscription, serializeSegments, stitchResults, type TranscriptionLimits} from './transcription'
+import {buildM4a} from './testing/mp4'
+import {DEFAULT_LIMITS, extractAdts, isFrameStream, isMp4, planChunks, runTranscription, serializeSegments, stitchResults, type TranscriptionLimits} from './transcription'
 
 const db = env.DB
 
@@ -120,6 +121,15 @@ describe('isFrameStream', () => {
     })
 })
 
+describe('isMp4', () => {
+    test('recognises the ftyp box, not other formats', () => {
+        expect(isMp4(buildM4a({frames: [new Uint8Array(1)]}))).toBe(true)
+        expect(isMp4(new Uint8Array(MP3_FRAME))).toBe(false)
+        expect(isMp4(new TextEncoder().encode('RIFF....WAVE'))).toBe(false)
+        expect(isMp4(new Uint8Array(4))).toBe(false)
+    })
+})
+
 describe('planChunks', () => {
     const limits: TranscriptionLimits = {...DEFAULT_LIMITS, chunkBytes: 100, overlapBytes: 10, batchMaxBytes: 500}
 
@@ -135,13 +145,36 @@ describe('planChunks', () => {
         ])
     })
 
+    test('bounds chunks by duration when it is known, so low-bitrate audio is not hours long', () => {
+        // 6 KiB/s, as 48 kbit/s HE-AAC is: 330 seconds is under 2 MiB
+        const ranges = planChunks({size: 30 * MIB, splittable: true, seconds: 5243}, DEFAULT_LIMITS)
+        expect(ranges).toHaveLength(16)
+        expect(ranges[0].offset).toBe(0)
+        expect(ranges[1].offset - ranges[0].offset).toBeLessThanOrEqual(2 * MIB)
+        // 16 seconds of overlap
+        expect(ranges[0].length - ranges[1].offset).toBe(Math.ceil(16 * 30 * MIB / 5243))
+        expect(ranges[15].offset + ranges[15].length).toBe(30 * MIB)
+    })
+
+    test('still bounds high-bitrate audio of a known duration by size', () => {
+        // 32 KiB/s, as 256 kbit/s AAC is
+        const ranges = planChunks({size: 32 * MIB, splittable: true, seconds: 1024}, DEFAULT_LIMITS)
+        expect(ranges).toHaveLength(7)
+        expect(ranges[1].offset).toBeLessThanOrEqual(5 * MIB)
+        expect(ranges[0].length - ranges[1].offset).toBe(MIB / 4)
+    })
+
+    test('keeps a short episode of a known duration in one request', () => {
+        expect(planChunks({size: MIB, splittable: true, seconds: 170}, DEFAULT_LIMITS)).toEqual([{offset: 0, length: MIB}])
+    })
+
     test('sends other formats whole, up to the batch limit', () => {
         expect(planChunks({size: 500, splittable: false}, limits)).toEqual([{offset: 0, length: 500}])
     })
 
     test('refuses to split other formats', () => {
         expect(() => planChunks({size: 30 * MIB, splittable: false}, DEFAULT_LIMITS))
-            .toThrow('Audio is 30 MB; only MP3 audio can be split, and other formats are limited to 25 MB')
+            .toThrow('Audio is 30 MB; only MP3 and AAC audio can be split, and other formats are limited to 25 MB')
     })
 })
 
@@ -280,6 +313,73 @@ describe('serializeSegments', () => {
     })
 })
 
+describe('extractAdts', () => {
+    const KEY = 'transcribe/1/audio'
+    const TARGET = 'transcribe/1/audio.aac'
+
+    async function store(file: Uint8Array) {
+        await env.RSS_CACHE_BUCKET.put(KEY, file)
+        return {key: KEY, size: file.byteLength, splittable: false, mp4: true}
+    }
+
+    async function extracted() {
+        return new Uint8Array(await (await env.RSS_CACHE_BUCKET.get(TARGET))!.arrayBuffer())
+    }
+
+    test('gives every frame a header, wherever the index is', async () => {
+        const frames = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])]
+        for (const moovAtEnd of [false, true]) {
+            const source = await store(buildM4a({frames, moovAtEnd, ticksPerFrame: 22050, timescale: 44100}))
+
+            const audio = await extractAdts(env, source, TARGET, DEFAULT_LIMITS)
+
+            expect(audio).toEqual({key: TARGET, size: 19, splittable: true, adts: true, seconds: 1})
+            expect([...await extracted()]).toEqual([
+                0xFF, 0xF1, 0x50, 0x80, 0x01, 0x5F, 0xFC, 1, 2, 3,
+                0xFF, 0xF1, 0x50, 0x80, 0x01, 0x3F, 0xFC, 4, 5,
+            ])
+        }
+    })
+
+    test('carries an episode bigger than a buffer across R2 parts and reads', {timeout: 30000}, async () => {
+        const frames = Array.from({length: 13 * 1024}, (_, i) => new Uint8Array(1024).fill(i % 251))
+        const source = await store(buildM4a({frames, moovAtEnd: true, chunkRuns: [[1, 100]], gapBytes: 1}))
+        const limits = {...DEFAULT_LIMITS, partBytes: 5 * MIB}
+
+        const audio = await extractAdts(env, source, TARGET, limits)
+
+        expect(audio?.size).toBe(13 * 1024 * (1024 + 7))
+        const stream = await extracted()
+        expect(stream.byteLength).toBe(audio?.size)
+        for (const i of [0, 1, 5000, 5081, 13 * 1024 - 1]) {
+            const start = i * (1024 + 7)
+            expect([stream[start], stream[start + 1]]).toEqual([0xFF, 0xF1])
+            expect(stream[start + 7]).toBe(i % 251)
+            expect(stream[start + 7 + 1023]).toBe(i % 251)
+        }
+    })
+
+    test('answers null for a file it cannot read, leaving nothing behind', async () => {
+        const unusable = [
+            buildM4a({frames: [new Uint8Array(4)], codec: 'alac'}),
+            buildM4a({frames: [new Uint8Array(4)], fragmented: true}),
+            new TextEncoder().encode('\0\0\0\x08ftypnot really an mp4'),
+        ]
+        for (const file of unusable) {
+            expect(await extractAdts(env, await store(file), TARGET, DEFAULT_LIMITS)).toBeNull()
+        }
+        expect(await env.RSS_CACHE_BUCKET.head(TARGET)).toBeNull()
+    })
+
+    test('answers null for an index pointing past the end of the file', async () => {
+        const file = buildM4a({frames: [new Uint8Array(4), new Uint8Array(4)]})
+        const source = {...await store(file), size: file.byteLength - 2}
+
+        expect(await extractAdts(env, source, TARGET, DEFAULT_LIMITS)).toBeNull()
+        expect(await env.RSS_CACHE_BUCKET.head(TARGET)).toBeNull()
+    })
+})
+
 describe('runTranscription', () => {
     test('ignores unknown ids and finished transcripts', async () => {
         await seedItemWithAudio()
@@ -403,6 +503,84 @@ describe('runTranscription', () => {
         expect(ai.run).toHaveBeenCalledExactlyOnceWith(MODEL, expect.objectContaining({audio: Buffer.from(bytes).toString('base64'), task: 'transcribe', language: 'de', vad_filter: true}))
         expect(names).toEqual(['start', 'download audio', 'record plan', 'transcribe chunk 1', 'persist transcript', 'index transcript', 'clean up'])
         expect(await transcriptRow(transcript.id)).toMatchObject({status: 'complete', text: 'short', language: 'de', chunks_done: 1, chunks_total: 1})
+    })
+
+    describe('an M4A', () => {
+        const M4A_URL = 'https://cdn.example.com/episode.m4a'
+
+        async function start(file: Uint8Array) {
+            await seedItemWithAudio(M4A_URL)
+            const transcript = await createTranscriptRequest(db, 'ep-1', MODEL)
+            mockFetch({[M4A_URL]: new Response(file)})
+            return transcript
+        }
+
+        test('is transcribed synchronously from its AAC frames, in overlapping chunks on frame boundaries', async () => {
+            // A second per frame of 100 bytes: chunks of 40 seconds, 40 frames, overlapping by 4.
+            const frames = Array.from({length: 250}, () => new Uint8Array(93).fill(0x11))
+            const transcript = await start(buildM4a({frames, moovAtEnd: true, timescale: 1024}))
+            const limits = {...DEFAULT_LIMITS, chunkSeconds: 40, overlapSeconds: 4}
+            const audios: string[] = []
+            const ai = fakeAi({}, input => {
+                audios.push(decode(input.audio))
+                return {text: `chunk ${audios.length}`, transcription_info: {duration: 40}, segments: [{start: 1, end: 2, text: `chunk ${audios.length}`}]}
+            })
+            const {names, step} = fakeStep()
+
+            await runTranscription(transcript.id, transcribeEnv(ai), step, limits)
+
+            expect(ai.submitted).toEqual([])
+            expect(audios).toHaveLength(7)
+            for (const audio of audios) {
+                expect(audio.charCodeAt(0)).toBe(0xFF)
+                expect(audio.charCodeAt(1)).toBe(0xF1)
+            }
+            expect(names.slice(0, 4)).toEqual(['start', 'download audio', 'extract AAC frames', 'record plan'])
+            expect(await transcriptRow(transcript.id)).toMatchObject({status: 'complete', chunks_done: 7, chunks_total: 7})
+            expect(await workingFiles()).toEqual([])
+        })
+
+        test('falls back to a batch request if its track cannot be extracted', async () => {
+            const transcript = await start(buildM4a({frames: [new Uint8Array(4)], fragmented: true}))
+            const ai = fakeAi({'req-1': [done('fragmented words')]})
+            const {names, step} = fakeStep()
+
+            await runTranscription(transcript.id, transcribeEnv(ai), step)
+
+            expect(ai.submitted).toHaveLength(1)
+            expect(names).toContain('extract AAC frames')
+            expect(names).toContain('submit batch')
+            expect(await transcriptRow(transcript.id)).toMatchObject({status: 'complete', text: 'fragmented words'})
+            expect(await workingFiles()).toEqual([])
+        })
+
+        test('fails with a clear message if it is too long for that', async () => {
+            const transcript = await start(buildM4a({frames: [new Uint8Array(100)], codec: 'alac'}))
+            const limits = {...DEFAULT_LIMITS, batchMaxBytes: 10}
+
+            await runTranscription(transcript.id, transcribeEnv(), fakeStep().step, limits)
+
+            expect((await transcriptRow(transcript.id)).error_message).toContain('only MP3 and AAC audio can be split')
+        })
+    })
+
+    test('moves the cut in a raw ADTS file to the next frame', async () => {
+        const frame = (fill: number) => [0xFF, 0xF1, 0x50, 0x80, 0x01, 0x3F, 0xFC, fill, fill]
+        const bytes = new Uint8Array(Array.from({length: 40}, (_, i) => frame(i)).flat())
+        await seedItemWithAudio()
+        const transcript = await createTranscriptRequest(db, 'ep-1', MODEL)
+        mockFetch({[AUDIO_URL]: new Response(bytes)})
+        const audios: string[] = []
+        const ai = fakeAi({}, input => {
+            audios.push(decode(input.audio))
+            return {text: 'words', transcription_info: {duration: 1}}
+        })
+        const limits = {...DEFAULT_LIMITS, chunkBytes: 100, overlapBytes: 10}
+
+        await runTranscription(transcript.id, transcribeEnv(ai), fakeStep().step, limits)
+
+        expect(audios.length).toBeGreaterThan(1)
+        for (const audio of audios) expect(audio.charCodeAt(0)).toBe(0xFF)
     })
 
     describe('a long MP3', () => {
@@ -582,7 +760,7 @@ describe('runTranscription', () => {
         test('a long episode in a format that cannot be split', async () => {
             const ai = fakeAi()
             const message = await failingRun(new Response('\0\0\0 ftypM4A ' + 'x'.repeat(100)), ai, {batchMaxBytes: 40})
-            expect(message).toContain('only MP3 audio can be split')
+            expect(message).toContain('only MP3 and AAC audio can be split')
             expect(ai.run).not.toHaveBeenCalled()
         })
 
