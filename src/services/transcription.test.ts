@@ -253,11 +253,84 @@ describe('stitchResults', () => {
             expect(stitched.segments?.map(segment => segment.start)).toEqual([1, 206])
         })
 
+        test('leaves out a final chunk with no speech', () => {
+            const stitched = stitchResults([
+                {...info, text: 'unused', segments: [{start: 1, end: 2, text: ' first'}]},
+                {...info, text: 'unused', segments: [{start: 3, end: 4, text: ' second.'}]},
+                {text: ' .,', transcription_info: {duration: 50}, segments: [{start: 0.6, end: 1, text: ' .,'}]},
+            ], ranges)
+
+            expect(stitched.text).toBe('first second.')
+            expect(stitched.segments?.map(segment => segment.text)).toEqual([' first', ' second.'])
+        })
+
+        test('still shifts later chunks past a chunk in the middle with no speech', () => {
+            const stitched = stitchResults([
+                {...info, text: 'unused', segments: [{start: 1, end: 2, text: ' first'}]},
+                {...info, text: ' .,', segments: [{start: 0.6, end: 1, text: ' .,'}]},
+                {text: 'unused', transcription_info: {duration: 50}, segments: [{start: 6, end: 7, text: ' third'}]},
+            ], ranges)
+
+            expect(stitched.text).toBe('first third')
+            expect(stitched.segments).toEqual([{start: 1, end: 2, text: ' first'}, {start: 206, end: 207, text: ' third'}])
+        })
+
+        test('takes a chunk\'s text from its full text after a first chunk with no speech', () => {
+            const stitched = stitchResults([
+                {...info, text: '.,?!', segments: [{start: 0.6, end: 1, text: '.,?!'}]},
+                {text: 'second', transcription_info: {duration: 110}, segments: [{start: 12, end: 13, text: ' second'}]},
+            ], ranges.slice(0, 2))
+
+            expect(stitched.text).toBe('second')
+            expect(stitched.segments).toEqual([{start: 112, end: 113, text: ' second'}])
+        })
+
+        test('does not repeat a chunk whose speech was all in the overlap', () => {
+            const {text} = stitchResults([
+                {...info, text: 'unused', segments: [{start: 95, end: 104, text: ' said once'}]},
+                {text: ' said once .,', transcription_info: {duration: 50}, segments: [
+                    {start: 0, end: 4, text: ' said once'},
+                    {start: 30, end: 31, text: ' .,'},
+                ]},
+            ], ranges.slice(0, 2))
+
+            expect(text).toBe('said once')
+        })
+
         test('ends a partial transcript at the cut into the chunk not yet transcribed', () => {
             const {segments} = stitchResults([
                 {...info, text: '', segments: [{start: 90, end: 95, text: ' kept'}, {start: 106, end: 108, text: ' dropped'}]},
             ], ranges)
             expect(segments?.map(segment => segment.text)).toEqual([' kept'])
+        })
+    })
+
+    describe('a single chunk, whose text is not trimmed to its segments', () => {
+        test('yields nothing when it has no speech', () => {
+            const silent = {text: ' .,', transcription_info: {duration: 30}}
+            const empty = {text: '', segments: null, language: null}
+            expect(stitchResults([{...silent, segments: [{start: 0.6, end: 1, text: ' .,'}]}])).toEqual(empty)
+            expect(stitchResults([silent])).toEqual(empty)
+        })
+
+        test('leaves out a segment with no speech at the end of real speech', () => {
+            const {text, segments} = stitchResults([{text: ' Goodbye. .,', segments: [
+                {start: 0, end: 1, text: ' Goodbye.'},
+                {start: 5, end: 6, text: ' .,'},
+            ]}])
+            expect(text).toBe('Goodbye.')
+            expect(segments?.map(segment => segment.text)).toEqual([' Goodbye.'])
+        })
+
+        test.each([
+            ' Wait... what?!',
+            ' 你好。',
+            ' 1, 2.',
+            ' ♪',
+        ])('keeps %j as it is', speech => {
+            const {text, segments} = stitchResults([{text: speech, segments: [{start: 0, end: 1, text: speech}]}])
+            expect(text).toBe(speech.trim())
+            expect(segments?.map(segment => segment.text)).toEqual([speech])
         })
     })
 
