@@ -149,6 +149,34 @@ describe('audio source', () => {
         expect(sourceOf(wrapper)).toBe(item.enclosure_url)
     })
 
+    it('keeps playing the same source when its download finishes mid-episode', async () => {
+        const item = episode()
+        const {wrapper} = await mountPlayer([item])
+        const audio = await loadMetadata(wrapper, 300)
+        audio.currentTime = 120
+        const source = () => wrapper.find('source').attributes('src')
+        expect(source()).toBe(item.enclosure_url)
+
+        const downloadStore = useDownloadStore()
+        const getLocalUrl = vi.spyOn(downloadStore, 'getLocalUrl').mockResolvedValue('blob:local-copy')
+        downloadStore.statuses[item.guid] = {state: 'downloaded', size: 1, downloadedAt: '2024-01-01T00:00:00Z'}
+        await flushPromises()
+
+        expect(getLocalUrl).not.toHaveBeenCalled()
+        expect(source()).toBe(item.enclosure_url)
+    })
+
+    it('still switches to a download that finishes before playback starts', async () => {
+        const item = episode()
+        const {wrapper} = await mountPlayer([item])
+        const downloadStore = useDownloadStore()
+        vi.spyOn(downloadStore, 'getLocalUrl').mockResolvedValue('blob:local-copy')
+        downloadStore.statuses[item.guid] = {state: 'downloaded', size: 1, downloadedAt: '2024-01-01T00:00:00Z'}
+        await flushPromises()
+
+        expect(wrapper.find('source').attributes('src')).toBe('blob:local-copy')
+    })
+
     it('prefers the downloaded copy when one exists', async () => {
         const item = episode()
         const {wrapper} = await mountPlayer([item], () => {

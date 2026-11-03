@@ -20,6 +20,7 @@ const currentItem = computed(() => queueStore.currentlyPlaying)
 const upcomingItems = computed(() => queueStore.items.slice(1))
 
 const resolvedSrc = ref('')
+let resolvedGuid: string | null = null
 
 // Everything read before the first `await` is tracked by the effect.
 async function resolveSource() {
@@ -29,17 +30,24 @@ async function resolveSource() {
         return
     }
     if (downloadStore.isDownloaded(item.guid)) {
+        // A download finishing mid-episode must not swap the source, which would
+        // reload the audio from the start; it is used the next time this loads.
+        const element = audio.value
+        if (resolvedGuid === item.guid && element && (!element.paused || element.currentTime > 0)) return
+
         const localUrl = await downloadStore.getLocalUrl(item.guid)
         if (localUrl && currentItem.value?.guid === item.guid) {
+            resolvedGuid = item.guid
             resolvedSrc.value = localUrl
             return
         }
     }
+    resolvedGuid = item.guid
     resolvedSrc.value = item.enclosure_url
 }
-watchEffect(() => void resolveSource())
 
 const audio = ref<HTMLAudioElement>()
+watchEffect(() => void resolveSource())
 const {
     playing,
     rate,
