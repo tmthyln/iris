@@ -526,8 +526,10 @@ export function stitchResults(results: readonly WhisperBatchResult[], ranges: re
 }
 
 /**
- * Serialises the segments within the size D1 can store: word timestamps are
- * dropped first (the UI seeks by segment), then the segments altogether.
+ * Serialises the segments within the size D1 can store, dropping what the UI
+ * can do without first: word timestamps (it seeks by segment), then Whisper's
+ * per-segment scores, which outweigh the text of the short segments of Mandarin
+ * speech, and only then the segments altogether.
  */
 export function serializeSegments(segments: readonly WhisperSegment[] | null, maxBytes = MAX_SEGMENTS_JSON_BYTES) {
     if (!segments) return null
@@ -535,7 +537,9 @@ export function serializeSegments(segments: readonly WhisperSegment[] | null, ma
     const full = JSON.stringify(segments)
     if (fits(full)) return full
     const withoutWords = JSON.stringify(segments.map(segment => ({...segment, words: undefined})))
-    return fits(withoutWords) ? withoutWords : null
+    if (fits(withoutWords)) return withoutWords
+    const essentials = JSON.stringify(segments.map(({start, end, text}) => ({start, end, text})))
+    return fits(essentials) ? essentials : null
 }
 
 async function stitchStoredChunks(env: Env, transcriptId: number, chunks: readonly ByteRange[], count: number) {

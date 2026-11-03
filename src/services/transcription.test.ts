@@ -384,6 +384,22 @@ describe('serializeSegments', () => {
         expect(serializeSegments(segments, 50)).toBe(JSON.stringify([{start: 0, end: 1, text: 'hello'}]))
         expect(serializeSegments(segments, 10)).toBeNull()
     })
+
+    test('drops the scores of Whisper before giving up on the segments', () => {
+        const scored = [{start: 0, end: 1, text: 'hello', avg_logprob: -0.18260869331981824, compression_ratio: 1.337837837837838, no_speech_prob: 0}]
+        expect(serializeSegments(scored, 40)).toBe(JSON.stringify([{start: 0, end: 1, text: 'hello'}]))
+    })
+
+    test('keeps the segments of a long Mandarin episode, at the size Whisper really reports them', () => {
+        // 3.5 hours came to about 7,500 segments, 1.5 MiB with their scores.
+        const long = Array.from({length: 7500}, (_, i) => ({
+            start: i * 1.67123456789, end: i * 1.67123456789 + 1, text: '表达的能力',
+            temperature: 0, avg_logprob: -0.18260869331981824, compression_ratio: 1.337837837837838, no_speech_prob: 0, word_count: 1,
+        }))
+        const json = serializeSegments(long)
+        expect(json).not.toBeNull()
+        expect((JSON.parse(json!) as unknown[])).toHaveLength(7500)
+    })
 })
 
 describe('extractAdts', () => {
