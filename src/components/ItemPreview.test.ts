@@ -39,6 +39,15 @@ describe('ItemPreview', () => {
         expect(from.find('a').attributes('href')).toBe(`/subscriptions/${feed.guid}`)
     })
 
+    it('sanitizes the description', async () => {
+        const item = makeItem({description: '<p id="kept">Text</p><img src="x" onerror="alert(1)"><script>alert(2)</script>'})
+        const {wrapper} = await mountApp(ItemPreview, {props: {feedItem: item}})
+
+        const description = wrapper.find('.feed-content')
+        expect(description.find('#kept').text()).toBe('Text')
+        expect(description.html()).not.toMatch(/onerror|<script/)
+    })
+
     it('omits the feed line while the feed is unknown', async () => {
         const {wrapper} = await mountApp(ItemPreview, {props: {feedItem: makeItem()}})
         expect(wrapper.find('.subtitle').exists()).toBe(false)

@@ -472,6 +472,8 @@ describe('GET /api/feeditem/:guid/media', () => {
         expect(response.headers.get('etag')).toBe('"abc"')
         expect(response.headers.get('x-upstream-secret')).toBeNull()
         expect(response.headers.get('set-cookie')).toBeNull()
+        expect(response.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'")
+        expect(response.headers.get('x-content-type-options')).toBe('nosniff')
 
         expect(calls).toHaveLength(1)
         expect(calls[0].url).toBe('https://cdn.example.com/ep.mp3')

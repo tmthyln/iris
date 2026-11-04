@@ -1,0 +1,6 @@
+# Second layer behind sanitizeHTML (src/htmlproc.ts): if feed HTML ever gets through with a script
+# in it, it can't run. Remote images, media and embedded players stay allowed, because that's what
+# feeds contain. Static assets only: the Worker sets its own headers on /api responses.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src http: https: data: blob:; media-src http: https: data: blob:; frame-src https:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff

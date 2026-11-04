@@ -5,7 +5,7 @@ import {useRouter} from "vue-router";
 import {useFeedStore} from "../stores/feeds.ts";
 import {useFeedItemStore} from "../stores/feeditems.ts";
 import {type AdjacentFeedItems, type Feed, type FeedItem} from "../types.ts";
-import {useUnescapedHTML} from "../htmlproc.ts";
+import {safeLinkUrl, sanitizeHTML, useUnescapedHTML} from "../htmlproc.ts";
 import AudioControls from "./AudioControls.vue";
 import TranscriptView from "./TranscriptView.vue";
 import client from '../client'
@@ -23,6 +23,9 @@ const feed = ref<Feed | null>(null)
 const isFetchingItem = ref(true)
 const adjacent = ref<AdjacentFeedItems>({ prev: null, next: null })
 const transcriptOpen = ref(false)
+const titleLink = computed(() => safeLinkUrl(feedItem.value?.link))
+const descriptionHtml = computed(() => sanitizeHTML(feedItem.value?.description))
+const contentHtml = computed(() => sanitizeHTML(feedItem.value?.encoded_content))
 useTitle(computed(() => feedItem.value ? `${feedItem.value.title} — Iris` : 'Iris'))
 async function fetchFeedItem() {
     const guid = props.guid
@@ -66,7 +69,7 @@ onMounted(fetchFeedItem)
 <template>
   <div class="section">
     <h1 class="title is-1">
-      <component :is="feedItem?.link ? 'a' : 'span'" :href="feedItem?.link">
+      <component :is="titleLink ? 'a' : 'span'" :href="titleLink">
         {{ useUnescapedHTML(feedItem?.title ?? '').value }}
       </component>
     </h1>
@@ -110,8 +113,8 @@ onMounted(fetchFeedItem)
     <hr>
 
     <div v-show="!transcriptOpen">
-      <div v-if="!feedItem?.encoded_content" class="content" v-html="feedItem?.description" />
-      <div class="content" v-html="feedItem?.encoded_content" />
+      <div v-if="!feedItem?.encoded_content" class="content feed-content" v-html="descriptionHtml" />
+      <div class="content feed-content" v-html="contentHtml" />
     </div>
 
     <hr class="my-6">

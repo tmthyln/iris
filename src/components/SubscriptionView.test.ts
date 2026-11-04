@@ -38,6 +38,16 @@ describe('header', () => {
     })
 })
 
+describe('feed link', () => {
+    it('does not link the name to a javascript: URL', async () => {
+        const feed = makeFeed({title: 'The Feed', alias: '', link: 'javascript:alert(1)'})
+        const {wrapper} = await mountSubscription({feed})
+
+        expect(wrapper.find('h1 a').exists()).toBe(false)
+        expect(wrapper.find('h1').text()).toContain('The Feed')
+    })
+})
+
 describe('item pages', () => {
     it('requests the first page unfinished-first, newest-first', async () => {
         const items = [makeFullItem(), makeFullItem()]

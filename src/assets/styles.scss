@@ -14,3 +14,9 @@ $blue: #4c6ffc;
 body {
     overflow-x: clip;
 }
+
+// Feed HTML keeps its inline styles, so keep it in its box: position: fixed can't cover the app.
+.feed-content {
+    contain: layout paint;
+    overflow-x: auto;
+}

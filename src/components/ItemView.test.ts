@@ -36,6 +36,36 @@ describe('rendering', () => {
         expect(wrapper.find('#full').text()).toBe('The full content')
     })
 
+    it('sanitizes the full content', async () => {
+        const {item} = setup({itemOverrides: {
+            encoded_content: '<p id="full">Text</p><img src="x" onerror="alert(1)"><script>alert(2)</script>',
+        }})
+        const {wrapper} = await mountItem(item.guid)
+
+        const content = wrapper.find('.feed-content')
+        expect(content.find('#full').text()).toBe('Text')
+        expect(content.html()).not.toMatch(/onerror|<script/)
+    })
+
+    it('sanitizes the description when there is no full content', async () => {
+        const {item} = setup({itemOverrides: {
+            encoded_content: null,
+            description: '<p id="desc">Text</p><script>alert(1)</script>',
+        }})
+        const {wrapper} = await mountItem(item.guid)
+
+        expect(wrapper.find('#desc').text()).toBe('Text')
+        expect(wrapper.html()).not.toContain('<script')
+    })
+
+    it('does not link the title to a javascript: URL', async () => {
+        const {item} = setup({itemOverrides: {title: 'Title', link: 'javascript:alert(1)'}})
+        const {wrapper} = await mountItem(item.guid)
+
+        expect(wrapper.find('h1 a').exists()).toBe(false)
+        expect(wrapper.find('h1').text()).toBe('Title')
+    })
+
     it('shows the feed breadcrumb with season and episode for podcasts', async () => {
         const {feed, item} = setup({
             feedOverrides: {type: 'podcast', title: 'The Podcast'},
