@@ -8,6 +8,7 @@ import {useFeedItemStore} from "../stores/feeditems.ts";
 import {useFeedStore} from "../stores/feeds.ts";
 import {useDownloadStore} from "../stores/downloads.ts";
 import {unescapeHTML} from "../htmlproc.ts";
+import {mediaPath} from "../client.ts";
 import {report} from "../telemetry.ts";
 import FullPlayer from "./FullPlayer.vue";
 import QueueList from "./QueueList.vue";
@@ -30,12 +31,15 @@ async function resolveSource() {
         resolvedSrc.value = ''
         return
     }
-    if (downloadStore.isDownloaded(item.guid)) {
-        // A download finishing mid-episode must not swap the source, which would
-        // reload the audio from the start; it is used the next time this loads.
-        const element = audio.value
-        if (resolvedGuid === item.guid && element && (!element.paused || element.currentTime > 0)) return
+    // A download or pinned audio arriving mid-episode must not swap the source, which
+    // would reload the audio from the start; it is used the next time this loads.
+    const element = audio.value
+    if (resolvedGuid === item.guid && element && (!element.paused || element.currentTime > 0)) return
 
+    // A transcript's timestamps only hold for its pinned audio, so an earlier
+    // download with other ads is just for when that cannot be streamed.
+    const canStreamPinned = item.pinned_audio && !downloadStore.isPinnedCopy(item.guid) && navigator.onLine
+    if (downloadStore.isDownloaded(item.guid) && !canStreamPinned) {
         const localUrl = await downloadStore.getLocalUrl(item.guid)
         if (localUrl && currentItem.value?.guid === item.guid) {
             resolvedGuid = item.guid
@@ -44,7 +48,7 @@ async function resolveSource() {
         }
     }
     resolvedGuid = item.guid
-    resolvedSrc.value = item.enclosure_url
+    resolvedSrc.value = item.pinned_audio ? mediaPath(item.guid) : item.enclosure_url
 }
 
 const audio = ref<HTMLAudioElement>()
@@ -61,8 +65,8 @@ const {
     src: resolvedSrc,
 })
 
-// The audio element loads remote episodes straight from the publisher, so the
-// Worker never sees these requests; this report is the only trace of them.
+// The audio element loads remote episodes straight from the publisher (unless
+// pinned), so the Worker never sees these requests; this report is the only trace of them.
 function reportAudioError(kind: string, error?: unknown) {
     const element = audio.value
     const mediaError = element?.error
@@ -72,7 +76,7 @@ function reportAudioError(kind: string, error?: unknown) {
             feedItemGuid: currentItem.value?.guid,
             enclosureUrl: currentItem.value?.enclosure_url,
             enclosureType: currentItem.value?.enclosure_type,
-            source: resolvedSrc.value.startsWith('blob:') ? 'download' : 'remote',
+            source: resolvedSrc.value.startsWith('blob:') ? 'download' : currentItem.value?.pinned_audio ? 'pinned' : 'remote',
             mediaErrorCode: mediaError?.code ?? null,
             mediaErrorMessage: mediaError?.message || null,
             networkState: element?.networkState,

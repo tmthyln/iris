@@ -1,7 +1,7 @@
 import {defineStore} from "pinia";
 import {reactive, ref, toRaw} from "vue";
 import type {FeedItemPreview} from "../types.ts";
-import {apiFetch, newRequestId, REQUEST_ID_HEADER} from "../client.ts";
+import {apiFetch, mediaPath, newRequestId, REQUEST_ID_HEADER} from "../client.ts";
 import {report} from "../telemetry.ts";
 
 /* ── Types ── */
@@ -193,8 +193,7 @@ export const useDownloadStore = defineStore('downloads', () => {
                 }
             }
 
-            const proxiedUrl = `/api/feeditem/${encodeURIComponent(item.guid)}/media`
-            const response = await apiFetch(proxiedUrl, {
+            const response = await apiFetch(mediaPath(item.guid), {
                 signal: abortController.signal,
                 headers: {[REQUEST_ID_HEADER]: requestId},
             })
@@ -323,6 +322,11 @@ export const useDownloadStore = defineStore('downloads', () => {
         return typeof status === 'object' && status.state === 'downloaded'
     }
 
+    /** Whether the download is of the audio pinned for the transcript, not an earlier copy with other ads. */
+    function isPinnedCopy(guid: string): boolean {
+        return downloadedItems[guid]?.pinned_audio === true
+    }
+
     function getStatus(guid: string): DownloadStatus {
         return statuses[guid] ?? 'idle'
     }
@@ -339,6 +343,7 @@ export const useDownloadStore = defineStore('downloads', () => {
         scheduleDelete,
         getLocalUrl,
         isDownloaded,
+        isPinnedCopy,
         getStatus,
     }
 })

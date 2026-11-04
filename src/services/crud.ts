@@ -419,6 +419,27 @@ interface UpdateTranscriptPatch {
     last_progress_at?: string | null
 }
 
+/** Makes `key` the audio the episode plays from; returns the key it replaces. */
+export async function pinFeedItemAudio(db: D1Database, feedItemGuid: string, key: string) {
+    const previous = await db
+        .prepare('SELECT pinned_audio_key FROM feed_item WHERE guid = ?')
+        .bind(feedItemGuid)
+        .first<string | null>('pinned_audio_key')
+    await db
+        .prepare('UPDATE feed_item SET pinned_audio_key = ? WHERE guid = ?')
+        .bind(key, feedItemGuid)
+        .run()
+    return previous
+}
+
+export async function isPinnedAudio(db: D1Database, key: string) {
+    const row = await db
+        .prepare('SELECT 1 AS pinned FROM feed_item WHERE pinned_audio_key = ? LIMIT 1')
+        .bind(key)
+        .first()
+    return row !== null
+}
+
 export async function updateTranscriptStatus(db: D1Database, id: number, patch: UpdateTranscriptPatch) {
     const keys = Object.keys(patch)
     if (keys.length === 0) return

@@ -3,6 +3,8 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import client from '../client.ts'
 import {err, makeFullTranscript, makeTranscript, ok, stubClient} from '../testing/helpers.ts'
 import {flush} from '../telemetry.ts'
+import {makeItem} from '../testing/helpers.ts'
+import {useQueueStore} from './queue.ts'
 import {useTranscriptStore} from './transcripts.ts'
 
 const POLL_MS = 5000
@@ -14,6 +16,23 @@ beforeEach(() => {
 afterEach(() => {
     vi.restoreAllMocks()
     vi.useRealTimers()
+})
+
+describe('pinned audio', () => {
+    it('marks a queued item once polling sees its transcript finish', async () => {
+        const queueStore = useQueueStore()
+        queueStore.items = [makeItem({guid: 'item-a'}), makeItem({guid: 'item-b'})]
+        const transcript = makeTranscript({feed_item_guid: 'item-a', status: 'processing'})
+        stubClient('listTranscripts', ok([transcript]))
+        const store = useTranscriptStore()
+        await store.refresh('item-a')
+        expect(queueStore.items[0].pinned_audio).toBe(false)
+
+        stubClient('listTranscripts', ok([{...transcript, status: 'complete'}]))
+        await vi.advanceTimersByTimeAsync(POLL_MS)
+
+        expect(queueStore.items.map(item => item.pinned_audio)).toEqual([true, false])
+    })
 })
 
 describe('refresh', () => {

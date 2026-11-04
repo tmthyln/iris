@@ -173,6 +173,9 @@ function unwrapItems<T>(result: ApiResult<{items: T[]}>): ApiResult<T[]> {
 // hc substitutes path params verbatim, and feed/item GUIDs are often URLs.
 const param = (value: string) => encodeURIComponent(value)
 
+/** Where the Worker serves an episode's audio: its pinned copy, or else a proxy of the enclosure. */
+export const mediaPath = (itemGuid: string) => `/api/feeditem/${param(itemGuid)}/media`
+
 interface PageOptions {
     limit?: number
     offset?: number
