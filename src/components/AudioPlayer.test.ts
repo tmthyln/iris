@@ -199,6 +199,67 @@ describe('audio source', () => {
         await flushPromises()
         expect(sourceOf(wrapper)).toBe('blob:local-copy')
     })
+
+    describe('with pinned audio', () => {
+        const downloaded = (guid: string, pinnedCopy: boolean) => () => {
+            const downloadStore = useDownloadStore()
+            downloadStore.statuses[guid] = {state: 'downloaded', size: 1, downloadedAt: '2024-01-01T00:00:00Z'}
+            if (pinnedCopy) downloadStore.downloadedItems[guid] = episode({guid, pinned_audio: true})
+            vi.spyOn(downloadStore, 'getLocalUrl').mockResolvedValue('blob:local-copy')
+        }
+
+        afterEach(() => vi.unstubAllGlobals())
+
+        it('streams it through the Worker', async () => {
+            const item = episode({guid: 'a/b', pinned_audio: true})
+            const {wrapper} = await mountPlayer([item])
+            expect(wrapper.find('source').attributes('src')).toBe('/api/feeditem/a%2Fb/media')
+        })
+
+        it('prefers it over a download of an earlier copy', async () => {
+            const item = episode({pinned_audio: true})
+            const {wrapper} = await mountPlayer([item], downloaded(item.guid, false))
+            await flushPromises()
+            expect(wrapper.find('source').attributes('src')).toBe(`/api/feeditem/${item.guid}/media`)
+        })
+
+        it('falls back to a download of an earlier copy when offline', async () => {
+            vi.stubGlobal('navigator', Object.create(navigator, {onLine: {value: false}}) as Navigator)
+            const item = episode({pinned_audio: true})
+            const {wrapper} = await mountPlayer([item], downloaded(item.guid, false))
+            await flushPromises()
+            expect(sourceOf(wrapper)).toBe('blob:local-copy')
+        })
+
+        it('plays a download of the pinned copy', async () => {
+            const item = episode({pinned_audio: true})
+            const {wrapper} = await mountPlayer([item], downloaded(item.guid, true))
+            await flushPromises()
+            expect(sourceOf(wrapper)).toBe('blob:local-copy')
+        })
+
+        it('keeps the source when the audio is pinned mid-episode', async () => {
+            const item = episode()
+            const {wrapper, queueStore} = await mountPlayer([item])
+            const audio = await loadMetadata(wrapper, 300)
+            audio.currentTime = 120
+
+            queueStore.markAudioPinned(item.guid)
+            await flushPromises()
+
+            expect(wrapper.find('source').attributes('src')).toBe(item.enclosure_url)
+        })
+
+        it('switches when the audio is pinned before playback starts', async () => {
+            const item = episode()
+            const {wrapper, queueStore} = await mountPlayer([item])
+
+            queueStore.markAudioPinned(item.guid)
+            await flushPromises()
+
+            expect(wrapper.find('source').attributes('src')).toBe(`/api/feeditem/${item.guid}/media`)
+        })
+    })
 })
 
 describe('pause bookkeeping', () => {

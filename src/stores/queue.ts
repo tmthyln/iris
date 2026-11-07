@@ -146,6 +146,12 @@ export const useQueueStore = defineStore('queue', {
             }
             return true
         },
+        markAudioPinned(guid: string) {
+            const item = this.items.find(i => i.guid === guid)
+            if (!item) return
+            item.pinned_audio = true
+            saveQueueToStorage(this.items)
+        },
         togglePaused() {
             this.paused = !this.paused
         },

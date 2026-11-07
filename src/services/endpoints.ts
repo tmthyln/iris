@@ -44,7 +44,7 @@ import type { RefreshFeedTask, PlanFeedArchivesTask } from "./types";
 import {fetchRssFile, parseRssText, FETCH_USER_AGENT} from "./utils/files";
 import {fanOutPushWithContext, loadPushFanOutContext} from "./utils/push";
 import {getQueue} from "./queue";
-import {failIfOrphaned, TRANSCRIPT_DEFAULT_MODEL, transcriptInstanceId, type TranscribeParams} from "./transcription";
+import {failIfOrphaned, servePinnedAudio, TRANSCRIPT_DEFAULT_MODEL, transcriptInstanceId, type TranscribeParams} from "./transcription";
 import {dispatchTasks} from "./tasks";
 import {log, sanitizeId, traced, withLogContext} from "./utils/log";
 
@@ -330,6 +330,12 @@ const feedItemRoutes = new Hono<Bindings>()
         const feedItem = await ServerFeedItem.get(c.env.DB, guid)
         if (!feedItem?.enclosure_url) {
             return apiError(c, 404, 'Feed item has no media enclosure')
+        }
+
+        if (feedItem.pinned_audio_key) {
+            const pinned = await servePinnedAudio(c.env.RSS_CACHE_BUCKET, feedItem.pinned_audio_key, c.req.header('range'), feedItem.enclosure_type)
+            if (pinned) return pinned
+            log.warn('Pinned audio is missing from storage', {feedItemGuid: guid, key: feedItem.pinned_audio_key})
         }
 
         let upstreamUrl: URL

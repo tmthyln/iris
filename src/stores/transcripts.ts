@@ -4,6 +4,7 @@ import {useDocumentVisibility, useIntervalFn} from "@vueuse/core"
 import client from "../client"
 import type {Transcript, TranscriptFull} from "../types"
 import {report} from "../telemetry"
+import {useQueueStore} from "./queue"
 
 const POLL_INTERVAL_MS = 5000
 // Stop polling after this many consecutive failed fetches; a later
@@ -36,6 +37,10 @@ export const useTranscriptStore = defineStore('transcripts', () => {
                     },
                 })
             }
+        }
+        // A finished transcript pins its audio; a queued copy of the item would not know.
+        if (list.some(t => t.status === 'complete' && (previous.get(t.id) === 'pending' || previous.get(t.id) === 'processing'))) {
+            useQueueStore().markAudioPinned(itemGuid)
         }
         byItem[itemGuid] = list
         // Keep a loaded transcript's text current as more of it arrives.

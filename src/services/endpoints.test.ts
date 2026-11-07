@@ -60,7 +60,7 @@ async function expectError(response: Response, status: number, error: string) {
 
 const PREVIEW_KEYS = [
     'bookmarked', 'date', 'description', 'duration', 'duration_unit', 'enclosure_length', 'enclosure_type',
-    'enclosure_url', 'episode', 'finished', 'guid', 'keywords', 'link', 'progress', 'season', 'source_feed', 'title',
+    'enclosure_url', 'episode', 'finished', 'guid', 'keywords', 'link', 'pinned_audio', 'progress', 'season', 'source_feed', 'title',
 ]
 
 const CLIENT_TRANSCRIPT_KEYS = [
@@ -419,6 +419,71 @@ describe('GET /api/feeditem/:guid', () => {
         expect(await read<Record<string, unknown>>(response)).toMatchObject({guid: 'item-a', encoded_content: '<p>body</p>'})
 
         await expectError(await app.request('/api/feeditem/nope', {}, env), 404, 'No feed item found with guid: nope')
+    })
+})
+
+describe('GET /api/feeditem/:guid/media with pinned audio', () => {
+    const KEY = 'pinned-audio/1'
+    const media = (headers: Record<string, string> = {}) =>
+        app.request('/api/feeditem/item-a/media', {headers}, testEnv().env)
+
+    beforeEach(async () => {
+        await seedFeed({guid: 'feed-a', type: 'podcast'})
+        await seedFeedItem('feed-a', {guid: 'item-a', enclosure_url: 'https://cdn.example.com/a.mp3', enclosure_type: 'audio/mp4'})
+        await bindings.DB.prepare('UPDATE feed_item SET pinned_audio_key = ? WHERE guid = ?').bind(KEY, 'item-a').run()
+        await bindings.RSS_CACHE_BUCKET.put(KEY, 'pinned-bytes', {httpMetadata: {contentType: 'audio/mpeg'}})
+    })
+
+    test('serves the whole file without going upstream', async () => {
+        const fetched = mockFetch({})
+        const response = await media()
+        expect(response.status).toBe(200)
+        expect(await response.text()).toBe('pinned-bytes')
+        expect(response.headers.get('content-type')).toBe('audio/mpeg')
+        expect(response.headers.get('content-length')).toBe('12')
+        expect(response.headers.get('accept-ranges')).toBe('bytes')
+        expect(response.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'")
+        expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+        expect(fetched.calls).toEqual([])
+    })
+
+    test.each([
+        ['bytes=0-5', 'pinned', 'bytes 0-5/12'],
+        ['bytes=7-', 'bytes', 'bytes 7-11/12'],
+        ['bytes=-5', 'bytes', 'bytes 7-11/12'],
+        ['bytes=7-100', 'bytes', 'bytes 7-11/12'],
+        ['bytes=-100', 'pinned-bytes', 'bytes 0-11/12'],
+    ])('serves the range %s', async (range, body, contentRange) => {
+        const response = await media({range})
+        expect(response.status).toBe(206)
+        expect(await response.text()).toBe(body)
+        expect(response.headers.get('content-range')).toBe(contentRange)
+        expect(response.headers.get('content-length')).toBe(String(body.length))
+    })
+
+    test.each(['bytes=12-', 'bytes=-0'])('answers 416 to the unsatisfiable range %s', async range => {
+        const response = await media({range})
+        expect(response.status).toBe(416)
+        expect(response.headers.get('content-range')).toBe('bytes */12')
+    })
+
+    test.each(['bytes=5-2', 'bytes=-', 'bytes=0-1,3-4', 'items=0-1'])('serves the whole file for the range %s', async range => {
+        const response = await media({range})
+        expect(response.status).toBe(200)
+        expect(await response.text()).toBe('pinned-bytes')
+    })
+
+    test('falls back to the enclosure when the file has gone', async () => {
+        await bindings.RSS_CACHE_BUCKET.delete(KEY)
+        mockFetch({'https://cdn.example.com/a.mp3': new Response('upstream')})
+        const response = await media()
+        expect(await response.text()).toBe('upstream')
+    })
+
+    test('tells the client the audio is pinned without exposing the key', async () => {
+        const item = await (await app.request('/api/feeditem/item-a', {}, testEnv().env)).json<Record<string, unknown>>()
+        expect(item.pinned_audio).toBe(true)
+        expect(item).not.toHaveProperty('pinned_audio_key')
     })
 })
 

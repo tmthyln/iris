@@ -439,6 +439,7 @@ export interface RawFeedItem {
     progress: number
     bookmarked?: number | boolean
     content_hash?: string | null
+    pinned_audio_key?: string | null
 }
 
 export class ServerFeedItem extends ServerEntity {
@@ -461,6 +462,8 @@ export class ServerFeedItem extends ServerEntity {
     progress: number;
     bookmarked: boolean;
     content_hash: string | null;
+    // Written only when a transcript completes; persistTo leaves the column alone.
+    pinned_audio_key: string | null;
 
     constructor(data: RawFeedItem) {
         super('feed_item', {
@@ -487,6 +490,7 @@ export class ServerFeedItem extends ServerEntity {
         this.progress = data.progress
         this.bookmarked = asBoolean(data.bookmarked ?? false)
         this.content_hash = data.content_hash ?? null
+        this.pinned_audio_key = data.pinned_audio_key ?? null
     }
 
     async persistTo(db: D1Database) {
@@ -561,6 +565,8 @@ export class ClientFeedItemPreview {
     finished: boolean;
     progress: number;
     bookmarked: boolean;
+    /** The media endpoint serves the file this episode's transcripts were made from. */
+    pinned_audio: boolean;
 
     constructor(data: ServerFeedItem) {
         this.guid = data.guid
@@ -580,6 +586,7 @@ export class ClientFeedItemPreview {
         this.finished = data.finished
         this.progress = data.progress
         this.bookmarked = data.bookmarked
+        this.pinned_audio = data.pinned_audio_key !== null
     }
 }
 

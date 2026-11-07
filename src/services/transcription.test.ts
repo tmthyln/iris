@@ -924,3 +924,86 @@ describe('TranscribeWorkflow', () => {
         }))
     })
 })
+
+describe('pinned audio', () => {
+    const pinnedKey = async () => (await ServerFeedItem.get(db, 'ep-1'))!.pinned_audio_key
+
+    async function transcribeOnce(ai = fakeAi({'req-1': [done('words')]})) {
+        const transcript = await createTranscriptRequest(db, 'ep-1', MODEL, null)
+        await runTranscription(transcript.id, transcribeEnv(ai), fakeStep().step)
+        return transcript
+    }
+
+    test('a completed transcript pins the audio it was made from', async () => {
+        await seedItemWithAudio()
+        mockFetch({[AUDIO_URL]: new Response('audio-bytes', {headers: {'content-type': 'audio/mpeg'}})})
+
+        const transcript = await transcribeOnce()
+
+        const key = await pinnedKey()
+        expect(key).toBe(`pinned-audio/${transcript.id}`)
+        const stored = await env.RSS_CACHE_BUCKET.get(key!)
+        expect(await stored!.text()).toBe('audio-bytes')
+        expect(stored!.httpMetadata?.contentType).toBe('audio/mpeg')
+        expect(await workingFiles()).toEqual([])
+    })
+
+    test('a failed transcript pins nothing and keeps no audio', async () => {
+        await seedItemWithAudio()
+        mockFetch({[AUDIO_URL]: new Response('audio-bytes')})
+
+        const transcript = await transcribeOnce(fakeAi({'req-1': [{success: false, error: 'nope'}]}))
+
+        expect((await transcriptRow(transcript.id)).status).toBe('error')
+        expect(await pinnedKey()).toBeNull()
+        expect((await env.RSS_CACHE_BUCKET.list({prefix: 'pinned-audio/'})).objects).toEqual([])
+    })
+
+    test('a later transcript uses the pinned audio instead of downloading another copy', async () => {
+        await seedItemWithAudio()
+        mockFetch({[AUDIO_URL]: new Response('audio-bytes')})
+        const first = await transcribeOnce()
+
+        const fetched = mockFetch({})
+        const ai = fakeAi({'req-1': [done('other words')]})
+        const second = await transcribeOnce(ai)
+
+        expect((await transcriptRow(second.id)).text).toBe('other words')
+        expect(fetched.calls).toEqual([])
+        expect(decode(ai.submitted[0].audio)).toBe('audio-bytes')
+        expect(await pinnedKey()).toBe(`pinned-audio/${first.id}`)
+    })
+
+    test('a failed later transcript leaves the pinned audio alone', async () => {
+        await seedItemWithAudio()
+        mockFetch({[AUDIO_URL]: new Response('audio-bytes')})
+        const first = await transcribeOnce()
+
+        await transcribeOnce(fakeAi({'req-1': [{success: false, error: 'nope'}]}))
+
+        expect(await pinnedKey()).toBe(`pinned-audio/${first.id}`)
+        expect(await env.RSS_CACHE_BUCKET.head(`pinned-audio/${first.id}`)).not.toBeNull()
+    })
+
+    test('replaces a pin whose file has gone', async () => {
+        await seedItemWithAudio()
+        mockFetch({[AUDIO_URL]: new Response('audio-bytes')})
+        const first = await transcribeOnce()
+        await env.RSS_CACHE_BUCKET.delete(`pinned-audio/${first.id}`)
+
+        mockFetch({[AUDIO_URL]: new Response('new-bytes')})
+        const second = await transcribeOnce()
+
+        expect(await pinnedKey()).toBe(`pinned-audio/${second.id}`)
+        expect(await (await env.RSS_CACHE_BUCKET.get(`pinned-audio/${second.id}`))!.text()).toBe('new-bytes')
+    })
+
+    test('a feed refresh keeps the pin', async () => {
+        const item = await seedItemWithAudio()
+        await db.prepare('UPDATE feed_item SET pinned_audio_key = ? WHERE guid = ?').bind('pinned-audio/9', item.guid).run()
+
+        await (await ServerFeedItem.get(db, item.guid))!.persistTo(db)
+
+        expect(await pinnedKey()).toBe('pinned-audio/9')
+    })
+})

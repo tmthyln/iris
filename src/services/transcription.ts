@@ -1,7 +1,7 @@
 import {Buffer} from "node:buffer";
 import {WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep, type WorkflowStepConfig} from "cloudflare:workers";
 import {NonRetryableError} from "cloudflare:workflows";
-import {updateTranscriptStatus} from "./crud";
+import {isPinnedAudio, pinFeedItemAudio, updateTranscriptStatus} from "./crud";
 import {ServerFeedItem, ServerTranscript} from "./models";
 import {FETCH_USER_AGENT} from "./utils/files";
 import {log, type TaskTrace, withLogContext} from "./utils/log";
@@ -138,8 +138,9 @@ interface ByteRange {
     readonly length: number
 }
 
+/** Outside the `transcribe/` working files: a completed transcript's audio is kept for the player. */
 function audioKey(transcriptId: number) {
-    return `transcribe/${transcriptId}/audio`
+    return `pinned-audio/${transcriptId}`
 }
 
 function adtsKey(transcriptId: number) {
@@ -199,9 +200,13 @@ export function isMp4(head: Uint8Array) {
     return head.byteLength >= 8 && head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70
 }
 
+function audioKind(head: Uint8Array): Pick<StoredAudio, 'splittable' | 'adts' | 'mp4'> {
+    return {splittable: isFrameStream(head), adts: isAdtsHeader(head, afterId3Tag(head)), mp4: isMp4(head)}
+}
+
 /** Buffers writes into the equal-sized parts R2 requires, so at most one part is held in memory. */
-async function createPartWriter(env: Env, key: string, partBytes: number, onPart?: (part: Uint8Array) => void) {
-    const upload = await env.RSS_CACHE_BUCKET.createMultipartUpload(key)
+async function createPartWriter(env: Env, key: string, partBytes: number, {onPart, contentType}: {onPart?: (part: Uint8Array) => void, contentType?: string | null} = {}) {
+    const upload = await env.RSS_CACHE_BUCKET.createMultipartUpload(key, contentType ? {httpMetadata: {contentType}} : undefined)
     const parts: R2UploadedPart[] = []
     const buffer = new Uint8Array(partBytes)
     let filled = 0
@@ -254,8 +259,9 @@ export async function downloadAudio(env: Env, url: string, key: string, limits: 
     }
 
     let kind: Pick<StoredAudio, 'splittable' | 'adts' | 'mp4'> | undefined
-    const writer = await createPartWriter(env, key, limits.partBytes, head => {
-        kind ??= {splittable: isFrameStream(head), adts: isAdtsHeader(head, afterId3Tag(head)), mp4: isMp4(head)}
+    const writer = await createPartWriter(env, key, limits.partBytes, {
+        onPart: head => { kind ??= audioKind(head) },
+        contentType: upstream.headers.get('content-type'),
     })
     try {
         let size = 0
@@ -277,6 +283,15 @@ export async function downloadAudio(env: Env, url: string, key: string, limits: 
         await writer.abort()
         throw err
     }
+}
+
+/** The audio already pinned to the episode, so a new transcript lines up with it too. */
+async function readPinnedAudio(env: Env, key: string, limits: TranscriptionLimits): Promise<StoredAudio | null> {
+    const stored = await env.RSS_CACHE_BUCKET.head(key)
+    if (!stored) return null
+    const head = await env.RSS_CACHE_BUCKET.get(key, {range: {offset: 0, length: Math.min(limits.partBytes, stored.size)}})
+    if (!head) return null
+    return {key, size: stored.size, ...audioKind(new Uint8Array(await head.arrayBuffer()))}
 }
 
 /**
@@ -564,22 +579,71 @@ async function publishPartial(env: Env, transcriptId: number, requestedLanguage:
     })
 }
 
-async function persistTranscript(env: Env, transcriptId: number, requestedLanguage: string | null, chunks: readonly ByteRange[]) {
+async function persistTranscript(env: Env, transcriptId: number, job: {feedItemGuid: string, language: string | null}, audioKey: string, chunks: readonly ByteRange[]) {
     const {text, segments, language} = await stitchStoredChunks(env, transcriptId, chunks, chunks.length)
     await updateTranscriptStatus(env.DB, transcriptId, {
         status: 'complete',
         text,
         segments_json: serializeSegments(segments),
-        language: language ?? requestedLanguage,
+        language: language ?? job.language,
         chunks_done: chunks.length,
         completed_at: new Date().toISOString(),
     })
+    // The timestamps only hold for this file: publishers stitch different ads
+    // into each request, so the player has to play the same one.
+    const previous = await pinFeedItemAudio(env.DB, job.feedItemGuid, audioKey)
+    if (previous && previous !== audioKey) await env.RSS_CACHE_BUCKET.delete(previous)
 }
 
 async function deleteWorkingFiles(env: Env, transcriptId: number) {
     const bucket = env.RSS_CACHE_BUCKET
     const {objects} = await bucket.list({prefix: `transcribe/${transcriptId}/`})
     if (objects.length > 0) await bucket.delete(objects.map(object => object.key))
+    if (!await isPinnedAudio(env.DB, audioKey(transcriptId))) await bucket.delete(audioKey(transcriptId))
+}
+
+/** A single range of a file of `size` bytes; null to serve it whole, as for a header that cannot be honoured. */
+function parseByteRange(header: string | undefined, size: number): ByteRange | 'unsatisfiable' | null {
+    const match = header?.match(/^bytes=(\d*)-(\d*)$/)
+    if (!match || (!match[1] && !match[2])) return null
+    if (!match[1]) {
+        const suffix = Number(match[2])
+        if (suffix === 0) return 'unsatisfiable'
+        const offset = Math.max(0, size - suffix)
+        return {offset, length: size - offset}
+    }
+    const offset = Number(match[1])
+    const end = match[2] ? Number(match[2]) : Infinity
+    if (end < offset) return null
+    if (offset >= size) return 'unsatisfiable'
+    return {offset, length: Math.min(end, size - 1) - offset + 1}
+}
+
+/** Serves pinned audio with the byte ranges an audio element seeks by; null if the file is gone. */
+export async function servePinnedAudio(bucket: R2Bucket, key: string, rangeHeader: string | undefined, fallbackContentType: string | null): Promise<Response | null> {
+    const stored = await bucket.head(key)
+    if (!stored) return null
+
+    const headers = new Headers({
+        'accept-ranges': 'bytes',
+        'etag': stored.httpEtag,
+        'content-type': stored.httpMetadata?.contentType ?? fallbackContentType ?? 'audio/mpeg',
+        // The publisher chose the content type, and this is the app's origin: as
+        // with the media proxy, an HTML "enclosure" must not run as the app.
+        'content-security-policy': "sandbox; default-src 'none'",
+        'x-content-type-options': 'nosniff',
+    })
+    const range = parseByteRange(rangeHeader, stored.size)
+    if (range === 'unsatisfiable') {
+        headers.set('content-range', `bytes */${stored.size}`)
+        return new Response(null, {status: 416, headers})
+    }
+
+    const object = await bucket.get(key, range ? {range} : undefined)
+    if (!object) return null
+    headers.set('content-length', String(range?.length ?? stored.size))
+    if (range) headers.set('content-range', `bytes ${range.offset}-${range.offset + range.length - 1}/${stored.size}`)
+    return new Response(object.body, {status: range ? 206 : 200, headers})
 }
 
 /**
@@ -607,6 +671,7 @@ export async function runTranscription(transcriptId: number, env: Env, step: Wor
                 feedItemGuid: feedItem.guid,
                 model: transcript.model,
                 language: transcript.language,
+                pinnedAudioKey: feedItem.pinned_audio_key,
             }
         })
         if (!job) {
@@ -617,7 +682,8 @@ export async function runTranscription(transcriptId: number, env: Env, step: Wor
         const downloaded = await step.do(
             'download audio',
             {retries: {limit: 2, delay: '10 seconds', backoff: 'exponential'}, timeout: '15 minutes'},
-            () => downloadAudio(env, job.url, audioKey(transcriptId), limits),
+            async () => (job.pinnedAudioKey ? await readPinnedAudio(env, job.pinnedAudioKey, limits) : null)
+                ?? downloadAudio(env, job.url, audioKey(transcriptId), limits),
         )
         const extracted = downloaded.mp4 ? await step.do(
             'extract AAC frames',
@@ -661,7 +727,7 @@ export async function runTranscription(transcriptId: number, env: Env, step: Wor
             }
         }
 
-        await step.do('persist transcript', () => persistTranscript(env, transcriptId, job.language, chunks))
+        await step.do('persist transcript', () => persistTranscript(env, transcriptId, job, downloaded.key, chunks))
         log.info('Transcription complete', {chunks: chunks.length})
         await step.do('index transcript', async () => {
             // The transcript is stored; a search index failure must not fail it.
