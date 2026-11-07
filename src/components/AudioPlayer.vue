@@ -10,6 +10,7 @@ import {useDownloadStore} from "../stores/downloads.ts";
 import {unescapeHTML} from "../htmlproc.ts";
 import {mediaPath} from "../client.ts";
 import {report} from "../telemetry.ts";
+import type {FeedItemPreview} from "../types.ts";
 import FullPlayer from "./FullPlayer.vue";
 import QueueList from "./QueueList.vue";
 
@@ -118,6 +119,23 @@ watch(duration, (newDuration) => {
     }
 })
 
+// The queue first renders from its localStorage copy, whose progress can be stale
+// (saved before the last session's listening, or on another device), and the
+// server's copy of the same episode can arrive after the duration is known.
+// Until the episode has been played or positioned here, start it from the latest
+// copy. Only a new copy counts: saves update the current one in place, and their
+// responses can come back out of order.
+let positionedGuid: string | null = null
+function markPositioned() {
+    if (currentItem.value) positionedGuid = currentItem.value.guid
+}
+watch(currentItem, (item, oldItem) => {
+    if (!item || item === oldItem || item.guid !== oldItem?.guid || item.guid === positionedGuid) return
+    if (queueStore.pendingStart?.guid === item.guid) return
+    if (!(duration.value > 0 && isFinite(duration.value))) return
+    if (item.progress > 0 && item.progress < 1) currentTime.value = item.progress * duration.value
+})
+
 watch(currentTime, (time) => {
     queueStore.playbackPosition = time
 })
@@ -127,15 +145,24 @@ watch(() => queueStore.paused, (paused) => {
 })
 watch(playing, (isPlaying) => {
     queueStore.paused = !isPlaying
+    if (isPlaying) markPositioned()
     if (!isPlaying && currentItem.value && duration.value > 0) {
-        void feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+        void saveProgress(currentItem.value, currentTime.value / duration.value)
     }
 })
 
+// The queue item is the object updateItemProgress updates, so the localStorage
+// copy gets the new position too, for the next page load.
+async function saveProgress(item: FeedItemPreview, progress: number) {
+    await feedItemStore.updateItemProgress(item, progress)
+    queueStore.persist()
+}
+
 function seek(seconds: number) {
+    markPositioned()
     currentTime.value = seconds
     if (currentItem.value && duration.value > 0) {
-        void feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+        void saveProgress(currentItem.value, currentTime.value / duration.value)
     }
 }
 function setPlaybackPosition(event: Event) {
@@ -148,16 +175,18 @@ watch(() => queueStore.pendingSeek, (seconds) => {
     seek(Math.min(Math.max(0, seconds), duration.value))
 })
 function fastRewind() {
+    markPositioned()
     currentTime.value = Math.max(0, currentTime.value - 10)
 }
 function fastForward() {
+    markPositioned()
     currentTime.value = Math.min(duration.value, currentTime.value + 30)
 }
 async function skipNext() {
     if (!currentItem.value || queueStore.upcoming.length === 0) return
     autoPlayNext.value = playing.value
     if (duration.value > 0) {
-        await feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+        await saveProgress(currentItem.value, currentTime.value / duration.value)
     }
     await queueStore.removeItem(currentItem.value)
 }
@@ -171,7 +200,7 @@ function cyclePlaybackRate() {
 
 useIntervalFn(() => {
     if (playing.value && currentItem.value && duration.value > 0) {
-        void feedItemStore.updateItemProgress(currentItem.value, currentTime.value / duration.value)
+        void saveProgress(currentItem.value, currentTime.value / duration.value)
     }
 }, 5000)
 watch(ended, async () => {

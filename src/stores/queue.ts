@@ -146,6 +146,10 @@ export const useQueueStore = defineStore('queue', {
             }
             return true
         },
+        /** Save the queue as it is now, e.g. after an item's progress changed in place. */
+        persist() {
+            saveQueueToStorage(this.items)
+        },
         markAudioPinned(guid: string) {
             const item = this.items.find(i => i.guid === guid)
             if (!item) return

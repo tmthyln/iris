@@ -94,6 +94,57 @@ describe('playback controls', () => {
         expect(rateButton.text()).toBe('1.25x')
     })
 
+    it('moves to the server copy\'s progress when it arrives after the cached one has loaded (#281)', async () => {
+        const cached = episode({progress: 0.1})
+        const {wrapper, queueStore} = await mountPlayer([cached])
+        const audio = await loadMetadata(wrapper, 200)
+        expect(audio.currentTime).toBe(20)
+
+        queueStore.items = [{...cached, progress: 0.6}]
+        await flushPromises()
+        expect(audio.currentTime).toBe(120)
+    })
+
+    it('does not move an episode that has started playing when its progress changes', async () => {
+        stubClient('modifyFeedItem', ok(undefined))
+        const item = episode({progress: 0.1})
+        const {wrapper, queueStore} = await mountPlayer([item])
+        const audio = await loadMetadata(wrapper, 200)
+        await wrapper.find('[title="Play"]').trigger('click')
+        await flushPromises()
+        audio.currentTime = 50
+        audio.dispatchEvent(new Event('timeupdate'))
+
+        queueStore.items = [{...item, progress: 0.6}]
+        await flushPromises()
+        expect(audio.currentTime).toBe(50)
+    })
+
+    it('keeps a position chosen before the server copy arrives', async () => {
+        stubClient('modifyFeedItem', ok(undefined))
+        const item = episode({progress: 0.1})
+        const {wrapper, queueStore} = await mountPlayer([item])
+        const audio = await loadMetadata(wrapper, 200)
+        await wrapper.find('[title="Skip forward 30 seconds"]').trigger('click')
+        expect(audio.currentTime).toBe(50)
+
+        queueStore.items = [{...item, progress: 0.6}]
+        await flushPromises()
+        expect(audio.currentTime).toBe(50)
+    })
+
+    it('keeps the saved position in the cached queue for the next page load', async () => {
+        stubClient('modifyFeedItem', ok(undefined))
+        const item = episode()
+        const {wrapper, queueStore} = await mountPlayer([item])
+        await loadMetadata(wrapper, 300)
+
+        queueStore.requestSeek(150)
+        await flushPromises()
+        const saved = JSON.parse(localStorage.getItem('iris-queue')!) as {guid: string, progress: number}[]
+        expect(saved[0]).toMatchObject({guid: item.guid, progress: 0.5})
+    })
+
     it('starts a newly loaded episode from a requested position, over its saved progress', async () => {
         const item = episode({progress: 0.5})
         const {wrapper, queueStore} = await mountPlayer([item])
