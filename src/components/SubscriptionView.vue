@@ -3,7 +3,7 @@ import ItemPreview from "./ItemPreview.vue";
 import {useFeedStore} from "../stores/feeds.ts";
 import {computed, nextTick, ref, watch} from "vue";
 import {useIntersectionObserver, useSessionStorage, useTitle} from "@vueuse/core";
-import {useUnescapedHTML} from "../htmlproc.ts";
+import {safeLinkUrl, useUnescapedHTML} from "../htmlproc.ts";
 import type {FeedItem} from "../types.ts";
 import client from "../client.ts";
 
@@ -14,6 +14,7 @@ const props = defineProps<{
 const feedStore = useFeedStore();
 const feed = computed(() => feedStore.getFeedById(props.guid))
 const displayName = computed(() => feed.value ? (feed.value.alias || feed.value.title) : '')
+const feedLink = computed(() => safeLinkUrl(feed.value?.link))
 useTitle(computed(() => feed.value ? `${displayName.value} — Iris` : 'Iris'))
 
 const showFinished = useSessionStorage('feedView:showFinished', false);
@@ -188,7 +189,7 @@ useIntersectionObserver(loadMoreSentinel, ([entry]) => {
           >
         </template>
         <template v-else>
-          <component :is="feed.link ? 'a' : 'span'" :href="feed.link">
+          <component :is="feedLink ? 'a' : 'span'" :href="feedLink">
             {{ displayName }}
           </component>
           <span

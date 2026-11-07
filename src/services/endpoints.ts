@@ -401,6 +401,10 @@ const feedItemRoutes = new Hono<Bindings>()
             const value = upstream.headers.get(name)
             if (value) headers.set(name, value)
         }
+        // The upstream chooses the content type, and this is the app's origin: opened directly,
+        // an HTML "enclosure" must not run as the app. Fetching and <audio> don't notice these.
+        headers.set('content-security-policy', "sandbox; default-src 'none'")
+        headers.set('x-content-type-options', 'nosniff')
 
         // The body is passed through untouched (and so not observed here): the
         // client reports a short or failed transfer under this requestId.

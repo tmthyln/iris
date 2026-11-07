@@ -3,7 +3,7 @@ import {type FeedItemPreview} from "../types.ts";
 import {useTimeAgo} from "@vueuse/core";
 import {useFeedStore} from "../stores/feeds.ts";
 import {computed, toRef} from "vue";
-import {useUnescapedHTML} from "../htmlproc.ts";
+import {sanitizeHTML, useUnescapedHTML} from "../htmlproc.ts";
 import {usePlaceholderImage} from "../placeholderImage.ts";
 import AudioControls from "./AudioControls.vue";
 
@@ -14,6 +14,7 @@ const props = defineProps<{
 const feedStore = useFeedStore()
 const feed = computed(() => feedStore.getFeedById(props.feedItem.source_feed))
 const formattedPubDate = useTimeAgo(() => props.feedItem.date ?? 0)
+const descriptionHtml = computed(() => sanitizeHTML(props.feedItem.description))
 
 const {resolvedSrc, onImageError} = usePlaceholderImage(
     toRef(() => feed.value?.image_src),
@@ -46,8 +47,7 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
 
     <AudioControls :feed-item="feedItem" />
 
-    <!-- TODO: remove this injection vulnerability -->
-    <div v-if="feedItem.description" class="content" v-html="feedItem.description" />
+    <div v-if="feedItem.description" class="content feed-content" v-html="descriptionHtml" />
   </div>
 </template>
 
