@@ -1,9 +1,48 @@
 import {defineStore} from "pinia";
 import {type FeedItemPreview, type LoadingState} from "../types.ts";
-import client from "../client.ts";
+import client, {unanswered} from "../client.ts";
 import {useDownloadStore} from "./downloads.ts";
+import {useFeedItemStore} from "./feeditems.ts";
 
 const STORAGE_KEY = 'iris-queue'
+// Queue changes made while the API was unreachable, oldest first, replayed in
+// order once it answers again (see syncPending).
+const PENDING_KEY = 'iris-queue-pending'
+
+type QueueChange =
+    | {op: 'add', guid: string, position?: number}
+    | {op: 'remove', guid: string}
+    | {op: 'move', guid: string, position: number}
+    | {op: 'clear', keepFirst: boolean}
+
+function loadPendingChanges(): QueueChange[] {
+    try {
+        const raw = localStorage.getItem(PENDING_KEY)
+        return raw ? JSON.parse(raw) as QueueChange[] : []
+    } catch {
+        return []
+    }
+}
+
+function savePendingChanges(changes: QueueChange[]) {
+    try {
+        if (changes.length) localStorage.setItem(PENDING_KEY, JSON.stringify(changes))
+        else localStorage.removeItem(PENDING_KEY)
+    } catch {
+        // Ignore storage errors
+    }
+}
+
+function sendChange(change: QueueChange) {
+    switch (change.op) {
+        case 'add': return client.queueFeedItem(change.guid, change.position)
+        case 'remove': return client.removeQueueItem(change.guid)
+        case 'move': return client.moveQueueItem(change.guid, change.position)
+        case 'clear': return client.clearQueue(change.keepFirst)
+    }
+}
+
+let syncing: Promise<boolean> | null = null
 
 function saveQueueToStorage(items: FeedItemPreview[]) {
     try {
@@ -68,8 +107,13 @@ export const useQueueStore = defineStore('queue', {
                 }
             }
 
-            const result = await client.getQueue()
-            const items = result.ok ? result.data : null
+            // The server's queue is stale until the changes made offline
+            // reach it, and would otherwise replace them; likewise the
+            // progress the items carry.
+            await useFeedItemStore().flushPendingProgress()
+            const synced = await this.syncPending()
+            const result = synced ? await client.getQueue() : null
+            const items = result?.ok ? result.data : null
             if (items) {
                 this.items = items
                 saveQueueToStorage(items)
@@ -98,12 +142,7 @@ export const useQueueStore = defineStore('queue', {
             saveQueueToStorage(optimistic)
             ensureDownloaded([item])
 
-            const result = await client.queueFeedItem(item.guid, position)
-            const serverItems = result.ok ? result.data : null
-            if (serverItems) {
-                this.items = serverItems
-                saveQueueToStorage(serverItems)
-            }
+            await this.applyChange({op: 'add', guid: item.guid, position})
             return true
         },
         async removeItem(item: FeedItemPreview) {
@@ -111,12 +150,7 @@ export const useQueueStore = defineStore('queue', {
             this.items = optimistic
             saveQueueToStorage(optimistic)
 
-            const result = await client.removeQueueItem(item.guid)
-            const serverItems = result.ok ? result.data : null
-            if (serverItems) {
-                this.items = serverItems
-                saveQueueToStorage(serverItems)
-            }
+            await this.applyChange({op: 'remove', guid: item.guid})
             return true
         },
         async clearQueue(keepFirst: boolean) {
@@ -124,12 +158,7 @@ export const useQueueStore = defineStore('queue', {
             this.items = optimistic
             saveQueueToStorage(optimistic)
 
-            const result = await client.clearQueue(keepFirst)
-            const serverItems = result.ok ? result.data : null
-            if (serverItems) {
-                this.items = serverItems
-                saveQueueToStorage(serverItems)
-            }
+            await this.applyChange({op: 'clear', keepFirst})
             return true
         },
         async moveItem(item: FeedItemPreview, position: number) {
@@ -138,13 +167,54 @@ export const useQueueStore = defineStore('queue', {
             this.items = without
             saveQueueToStorage(without)
 
-            const result = await client.moveQueueItem(item.guid, position)
-            const serverItems = result.ok ? result.data : null
-            if (serverItems) {
-                this.items = serverItems
-                saveQueueToStorage(serverItems)
-            }
+            await this.applyChange({op: 'move', guid: item.guid, position})
             return true
+        },
+        /**
+         * Send a change already made to the local queue. While earlier changes
+         * are still waiting, it waits behind them, so the server applies them
+         * in the order they were made.
+         */
+        async applyChange(change: QueueChange) {
+            if (loadPendingChanges().length) {
+                savePendingChanges([...loadPendingChanges(), change])
+                await this.syncPending()
+                return
+            }
+            const result = await sendChange(change)
+            if (result.ok) {
+                this.adoptServerItems(result.data)
+            } else if (unanswered(result)) {
+                savePendingChanges([change])
+            }
+        },
+        /**
+         * Replay the changes made while the API was unreachable. Resolves to
+         * whether none are left.
+         */
+        syncPending(): Promise<boolean> {
+            syncing ??= this.replayPendingChanges().finally(() => { syncing = null })
+            return syncing
+        },
+        /** One replay at a time: through syncPending. */
+        async replayPendingChanges(): Promise<boolean> {
+            let latest: FeedItemPreview[] | null = null
+            for (let change = loadPendingChanges()[0]; change; change = loadPendingChanges()[0]) {
+                const result = await sendChange(change)
+                if (unanswered(result)) return false
+                // A rejected change (the item is gone) is dropped, not retried.
+                savePendingChanges(loadPendingChanges().slice(1))
+                if (result.ok) latest = result.data
+            }
+            if (latest) this.adoptServerItems(latest)
+            return true
+        },
+        hasPendingChanges() {
+            return loadPendingChanges().length > 0
+        },
+        adoptServerItems(items: FeedItemPreview[]) {
+            this.items = items
+            saveQueueToStorage(items)
         },
         /** Save the queue as it is now, e.g. after an item's progress changed in place. */
         persist() {

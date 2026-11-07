@@ -166,6 +166,15 @@ async function request<R extends ClientResponse<unknown>>(
     }
 }
 
+/**
+ * Whether a call failed without the API deciding on it: no response arrived
+ * (offline, timeout) or the Access session expired. Worth sending again later,
+ * unlike a request the API rejected.
+ */
+export function unanswered(result: ApiResult<unknown>): boolean {
+    return !result.ok && (result.status === null || result.status === 401)
+}
+
 function unwrapItems<T>(result: ApiResult<{items: T[]}>): ApiResult<T[]> {
     return result.ok ? {...result, data: result.data.items} : result
 }

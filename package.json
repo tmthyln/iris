@@ -24,7 +24,8 @@
     "sortablejs": "^1.15.6",
     "vue": "^3.5.44",
     "vue-router": "^5.4.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "workbox-routing": "^7.4.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.67.0",

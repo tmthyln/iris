@@ -188,6 +188,51 @@ describe('updateItemProgress', () => {
     })
 })
 
+describe('progress saved offline', () => {
+    const pending = () => JSON.parse(localStorage.getItem('iris-pending-progress') ?? '{}') as unknown
+
+    beforeEach(() => localStorage.clear())
+
+    it('applies the progress locally and keeps it for later', async () => {
+        stubClient('modifyFeedItem', err(null, 'Network unavailable'))
+        const store = useFeedItemStore()
+        const item = makeItem({progress: 0.2})
+        store.recent.push(item.guid)
+
+        await store.updateItemProgress(item, 0.5)
+        await store.updateItemProgress(item, 1)
+        expect(item.progress).toBe(1)
+        expect(item.finished).toBe(true)
+        expect(store.recent).not.toContain(item.guid)
+        expect(pending()).toEqual({[item.guid]: {finished: true, progress: 1}})
+    })
+
+    it('sends the latest position once the API answers, then forgets it', async () => {
+        stubClient('modifyFeedItem', err(null, 'Network unavailable'))
+        const store = useFeedItemStore()
+        const item = makeItem()
+        await store.updateItemProgress(item, 0.7)
+        expect(await store.flushPendingProgress()).toBe(false)
+        expect(pending()).toEqual({[item.guid]: {progress: 0.7}})
+
+        stubClient('modifyFeedItem', ok(undefined)).mockClear()
+        expect(await store.flushPendingProgress()).toBe(true)
+        expect(vi.mocked(client.modifyFeedItem)).toHaveBeenCalledExactlyOnceWith(item.guid, {progress: 0.7})
+        expect(pending()).toEqual({})
+    })
+
+    it('forgets a pending position once a newer one is saved', async () => {
+        stubClient('modifyFeedItem', err(null, 'Network unavailable'))
+        const store = useFeedItemStore()
+        const item = makeItem()
+        await store.updateItemProgress(item, 0.3)
+
+        stubClient('modifyFeedItem', ok(undefined))
+        await store.updateItemProgress(item, 0.4)
+        expect(pending()).toEqual({})
+    })
+})
+
 describe('bookmarked list loading', () => {
     it('loads bookmarked previews into the cache', async () => {
         const items = [makeFullItem({bookmarked: true}), makeFullItem({bookmarked: true})]

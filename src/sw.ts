@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
-import {precacheAndRoute} from 'workbox-precaching'
+import {createHandlerBoundToURL, precacheAndRoute} from 'workbox-precaching'
+import {NavigationRoute, registerRoute} from 'workbox-routing'
 
 declare const self: ServiceWorkerGlobalScope
 
@@ -15,6 +16,15 @@ self.addEventListener('activate', (event) => {
 })
 
 precacheAndRoute(self.__WB_MANIFEST)
+
+// The app is a SPA, so every page is index.html; without this, only `/` loads
+// offline, and launching or reloading on any other route (/downloads, an
+// episode, a notification's link) shows the browser's offline page. The API
+// and Cloudflare's own paths are not pages, and a re-authentication navigation
+// (client.ts, `?reauth=`) has to reach Cloudflare Access instead of the cache.
+registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), {
+    denylist: [/^\/api\//, /^\/cdn-cgi\//, /[?&]reauth=/],
+}))
 
 // Makes Cloudflare Access answer an expired session with 401 instead of a
 // cross-origin redirect to its login page (see client.ts).

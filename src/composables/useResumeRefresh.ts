@@ -1,11 +1,13 @@
 import {watch} from 'vue'
-import {useDocumentVisibility, useOnline} from '@vueuse/core'
+import {useDocumentVisibility, useIntervalFn, useOnline} from '@vueuse/core'
 import {useFeedItemStore} from '../stores/feeditems.ts'
 import {useFeedStore} from '../stores/feeds.ts'
 import {useQueueStore} from '../stores/queue.ts'
 
 /** Reload data that is older than this when the app is resumed. */
 const STALE_MS = 5 * 60_000
+/** Retry sending changes made offline this often while the app stays open. */
+const SYNC_RETRY_MS = 60_000
 
 /**
  * An installed PWA is usually resumed, not relaunched: the page keeps running
@@ -19,19 +21,29 @@ const STALE_MS = 5 * 60_000
  * visible again or connectivity returns. If the Access session has expired,
  * the retried call 401s and client.ts navigates to re-authenticate, which
  * reloads the whole app.
+ *
+ * Also sends the progress and queue changes made while the API was
+ * unreachable: on the same occasions, and every minute, since the Worker can
+ * be unreachable while the browser still reports being online.
  */
 export function useResumeRefresh() {
     const feedStore = useFeedStore()
     const feedItemStore = useFeedItemStore()
     const queueStore = useQueueStore()
 
+    // Don't reload a working queue — that replaces the items and could disturb
+    // playback. Only recover from a failed load.
+    function syncPending() {
+        void feedItemStore.flushPendingProgress()
+        if (queueStore.loadState === 'error') void queueStore.loadQueue() // syncs first
+        else if (queueStore.hasPendingChanges()) void queueStore.syncPending()
+    }
+
     function refresh() {
+        syncPending()
         void feedStore.refreshIfStale(STALE_MS)
         void feedItemStore.refreshRecentIfStale(STALE_MS)
         if (feedItemStore.bookmarkedLoadState === 'error') void feedItemStore.loadBookmarkedItems()
-        // Don't touch a working queue — reloading replaces the items and could
-        // disturb playback. Only recover from a failed load.
-        if (queueStore.loadState === 'error') void queueStore.loadQueue()
     }
 
     const visibility = useDocumentVisibility()
@@ -43,6 +55,8 @@ export function useResumeRefresh() {
     watch(online, (now, previous) => {
         if (now && !previous) refresh()
     })
+
+    useIntervalFn(syncPending, SYNC_RETRY_MS)
 
     return {refresh}
 }

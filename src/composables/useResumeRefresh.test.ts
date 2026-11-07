@@ -14,6 +14,7 @@ let harness: ReturnType<typeof mount> | null = null
 
 beforeEach(() => {
     setActivePinia(createPinia())
+    localStorage.clear()
     visibility = 'visible'
     Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => visibility})
 })
@@ -115,6 +116,43 @@ describe('on resume (hidden → visible)', () => {
         await backgroundAndResume()
         expect(vi.mocked(client.getFeeds)).toHaveBeenCalledTimes(2)
         expect(vi.mocked(client.getFeedItems)).toHaveBeenCalledTimes(2)
+        vi.useRealTimers()
+    })
+})
+
+describe('changes made offline', () => {
+    it('are sent on resume, without reloading a working queue', async () => {
+        const [a, b] = [makeItem(), makeItem()]
+        stubClient('getQueue', ok([a, b]))
+        stubClient('removeQueueItem', {ok: false, status: null, error: 'Network unavailable'})
+        stubClient('modifyFeedItem', {ok: false, status: null, error: 'Network unavailable'})
+        const feedItemStore = useFeedItemStore()
+        const queueStore = useQueueStore()
+        await queueStore.loadQueue()
+        await feedItemStore.updateItemProgress(a, 1)
+        await queueStore.removeItem(a)
+        mountResumeRefresh()
+
+        stubClient('removeQueueItem', ok([b])).mockClear()
+        stubClient('modifyFeedItem', ok(undefined)).mockClear()
+        await backgroundAndResume()
+        expect(vi.mocked(client.modifyFeedItem)).toHaveBeenCalledExactlyOnceWith(a.guid, {finished: true, progress: 1})
+        expect(vi.mocked(client.removeQueueItem)).toHaveBeenCalledExactlyOnceWith(a.guid)
+        expect(vi.mocked(client.getQueue)).toHaveBeenCalledOnce()
+        expect(queueStore.hasPendingChanges()).toBe(false)
+    })
+
+    it('are retried every minute while the app stays open', async () => {
+        vi.useFakeTimers({toFake: ['setInterval', 'clearInterval']})
+        stubClient('modifyFeedItem', {ok: false, status: null, error: 'Network unavailable'})
+        const feedItemStore = useFeedItemStore()
+        await feedItemStore.updateItemProgress(makeItem(), 0.5)
+        mountResumeRefresh()
+
+        stubClient('modifyFeedItem', ok(undefined)).mockClear()
+        await vi.advanceTimersByTimeAsync(60_000)
+        expect(vi.mocked(client.modifyFeedItem)).toHaveBeenCalledOnce()
+        expect(await feedItemStore.flushPendingProgress()).toBe(true)
         vi.useRealTimers()
     })
 })

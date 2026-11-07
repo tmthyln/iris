@@ -1,7 +1,42 @@
 import {defineStore} from "pinia";
 import type {AdjacentFeedItems, FeedItem, FeedItemPreview, LoadingState} from "../types.ts";
-import client from '../client'
+import client, {unanswered} from '../client'
 import {prefetchImagesFromHtml} from "../htmlproc.ts";
+
+type ProgressUpdate = {progress: number, finished?: true}
+
+// Positions saved while the API was unreachable, by item GUID, kept across
+// page loads until they reach the server.
+const PENDING_PROGRESS_KEY = 'iris-pending-progress'
+
+function loadPendingProgress(): Record<string, ProgressUpdate> {
+    try {
+        const raw = localStorage.getItem(PENDING_PROGRESS_KEY)
+        return raw ? JSON.parse(raw) as Record<string, ProgressUpdate> : {}
+    } catch {
+        return {}
+    }
+}
+
+function storePendingProgress(pending: Record<string, ProgressUpdate>) {
+    try {
+        if (Object.keys(pending).length) localStorage.setItem(PENDING_PROGRESS_KEY, JSON.stringify(pending))
+        else localStorage.removeItem(PENDING_PROGRESS_KEY)
+    } catch {
+        // Ignore storage errors
+    }
+}
+
+function savePendingProgress(guid: string, update: ProgressUpdate) {
+    storePendingProgress({...loadPendingProgress(), [guid]: update})
+}
+
+function dropPendingProgress(guid: string) {
+    const pending = loadPendingProgress()
+    if (!(guid in pending)) return
+    delete pending[guid]
+    storePendingProgress(pending)
+}
 
 export const useFeedItemStore = defineStore('feeditems', {
     state: () => ({
@@ -154,36 +189,58 @@ export const useFeedItemStore = defineStore('feeditems', {
         },
         async updateItemProgress(feedItem: FeedItemPreview, progress: number) {
             const effectiveProgress = Math.min(1, progress)
-            const finished = effectiveProgress >= 1 ? true : null
+            const finished = effectiveProgress >= 1
+            const update: ProgressUpdate = finished ? {finished: true, progress: effectiveProgress} : {progress: effectiveProgress}
 
-            const success = (await client.modifyFeedItem(
-                feedItem.guid,
-                finished ? {finished: true, progress: effectiveProgress} : {progress: effectiveProgress})).ok
-            if (success) {
-                const cachedFeedItem = this.cache[feedItem.guid]
-                if (cachedFeedItem) {
-                    cachedFeedItem.progress = effectiveProgress
-                    if (finished)
-                        cachedFeedItem.finished = true
-                }
-                const cachedFull = this.fullCache[feedItem.guid]
-                if (cachedFull) {
-                    cachedFull.progress = effectiveProgress
-                    if (finished)
-                        cachedFull.finished = true
-                }
-
-                if (finished) {
-                    const index = this.recent.indexOf(feedItem.guid)
-                    if (index >= 0) {
-                        this.recent.splice(index, 1)
-                    }
-                }
-
-                feedItem.progress = effectiveProgress
-                if (finished)
-                    feedItem.finished = true
+            const result = await client.modifyFeedItem(feedItem.guid, update)
+            if (result.ok) {
+                dropPendingProgress(feedItem.guid)
+            } else if (unanswered(result)) {
+                // Offline (or the Worker is unreachable): keep the position
+                // here and send it once the API answers again, so listening
+                // offline is not lost or overwritten by the server's old copy.
+                savePendingProgress(feedItem.guid, update)
+            } else {
+                return
             }
+
+            const cachedFeedItem = this.cache[feedItem.guid]
+            if (cachedFeedItem) {
+                cachedFeedItem.progress = effectiveProgress
+                if (finished)
+                    cachedFeedItem.finished = true
+            }
+            const cachedFull = this.fullCache[feedItem.guid]
+            if (cachedFull) {
+                cachedFull.progress = effectiveProgress
+                if (finished)
+                    cachedFull.finished = true
+            }
+
+            if (finished) {
+                const index = this.recent.indexOf(feedItem.guid)
+                if (index >= 0) {
+                    this.recent.splice(index, 1)
+                }
+            }
+
+            feedItem.progress = effectiveProgress
+            if (finished)
+                feedItem.finished = true
+        },
+        /**
+         * Send the progress saved while the API was unreachable. Resolves to
+         * whether nothing is left to send.
+         */
+        async flushPendingProgress(): Promise<boolean> {
+            for (const [guid, update] of Object.entries(loadPendingProgress())) {
+                const result = await client.modifyFeedItem(guid, update)
+                if (unanswered(result)) return false
+                // A rejected update (the item is gone) is dropped, not retried.
+                // Keep an entry saved again while this one was in flight.
+                if (loadPendingProgress()[guid]?.progress === update.progress) dropPendingProgress(guid)
+            }
+            return true
         },
         async loadBookmarkedItems() {
             if (this.bookmarkedLoadState === 'loading' || this.bookmarkedLoadState === 'loaded') {

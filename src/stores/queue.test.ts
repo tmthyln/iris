@@ -184,6 +184,75 @@ describe('queue mutations', () => {
     })
 })
 
+describe('offline changes', () => {
+    const offline = () => err(null, 'Network unavailable')
+    const pending = () => JSON.parse(localStorage.getItem('iris-queue-pending') ?? '[]') as unknown
+
+    it('keeps a change the server never received, and replays changes in order before loading', async () => {
+        const [a, b, c] = [makeItem(), makeItem(), makeItem()]
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([a, b]))
+        stubClient('getQueue', offline())
+        stubClient('removeQueueItem', offline())
+        stubClient('queueFeedItem', offline())
+        const store = useQueueStore()
+        await store.loadQueue()
+
+        // Finish the first episode and queue another while offline.
+        await store.removeItem(a)
+        await store.addItem(c)
+        expect(store.items).toEqual([b, c])
+        expect(pending()).toEqual([{op: 'remove', guid: a.guid}, {op: 'add', guid: c.guid}])
+        // The second change waited behind the first instead of going out of order.
+        expect(vi.mocked(client.queueFeedItem)).not.toHaveBeenCalled()
+
+        // Back online: the server still has the old queue until the changes arrive.
+        const order: string[] = []
+        stubClient('removeQueueItem', ok([b])).mockImplementation(() => { order.push('remove'); return Promise.resolve(ok([b])) })
+        stubClient('queueFeedItem', ok([b, c])).mockImplementation(() => { order.push('add'); return Promise.resolve(ok([b, c])) })
+        stubClient('getQueue', ok([b, c])).mockImplementation(() => { order.push('get'); return Promise.resolve(ok([b, c])) })
+        await store.loadQueue()
+
+        expect(order).toEqual(['remove', 'add', 'get'])
+        expect(store.items).toEqual([b, c])
+        expect(store.loadState).toBe('loaded')
+        expect(pending()).toEqual([])
+    })
+
+    it('keeps the local queue and the changes while the server stays unreachable', async () => {
+        const [a, b] = [makeItem(), makeItem()]
+        stubClient('getQueue', ok([a, b]))
+        stubClient('removeQueueItem', offline())
+        const store = useQueueStore()
+        await store.loadQueue()
+        await store.removeItem(a)
+
+        await store.loadQueue()
+        expect(vi.mocked(client.getQueue)).toHaveBeenCalledOnce()   // not fetched over the local queue
+        expect(store.items).toEqual([b])
+        expect(store.loadState).toBe('error')
+        expect(pending()).toEqual([{op: 'remove', guid: a.guid}])
+    })
+
+    it('drops a change the server rejects', async () => {
+        const a = makeItem()
+        localStorage.setItem('iris-queue-pending', JSON.stringify([{op: 'remove', guid: a.guid}]))
+        stubClient('removeQueueItem', err(404))
+        stubClient('getQueue', ok([]))
+        const store = useQueueStore()
+
+        await store.loadQueue()
+        expect(pending()).toEqual([])
+        expect(store.loadState).toBe('loaded')
+    })
+
+    it('does not queue a change the server rejected', async () => {
+        stubClient('queueFeedItem', err(400))
+        const store = useQueueStore()
+        await store.addItem(makeItem())
+        expect(store.hasPendingChanges()).toBe(false)
+    })
+})
+
 describe('playback', () => {
     it('playItem puts a new item at the front and unpauses', async () => {
         const playing = makeItem()
