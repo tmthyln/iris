@@ -15,12 +15,17 @@ export default defineConfig([
         ".tsbuild/",
         "coverage/",
         "public/",
+        // Claude Code session worktrees are separate checkouts with their own tsconfigs.
+        ".claude/",
         "worker-configuration.d.ts",
     ]),
     { linterOptions: { reportUnusedDisableDirectives: "error" } },
     { files: ["**/*.{js,mjs,cjs,ts,mts,cts,vue}"], plugins: { js }, extends: ["js/recommended"] },
     { files: ["**/*.{js,mjs,cjs,ts,mts,cts,vue}"], languageOptions: { globals: {...globals.browser, ...globals.node} } },
     tseslint.configs.recommendedTypeChecked,
+    // For every file, not only typed ones: the parser still looks for a tsconfig root on plain JS,
+    // and fails when another checkout (e.g. a git worktree) below this one has its own tsconfig.
+    { languageOptions: { parserOptions: { tsconfigRootDir: import.meta.dirname } } },
     pluginVue.configs["flat/strongly-recommended"],
     // Type-aware rules need every linted file to belong to one of the tsconfig.*.json projects
     // (app, cf, sw, node); `.vue` files are matched to tsconfig.app.json via extraFileExtensions.
@@ -29,7 +34,6 @@ export default defineConfig([
         languageOptions: {
             parserOptions: {
                 projectService: true,
-                tsconfigRootDir: import.meta.dirname,
                 extraFileExtensions: [".vue"],
             },
         },
