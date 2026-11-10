@@ -56,6 +56,60 @@ describe('ItemQueue', () => {
         expect(await queue.getItems()).toEqual([])
     })
 
+    test('insertItem keeps indexes right after removals leave gaps in the order', async () => {
+        const queue = getQueue(env)
+        for (const g of ['a', 'b', 'c', 'd', 'e']) await queue.enqueueItem(g)
+        await queue.removeItem('b')
+        await queue.removeItem('d')   // orders now 0, 2, 4
+
+        expect(await queue.insertItem('x', 1)).toEqual(['a', 'x', 'c', 'e'])
+        expect(await queue.insertItem('a', 2)).toEqual(['x', 'c', 'a', 'e'])
+        expect(await queue.insertItem('e', 0)).toEqual(['e', 'x', 'c', 'a'])
+        expect(await queue.insertItem('y', 4)).toEqual(['e', 'x', 'c', 'a', 'y'])
+        expect(await queue.enqueueItem('z')).toEqual(['e', 'x', 'c', 'a', 'y', 'z'])
+    })
+
+    test('insertItem moving an item to its own index or the end leaves the rest in order', async () => {
+        const queue = getQueue(env)
+        for (const g of ['a', 'b', 'c']) await queue.enqueueItem(g)
+
+        expect(await queue.insertItem('b', 1)).toEqual(['a', 'b', 'c'])
+        expect(await queue.insertItem('a', 2)).toEqual(['b', 'c', 'a'])
+        expect(await queue.insertItem('a', 99)).toEqual(['b', 'c', 'a'])
+    })
+
+    test('insertItem into an empty queue', async () => {
+        expect(await getQueue(env).insertItem('a', 3)).toEqual(['a'])
+    })
+
+    test('clearExceptFirst keeps only the first item', async () => {
+        const queue = getQueue(env)
+        await queue.enqueueItem('a')
+        await queue.enqueueItem('b')
+        await queue.enqueueItem('c')
+        await queue.insertItem('front', 0)
+
+        expect(await queue.clearExceptFirst()).toEqual(['front'])
+        expect(await queue.enqueueItem('d')).toEqual(['front', 'd'])
+    })
+
+    test('clearExceptFirst on an empty queue', async () => {
+        expect(await getQueue(env).clearExceptFirst()).toEqual([])
+    })
+
+    test('clearExceptFirst and concurrent changes never lose the first item', async () => {
+        const queue = getQueue(env)
+        for (const g of ['a', 'b', 'c']) await queue.enqueueItem(g)
+
+        await Promise.all([
+            queue.clearExceptFirst(),
+            queue.enqueueItem('d'),
+            queue.insertItem('c', 2),
+            queue.removeItem('b'),
+        ])
+        expect((await queue.getItems())[0]).toBe('a')
+    })
+
     test('state persists across stubs for the same name', async () => {
         await getQueue(env).enqueueItem('a')
         expect(await getQueue(env, 'default').getItems()).toEqual(['a'])

@@ -601,16 +601,9 @@ const queueRoutes = new Hono<Bindings>()
         const {keepFirst = false} = c.req.valid('query')
         const queue = getQueue(c.env)
 
-        let guids: string[] = []
-        if (keepFirst) {
-            const current = (await queue.getItems())[0]
-            await queue.clearQueue()
-            if (current) {
-                guids = await queue.enqueueItem(current)
-            }
-        } else {
-            guids = await queue.clearQueue()
-        }
+        // One DO call either way: the DO runs it without interleaving other
+        // queue changes, so the playing item can't be lost to a concurrent one.
+        const guids = keepFirst ? await queue.clearExceptFirst() : await queue.clearQueue()
 
         return c.json({items: await hydrateQueueItems(c.env.DB, guids)}, 200)
     })
