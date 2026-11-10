@@ -350,3 +350,16 @@ describe('recent list loading', () => {
         expect(store.recentItems).toEqual(items)
     })
 })
+
+describe('list getters', () => {
+    it('skip guids missing from the cache instead of yielding undefined', () => {
+        const store = useFeedItemStore()
+        const item = makeItem()
+        store.cache[item.guid] = item
+        store.recent = ['missing', item.guid]
+        store.bookmarked = [item.guid, 'missing']
+
+        expect(store.recentItems).toEqual([item])
+        expect(store.bookmarkedItems).toEqual([item])
+    })
+})

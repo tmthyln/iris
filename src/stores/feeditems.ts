@@ -58,11 +58,11 @@ export const useFeedItemStore = defineStore('feeditems', {
         bookmarkedItems: (state) =>
             state.bookmarked
                 .map(guid => state.cache[guid])
-                .filter(item => item !== null),
+                .filter(item => item !== undefined),
         recentItems: (state) =>
             state.recent
                 .map(guid => state.cache[guid])
-                .filter(item => item !== null),
+                .filter(item => item !== undefined),
     },
     actions: {
         async loadFullItem(guid: string): Promise<FeedItem | null> {
