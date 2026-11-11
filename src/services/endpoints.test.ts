@@ -399,6 +399,15 @@ describe('GET /api/feeditem', () => {
         expect((await read<Guided[]>(response)).map(i => i.guid)).toEqual(['item-2'])
     })
 
+    test('bookmarked=true applies limit and offset', async () => {
+        await seed()
+        await seedFeedItem('feed-a', {guid: 'item-4', bookmarked: true})
+        const {env} = testEnv()
+
+        expect((await read<Guided[]>(await app.request('/api/feeditem?bookmarked=true&limit=1', {}, env))).map(i => i.guid)).toEqual(['item-4'])
+        expect((await read<Guided[]>(await app.request('/api/feeditem?bookmarked=true&limit=1&offset=1', {}, env))).map(i => i.guid)).toEqual(['item-2'])
+    })
+
     test('applies limit and offset', async () => {
         await seed()
         const {env} = testEnv()

@@ -217,12 +217,23 @@ export async function getFeedItemDateRange(db: D1Database, feedGuid: string) {
     }
 }
 
-export async function getBookmarkedFeedItems(db: D1Database) {
+interface GetBookmarkedFeedItemsOptions {
+    limit?: number
+    offset?: number
+}
+
+/** Bookmarked items of every feed, finished or not, newest first. */
+export async function getBookmarkedFeedItems(db: D1Database, options: GetBookmarkedFeedItemsOptions = {}) {
+    const {limit = 20, offset = 0} = options
+
     const {results} = await db
         .prepare(`
             SELECT feed_item.* FROM feed_item
             WHERE feed_item.bookmarked = TRUE
+            ORDER BY feed_item.date DESC, feed_item.guid
+            LIMIT ? OFFSET ?
         `)
+        .bind(limit, offset)
         .all<RawFeedItem>()
 
     return results.map(item => new ServerFeedItem(item))

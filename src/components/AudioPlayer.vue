@@ -198,11 +198,14 @@ function cyclePlaybackRate() {
     rate.value = playbackRates[nextIndex]
 }
 
+// Heartbeat while playing; pausing, seeking and skipping save right away, so
+// only a closed tab or a crash loses up to this much listening.
+const PROGRESS_HEARTBEAT_MS = 15_000
 useIntervalFn(() => {
     if (playing.value && currentItem.value && duration.value > 0) {
         void saveProgress(currentItem.value, currentTime.value / duration.value)
     }
-}, 5000)
+}, PROGRESS_HEARTBEAT_MS)
 watch(ended, async () => {
     if (ended.value && currentItem.value) {
         const completedGuid = currentItem.value.guid

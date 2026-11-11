@@ -91,7 +91,7 @@ describe('bookmarks', () => {
         const items = [makeFullItem({bookmarked: true}), makeFullItem({bookmarked: true})]
         const {wrapper} = await mountPanel({bookmarked: ok(items)})
 
-        expect(vi.mocked(client.getFeedItems)).toHaveBeenCalledExactlyOnceWith({bookmarked: true})
+        expect(vi.mocked(client.getFeedItems)).toHaveBeenCalledExactlyOnceWith({bookmarked: true, limit: 20})
         const links = wrapper.findAll('a').filter(a => a.attributes('href')?.startsWith('/subscriptions/item/'))
         expect(links.map(a => a.text())).toEqual(items.map(i => i.title))
     })
@@ -111,6 +111,25 @@ describe('bookmarks', () => {
         await wrapper.findAll('button').find(b => b.text() === 'Retry')!.trigger('click')
         await flushPromises()
         expect(wrapper.text()).toContain(item.title)
+    })
+
+    it('offers more bookmarks only after a full page', async () => {
+        const firstPage = Array.from({length: 20}, () => makeFullItem({bookmarked: true}))
+        const {wrapper} = await mountPanel({bookmarked: ok(firstPage)})
+        const more = () => wrapper.findAll('button').find(b => b.text() === 'Show more bookmarks')
+
+        const last = makeFullItem({bookmarked: true})
+        stubClient('getFeedItems', ok([last]))
+        await more()!.trigger('click')
+        await flushPromises()
+        expect(vi.mocked(client.getFeedItems)).toHaveBeenLastCalledWith({bookmarked: true, limit: 20, offset: 20})
+        expect(wrapper.text()).toContain(last.title)
+        expect(more()).toBeUndefined()
+    })
+
+    it('has no "show more" for a short list', async () => {
+        const {wrapper} = await mountPanel({bookmarked: ok([makeFullItem({bookmarked: true})])})
+        expect(wrapper.text()).not.toContain('Show more bookmarks')
     })
 
     it('unbookmarks an item from the panel', async () => {

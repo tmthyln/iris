@@ -64,7 +64,7 @@ const downloadCount = computed(() => Object.keys(downloadStore.downloadedItems).
       Bookmarked Items
     </p>
 
-    <div v-if="feedItemStore.bookmarkedLoadState === 'loading'">
+    <div v-if="feedItemStore.bookmarkedLoadState === 'loading' && feedItemStore.bookmarkedItems.length === 0">
       Loading bookmarks...
     </div>
     <div v-else-if="feedItemStore.bookmarkedLoadState === 'error'">
@@ -73,7 +73,7 @@ const downloadCount = computed(() => Object.keys(downloadStore.downloadedItems).
         Retry
       </button>
     </div>
-    <div v-else-if="feedItemStore.bookmarkedItems.length === 0">
+    <div v-else-if="feedItemStore.bookmarkedLoadState === 'loaded' && feedItemStore.bookmarkedItems.length === 0">
       No bookmarks! Bookmark an item to access them quickly here.
     </div>
     <ul class="menu-list">
@@ -96,6 +96,14 @@ const downloadCount = computed(() => Object.keys(downloadStore.downloadedItems).
         </span>
       </li>
     </ul>
+    <button
+      v-if="feedItemStore.bookmarkedHasMore && feedItemStore.bookmarkedItems.length > 0"
+      class="button is-small is-ghost"
+      :class="{'is-loading': feedItemStore.bookmarkedLoadState === 'loading'}"
+      @click="feedItemStore.loadMoreBookmarkedItems()"
+    >
+      Show more bookmarks
+    </button>
   </aside>
 </template>
 

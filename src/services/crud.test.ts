@@ -514,6 +514,19 @@ describe('getBookmarkedFeedItems', () => {
         await seedFeedItem('feed-a')
         expect(await getBookmarkedFeedItems(db)).toEqual([])
     })
+
+    test('pages newest first, 20 at a time by default', async () => {
+        await seedFeed({guid: 'feed-a'})
+        for (let i = 0; i < 22; i++) {
+            await seedFeedItem('feed-a', {guid: `marked-${i}`, bookmarked: true, date: dateAt(i)})
+        }
+
+        const firstPage = await getBookmarkedFeedItems(db)
+        expect(firstPage).toHaveLength(20)
+        expect(guids(firstPage).slice(0, 2)).toEqual(['marked-21', 'marked-20'])
+
+        expect(guids(await getBookmarkedFeedItems(db, {limit: 3, offset: 20}))).toEqual(['marked-1', 'marked-0'])
+    })
 })
 
 describe('updateFeed', () => {

@@ -240,7 +240,7 @@ describe('bookmarked list loading', () => {
         const store = useFeedItemStore()
 
         await store.loadBookmarkedItems()
-        expect(vi.mocked(client.getFeedItems)).toHaveBeenCalledExactlyOnceWith({bookmarked: true})
+        expect(vi.mocked(client.getFeedItems)).toHaveBeenCalledExactlyOnceWith({bookmarked: true, limit: 20})
         expect(store.bookmarked).toEqual(items.map(i => i.guid))
         expect(store.bookmarkedItems).toEqual(items)
         expect(store.bookmarkedLoadState).toBe('loaded')
@@ -265,6 +265,47 @@ describe('bookmarked list loading', () => {
         await store.loadBookmarkedItems()   // guard lets an errored load retry
         expect(store.bookmarkedLoadState).toBe('loaded')
         expect(store.bookmarkedItems).toEqual(items)
+    })
+})
+
+describe('bookmarked list paging', () => {
+    it('a short first page means no more bookmarks', async () => {
+        stubClient('getFeedItems', ok([makeFullItem({bookmarked: true})]))
+        const store = useFeedItemStore()
+        await store.loadBookmarkedItems()
+        expect(store.bookmarkedHasMore).toBe(false)
+
+        await store.loadMoreBookmarkedItems()
+        expect(vi.mocked(client.getFeedItems)).toHaveBeenCalledOnce()
+    })
+
+    it('loadMoreBookmarkedItems appends the next page, skipping duplicates', async () => {
+        const firstPage = Array.from({length: 20}, () => makeFullItem({bookmarked: true}))
+        stubClient('getFeedItems', ok(firstPage))
+        const store = useFeedItemStore()
+        await store.loadBookmarkedItems()
+        expect(store.bookmarkedHasMore).toBe(true)
+
+        const nextPage = [firstPage[19], makeFullItem({bookmarked: true})]
+        stubClient('getFeedItems', ok(nextPage))
+        await store.loadMoreBookmarkedItems()
+        expect(vi.mocked(client.getFeedItems)).toHaveBeenLastCalledWith({bookmarked: true, limit: 20, offset: 20})
+        expect(store.bookmarked).toHaveLength(21)
+        expect(store.bookmarkedHasMore).toBe(false)
+        expect(store.bookmarkedLoadState).toBe('loaded')
+    })
+
+    it('a failed page keeps the list and allows a retry', async () => {
+        const firstPage = Array.from({length: 20}, () => makeFullItem({bookmarked: true}))
+        stubClient('getFeedItems', ok(firstPage))
+        const store = useFeedItemStore()
+        await store.loadBookmarkedItems()
+
+        stubClient('getFeedItems', err())
+        await store.loadMoreBookmarkedItems()
+        expect(store.bookmarked).toHaveLength(20)
+        expect(store.bookmarkedHasMore).toBe(true)
+        expect(store.bookmarkedLoadState).toBe('loaded')
     })
 })
 

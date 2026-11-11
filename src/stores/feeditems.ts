@@ -48,6 +48,7 @@ export const useFeedItemStore = defineStore('feeditems', {
 
         bookmarked: [] as string[],
         bookmarkedLoadState: 'unloaded' as LoadingState,
+        bookmarkedHasMore: true,
 
         recent: [] as string[],
         recentLoadState: 'unloaded' as LoadingState,
@@ -249,7 +250,7 @@ export const useFeedItemStore = defineStore('feeditems', {
 
             this.bookmarkedLoadState = 'loading'
 
-            const result = await client.getFeedItems({bookmarked: true})
+            const result = await client.getFeedItems({bookmarked: true, limit: 20})
             const data = result.ok ? result.data : null
             if (data) {
                 this.bookmarked.length = 0
@@ -260,10 +261,37 @@ export const useFeedItemStore = defineStore('feeditems', {
                     })
                 )
 
+                this.bookmarkedHasMore = data.length >= 20
                 this.bookmarkedLoadState = 'loaded'
             } else {
                 this.bookmarkedLoadState = 'error'
             }
+        },
+        async loadMoreBookmarkedItems() {
+            if (this.bookmarkedLoadState !== 'loaded' || !this.bookmarkedHasMore) {
+                return
+            }
+
+            this.bookmarkedLoadState = 'loading'
+
+            // Bookmarking or unbookmarking since the last page shifts the
+            // server's offsets by one: duplicates are skipped below, and an
+            // item skipped over shows on the next full load.
+            const result = await client.getFeedItems({bookmarked: true, limit: 20, offset: this.bookmarked.length})
+            const data = result.ok ? result.data : null
+
+            if (data) {
+                this.bookmarked.push(...data
+                    .filter(item => !this.bookmarked.includes(item.guid))
+                    .map(item => {
+                        this.cache[item.guid] = item
+                        return item.guid
+                    })
+                )
+                this.bookmarkedHasMore = data.length >= 20
+            }
+            // A failed page keeps the list as it was; the button stays to retry.
+            this.bookmarkedLoadState = 'loaded'
         },
         async loadRecentUnreadItems() {
             if (this.recentLoadState !== 'unloaded') {

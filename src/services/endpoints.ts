@@ -184,6 +184,12 @@ const feedRoutes = new Hono<Bindings>()
         const {channel, items} = parseRssText(content)
 
         // look up feed file by hash
+        // NOTE: when the content matches a file already stored, this records a
+        // source for the feed that file belongs to, and then a second source is
+        // recorded below for the feed resolved from channel.guid. Usually those
+        // are the same feed, making this one redundant; if they differ (two feeds
+        // once served identical content) the two sources point at different
+        // feeds. Left as is for now, deliberately.
         const existingFeedFile = await ServerFeedFile.getByContentHash(db, metadata.sha256Hash)
         if (existingFeedFile) {
             const existingFeed = await ServerFeed.get(db, existingFeedFile.referenced_feed) as ServerFeed
@@ -288,7 +294,7 @@ const feedItemRoutes = new Hono<Bindings>()
 
         let feedItems
         if (bookmarked) {
-            feedItems = await getBookmarkedFeedItems(db)
+            feedItems = await getBookmarkedFeedItems(db, {limit, offset})
         } else {
             feedItems = await getFeedItems(db, {limit, offset})
         }
