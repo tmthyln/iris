@@ -39,6 +39,9 @@ import {
     upsertPushSubscription,
     deletePushSubscription,
     countPushSubscriptions,
+    pushSubscriptionExists,
+    updateFeed,
+    updateFeedItem,
 } from './crud'
 import type { RefreshFeedTask, PlanFeedArchivesTask } from "./types";
 import {fetchRssFile, parseRssText, FETCH_USER_AGENT} from "./utils/files";
@@ -245,33 +248,7 @@ const feedRoutes = new Hono<Bindings>()
         }
         return update
     }), async (c) => {
-        const data = c.req.valid('json')
-        const feedGuid = c.req.param('guid')
-        const db = c.env.DB
-
-        const updateData: Record<string, unknown> = {}
-        if (data.categories !== undefined) {
-            updateData.categories = data.categories.join(',')
-        }
-        if (data.alias !== undefined) {
-            updateData.alias = data.alias
-        }
-        if (data.notify_enabled !== undefined) {
-            updateData.notify_enabled = data.notify_enabled ? 1 : 0
-        }
-
-        if (Object.keys(updateData).length === 0) {
-            return c.body(null, 200)
-        }
-
-        await db
-            .prepare(`
-                UPDATE feed
-                SET ${Object.keys(updateData).map(key => `${key} = ?`).join(', ')}
-                WHERE guid = ?`)
-            .bind(...Object.values(updateData), feedGuid)
-            .run()
-
+        await updateFeed(c.env.DB, c.req.param('guid'), c.req.valid('json'))
         return c.body(null, 200)
     })
     .get('/feed/:guid/feeditem', validator('query', (value): {include_finished?: boolean, sort_order?: 'asc' | 'desc', limit?: number, offset?: number} => {
@@ -505,27 +482,7 @@ const feedItemRoutes = new Hono<Bindings>()
         if ('bookmarked' in value) update.bookmarked = Boolean(value.bookmarked)
         return update
     }), async (c) => {
-        const data = c.req.valid('json')
-        const feedItemGuid = c.req.param('guid')
-        const db = c.env.DB
-
-        const updateData: Record<string, unknown> = {}
-        if (data.finished !== undefined) updateData.finished = data.finished
-        if (data.progress !== undefined) updateData.progress = data.progress
-        if (data.bookmarked !== undefined) updateData.bookmarked = data.bookmarked
-
-        if (Object.keys(updateData).length === 0) {
-            return c.body(null, 200)
-        }
-
-        await db
-            .prepare(`
-                UPDATE feed_item 
-                SET ${Object.keys(updateData).map(key => `${key} = ?`).join(', ')}
-                WHERE guid = ?`)
-            .bind(...Object.values(updateData), feedItemGuid)
-            .run()
-
+        await updateFeedItem(c.env.DB, c.req.param('guid'), c.req.valid('json'))
         return c.body(null, 200)
     })
 
@@ -752,11 +709,7 @@ const pushRoutes = new Hono<Bindings>()
         const existing = await countPushSubscriptions(c.env.DB)
         if (existing >= MAX_PUSH_SUBSCRIPTIONS) {
             // Check whether this is an update to an existing row before rejecting.
-            const isUpdate = await c.env.DB
-                .prepare('SELECT 1 FROM push_subscription WHERE endpoint = ?')
-                .bind(endpoint)
-                .first()
-            if (!isUpdate) {
+            if (!await pushSubscriptionExists(c.env.DB, endpoint)) {
                 return apiError(c, 429, 'subscription cap reached')
             }
         }

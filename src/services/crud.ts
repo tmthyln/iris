@@ -232,6 +232,45 @@ export async function getBookmarkedFeedItems(db: D1Database) {
  * CUD (modifying queries)
  *****************************************************************************/
 
+export interface UpdateFeedPatch {
+    categories?: string[]
+    alias?: string
+    notify_enabled?: boolean
+}
+
+/** Applies the user-editable fields of a feed; fields left undefined are untouched. */
+export async function updateFeed(db: D1Database, feedGuid: string, patch: UpdateFeedPatch) {
+    const columns: [string, unknown][] = []
+    if (patch.categories !== undefined) columns.push(['categories', patch.categories.join(',')])
+    if (patch.alias !== undefined) columns.push(['alias', patch.alias])
+    if (patch.notify_enabled !== undefined) columns.push(['notify_enabled', patch.notify_enabled ? 1 : 0])
+    await updateRow(db, 'feed', feedGuid, columns)
+}
+
+export interface UpdateFeedItemPatch {
+    finished?: boolean
+    progress?: number
+    bookmarked?: boolean
+}
+
+/** Applies the user-editable fields of a feed item; fields left undefined are untouched. */
+export async function updateFeedItem(db: D1Database, feedItemGuid: string, patch: UpdateFeedItemPatch) {
+    const columns: [string, unknown][] = []
+    if (patch.finished !== undefined) columns.push(['finished', patch.finished ? 1 : 0])
+    if (patch.progress !== undefined) columns.push(['progress', patch.progress])
+    if (patch.bookmarked !== undefined) columns.push(['bookmarked', patch.bookmarked ? 1 : 0])
+    await updateRow(db, 'feed_item', feedItemGuid, columns)
+}
+
+// Column names come only from the fixed lists above, never from request input.
+async function updateRow(db: D1Database, table: 'feed' | 'feed_item', guid: string, columns: [string, unknown][]) {
+    if (columns.length === 0) return
+    await db
+        .prepare(`UPDATE ${table} SET ${columns.map(([column]) => `${column} = ?`).join(', ')} WHERE guid = ?`)
+        .bind(...columns.map(([, value]) => value), guid)
+        .run()
+}
+
 export function createFeed(channelData: ChannelData, fetchResult: FetchSuccessFileResult, inputUrl: string) {
     return new ServerFeed({
         guid: channelData.guid,
@@ -460,6 +499,14 @@ export async function countPushSubscriptions(db: D1Database) {
         .prepare('SELECT COUNT(*) AS count FROM push_subscription')
         .first<{count: number}>()
     return row?.count ?? 0
+}
+
+export async function pushSubscriptionExists(db: D1Database, endpoint: string) {
+    const row = await db
+        .prepare('SELECT 1 FROM push_subscription WHERE endpoint = ?')
+        .bind(endpoint)
+        .first()
+    return row !== null
 }
 
 export async function getAllPushSubscriptions(db: D1Database) {

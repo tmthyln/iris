@@ -26,8 +26,11 @@ import {
     getUnreadNotificationCount,
     getUpdatableFeedSources,
     listTranscriptsForItem,
+    pushSubscriptionExists,
     searchFeedItems,
     touchPushSubscription,
+    updateFeed,
+    updateFeedItem,
     updateTranscriptStatus,
     upsertPushSubscription,
 } from './crud'
@@ -513,6 +516,52 @@ describe('getBookmarkedFeedItems', () => {
     })
 })
 
+describe('updateFeed', () => {
+    const row = (guid: string) => db.prepare('SELECT categories, alias, notify_enabled FROM feed WHERE guid = ?').bind(guid).first()
+
+    test('writes only the fields given, to the given feed', async () => {
+        await seedFeed({guid: 'feed-a', categories: 'old', alias: 'before', notify_enabled: false})
+        await seedFeed({guid: 'feed-b', categories: 'other', alias: 'keep', notify_enabled: false})
+
+        await updateFeed(db, 'feed-a', {categories: ['x', 'y'], notify_enabled: true})
+        expect(await row('feed-a')).toEqual({categories: 'x,y', alias: 'before', notify_enabled: 1})
+
+        await updateFeed(db, 'feed-a', {alias: ''})
+        expect(await row('feed-a')).toEqual({categories: 'x,y', alias: '', notify_enabled: 1})
+        expect(await row('feed-b')).toEqual({categories: 'other', alias: 'keep', notify_enabled: 0})
+    })
+
+    test('an empty patch changes nothing', async () => {
+        await seedFeed({guid: 'feed-a', categories: 'old', alias: 'before', notify_enabled: true})
+        await updateFeed(db, 'feed-a', {})
+        expect(await row('feed-a')).toEqual({categories: 'old', alias: 'before', notify_enabled: 1})
+    })
+})
+
+describe('updateFeedItem', () => {
+    const row = (guid: string) => db.prepare('SELECT finished, progress, bookmarked FROM feed_item WHERE guid = ?').bind(guid).first()
+
+    test('writes only the fields given, to the given item', async () => {
+        await seedFeed({guid: 'feed-a'})
+        await seedFeedItem('feed-a', {guid: 'item-a', finished: false, progress: 0, bookmarked: false})
+        await seedFeedItem('feed-a', {guid: 'item-b', finished: false, progress: 3, bookmarked: false})
+
+        await updateFeedItem(db, 'item-a', {progress: 12.5, bookmarked: true})
+        expect(await row('item-a')).toEqual({finished: 0, progress: 12.5, bookmarked: 1})
+
+        await updateFeedItem(db, 'item-a', {finished: true, bookmarked: false})
+        expect(await row('item-a')).toEqual({finished: 1, progress: 12.5, bookmarked: 0})
+        expect(await row('item-b')).toEqual({finished: 0, progress: 3, bookmarked: 0})
+    })
+
+    test('an empty patch changes nothing', async () => {
+        await seedFeed({guid: 'feed-a'})
+        await seedFeedItem('feed-a', {guid: 'item-a', finished: true, progress: 7, bookmarked: true})
+        await updateFeedItem(db, 'item-a', {})
+        expect(await row('item-a')).toEqual({finished: 1, progress: 7, bookmarked: 1})
+    })
+})
+
 /******************************************************************************
  * Entity factories
  *****************************************************************************/
@@ -947,6 +996,15 @@ describe('countPushSubscriptions', () => {
         await upsertPushSubscription(db, 'https://push/2', 'p2b', 'a2b')
 
         expect(await countPushSubscriptions(db)).toBe(2)
+    })
+})
+
+describe('pushSubscriptionExists', () => {
+    test('is true only for a stored endpoint', async () => {
+        expect(await pushSubscriptionExists(db, 'https://push/1')).toBe(false)
+        await upsertPushSubscription(db, 'https://push/1', 'p1', 'a1')
+        expect(await pushSubscriptionExists(db, 'https://push/1')).toBe(true)
+        expect(await pushSubscriptionExists(db, 'https://push/2')).toBe(false)
     })
 })
 
