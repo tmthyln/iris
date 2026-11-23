@@ -19,12 +19,17 @@ export interface FetchArchiveSnapshotTask {
     readonly snapshotUrl: string
 }
 
+export interface SummarizeFeedItemTask {
+    readonly type: 'summarize-feed-item'
+    readonly feedItemGuid: string
+}
+
 /** Ids of the request (or cron run) that caused a task; see utils/log.ts. */
 export interface Traced {
     readonly trace?: TaskTrace
 }
 
-export type FeedProcessingTask = (RefreshFeedTask | PlanFeedArchivesTask | FetchArchiveSnapshotTask) & Traced
+export type FeedProcessingTask = (RefreshFeedTask | PlanFeedArchivesTask | FetchArchiveSnapshotTask | SummarizeFeedItemTask) & Traced
 
 export interface FetchSuccessFileResult {
     readonly status: 'success'

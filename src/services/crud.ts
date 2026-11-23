@@ -152,6 +152,7 @@ export async function getFeedFilesForFeed(db: D1Database, feedGuid: string) {
 export interface FeedItemFingerprint {
     date: Date | null
     content_hash: string | null
+    summary_source_hash: string | null
 }
 
 /**
@@ -185,14 +186,15 @@ export async function getFeedItemFingerprintsByGuids(
         const chunk = guids.slice(i, i + CHUNK)
         const placeholders = chunk.map(() => '?').join(',')
         const {results} = await db
-            .prepare(`SELECT guid, date, content_hash FROM feed_item WHERE source_feed = ? AND guid IN (${placeholders})`)
+            .prepare(`SELECT guid, date, content_hash, summary_source_hash FROM feed_item WHERE source_feed = ? AND guid IN (${placeholders})`)
             .bind(feedGuid, ...chunk)
-            .all<{guid: string, date: string | null, content_hash: string | null}>()
+            .all<{guid: string, date: string | null, content_hash: string | null, summary_source_hash: string | null}>()
 
         for (const row of results) {
             fingerprints.set(row.guid, {
                 date: row.date ? new Date(row.date) : null,
                 content_hash: row.content_hash,
+                summary_source_hash: row.summary_source_hash,
             })
         }
     }
@@ -339,6 +341,17 @@ export async function createFeedItem(feed: ServerFeed, channelItemData: ChannelI
         progress: 0,
         content_hash,
     })
+}
+
+/**
+ * Store (or, with null, clear) an item's preview summary along with the hash
+ * of the description text it was made from.
+ */
+export async function setFeedItemSummary(db: D1Database, guid: string, summary: string | null, sourceHash: string | null) {
+    await db
+        .prepare('UPDATE feed_item SET summary = ?, summary_source_hash = ? WHERE guid = ?')
+        .bind(summary, sourceHash, guid)
+        .run()
 }
 
 /******************************************************************************

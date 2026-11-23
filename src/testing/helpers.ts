@@ -117,6 +117,7 @@ export function makeItem(overrides: Partial<FeedItemPreview> = {}): FeedItemPrev
         progress: 0,
         bookmarked: false,
         pinned_audio: false,
+        summary: null,
         ...overrides,
     }
 }

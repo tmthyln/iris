@@ -161,6 +161,9 @@ import {
     type RssItemSpec,
 } from './testing/fixtures'
 
+import {setFeedItemSummary} from './crud'
+import {summarySourceHash} from './summary'
+
 const db = env.DB
 
 beforeEach(() => resetStorage())
@@ -244,6 +247,49 @@ describe('refreshFeed', () => {
             {guid: 'ep-2', title: 'Episode 2', source_feed: 'feed-a', content_hash: expect.stringMatching(/^[0-9a-f]{64}$/) as string, date: dateAt(2)},
         ])
         expect(await notifications()).toEqual([])
+    })
+
+    test('queues a preview summary for items with a long description only', async () => {
+        await seedFeed({guid: 'feed-a'})
+        await seedFeedSource('feed-a', {feed_url: SOURCE_URL})
+        mockFetch({[SOURCE_URL]: rssResponse([
+            {guid: 'ep-long', title: 'Long', pubDate: pubDate(1), description: 'word '.repeat(200)},
+            {guid: 'ep-short', title: 'Short', pubDate: pubDate(2), description: 'brief'},
+        ])})
+        const {env: testEnvironment, queue} = testEnv()
+
+        await refreshFeed('feed-a', testEnvironment)
+
+        expect(queue.tasks()).toEqual([{type: 'summarize-feed-item', feedItemGuid: 'ep-long'}])
+    })
+
+    test('does not queue a summary again for an unchanged description, and clears one whose description changed', async () => {
+        await seedFeed({guid: 'feed-a'})
+        await seedFeedSource('feed-a', {feed_url: SOURCE_URL})
+        const long = 'word '.repeat(200)
+        await seedFeedItem('feed-a', {guid: 'ep-same', date: dateAt(1), description: long})
+        await seedFeedItem('feed-a', {guid: 'ep-shortened', date: dateAt(2), description: long})
+        await seedFeedItem('feed-a', {guid: 'ep-rewritten', date: dateAt(3), description: long})
+        const hash = await summarySourceHash(long)
+        for (const guid of ['ep-same', 'ep-shortened', 'ep-rewritten']) {
+            await setFeedItemSummary(db, guid, 'Old summary.', hash)
+        }
+        mockFetch({[SOURCE_URL]: rssResponse([
+            {guid: 'ep-same', title: 'Same', pubDate: pubDate(1), description: long},
+            {guid: 'ep-shortened', title: 'Shortened', pubDate: pubDate(2), description: 'brief'},
+            {guid: 'ep-rewritten', title: 'Rewritten', pubDate: pubDate(3), description: 'other '.repeat(200)},
+        ])})
+        const {env: testEnvironment, queue} = testEnv()
+
+        await refreshFeed('feed-a', testEnvironment)
+
+        expect(queue.tasks()).toEqual([{type: 'summarize-feed-item', feedItemGuid: 'ep-rewritten'}])
+        const {results} = await db.prepare('SELECT guid, summary FROM feed_item ORDER BY guid').all<{guid: string, summary: string | null}>()
+        expect(results).toEqual([
+            {guid: 'ep-rewritten', summary: null},
+            {guid: 'ep-same', summary: 'Old summary.'},
+            {guid: 'ep-shortened', summary: null},
+        ])
     })
 
     test('a refresh with identical content is a no-op', async () => {

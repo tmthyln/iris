@@ -14,7 +14,7 @@ const props = defineProps<{
 const feedStore = useFeedStore()
 const feed = computed(() => feedStore.getFeedById(props.feedItem.source_feed))
 const formattedPubDate = useTimeAgo(() => props.feedItem.date ?? 0)
-const descriptionHtml = computed(() => sanitizeHTML(props.feedItem.description))
+const descriptionHtml = computed(() => props.feedItem.summary ? '' : sanitizeHTML(props.feedItem.description))
 
 const {resolvedSrc, onImageError} = usePlaceholderImage(
     toRef(() => feed.value?.image_src),
@@ -47,7 +47,12 @@ const {resolvedSrc, onImageError} = usePlaceholderImage(
 
     <AudioControls :feed-item="feedItem" />
 
-    <div v-if="feedItem.description" class="content feed-content" v-html="descriptionHtml" />
+    <!-- A long description is replaced by its generated (plain-text) summary;
+         the item view still shows the description in full. -->
+    <div v-if="feedItem.summary" class="content">
+      <p>{{ feedItem.summary }}</p>
+    </div>
+    <div v-else-if="feedItem.description" class="content feed-content" v-html="descriptionHtml" />
   </div>
 </template>
 

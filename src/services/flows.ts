@@ -16,6 +16,8 @@ import {fetchArchiveList, waybackSnapshotUrl} from "./utils/wayback";
 import {fanOutPushWithContext, loadPushFanOutContext, type PushFanOutContext, type PushNotificationPayload} from "./utils/push";
 import type {FetchArchiveSnapshotTask} from "./types";
 import {log, traced} from "./utils/log";
+import {clearSummaries, planSummaries} from "./summary";
+import {dispatchTasks} from "./tasks";
 
 export type FeedItemClassification = 'new' | 'updated' | 'skip'
 
@@ -32,7 +34,7 @@ export type FeedItemClassification = 'new' | 'updated' | 'skip'
 export function classifyFeedItem(args: {
     contentHash: string
     itemDate: Date | null
-    existing: FeedItemFingerprint | undefined
+    existing: Pick<FeedItemFingerprint, 'date' | 'content_hash'> | undefined
     maxDate: Date | null
 }): FeedItemClassification {
     const {contentHash, itemDate, existing, maxDate} = args
@@ -109,6 +111,8 @@ export async function refreshFeed(feedGuid: string, env: Env, ctx?: ExecutionCon
             const entity = await createFeedItem(feed, item, content_hash)
             return entity.persistTo(db)
         }))
+
+        await summarizeIngested(env, items, fingerprints)
 
         // raise the cutoff so a later source in the same refresh doesn't
         // re-classify what we just persisted as 'new'
@@ -325,9 +329,31 @@ export async function fetchArchiveSnapshot(task: FetchArchiveSnapshotTask, env: 
     }, content)
     await feedFile.persistTo(db, cache_bucket)
 
+    // Items already stored are left as they are (ON CONFLICT DO NOTHING), so
+    // only the ones this snapshot adds can need a summary.
+    const known = await getFeedItemFingerprintsByGuids(db, task.feedGuid, parsed.items.map(i => i.guid))
+
     // persist feed items (duplicates handled by ON CONFLICT)
     await Promise.allSettled(parsed.items.map(async item => {
         const entity = await createFeedItem(feed, item)
         return entity.defer().persistTo(db)
     }))
+
+    await summarizeIngested(env, parsed.items.filter(item => !known.has(item.guid)), known)
+}
+
+/**
+ * Queue preview summaries for ingested items with a long description that
+ * has no summary yet (or a summary of an earlier description), and clear
+ * summaries whose description changed. `existing` is the items' state from
+ * before they were persisted.
+ */
+async function summarizeIngested(
+    env: Env,
+    items: ReadonlyArray<{guid: string, description: string | null}>,
+    existing: ReadonlyMap<string, FeedItemFingerprint>,
+) {
+    const {tasks, stale} = await planSummaries(items, existing)
+    await clearSummaries(env.DB, stale)
+    if (tasks.length > 0) await dispatchTasks(env, tasks)
 }

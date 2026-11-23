@@ -39,6 +39,15 @@ describe('ItemPreview', () => {
         expect(from.find('a').attributes('href')).toBe(`/subscriptions/${feed.guid}`)
     })
 
+    it('shows the summary as plain text in place of a long description', async () => {
+        const item = makeItem({description: '<p>A very long description</p>', summary: 'Short <b>summary</b>.'})
+        const {wrapper} = await mountApp(ItemPreview, {props: {feedItem: item}})
+
+        expect(wrapper.find('.feed-content').exists()).toBe(false)
+        expect(wrapper.text()).toContain('Short <b>summary</b>.')
+        expect(wrapper.text()).not.toContain('A very long description')
+    })
+
     it('sanitizes the description', async () => {
         const item = makeItem({description: '<p id="kept">Text</p><img src="x" onerror="alert(1)"><script>alert(2)</script>'})
         const {wrapper} = await mountApp(ItemPreview, {props: {feedItem: item}})

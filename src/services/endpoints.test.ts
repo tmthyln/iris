@@ -60,7 +60,7 @@ async function expectError(response: Response, status: number, error: string) {
 
 const PREVIEW_KEYS = [
     'bookmarked', 'date', 'description', 'duration', 'duration_unit', 'enclosure_length', 'enclosure_type',
-    'enclosure_url', 'episode', 'finished', 'guid', 'keywords', 'link', 'pinned_audio', 'progress', 'season', 'source_feed', 'title',
+    'enclosure_url', 'episode', 'finished', 'guid', 'keywords', 'link', 'pinned_audio', 'progress', 'season', 'source_feed', 'summary', 'title',
 ]
 
 const CLIENT_TRANSCRIPT_KEYS = [

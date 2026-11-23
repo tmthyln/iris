@@ -1,4 +1,5 @@
 import {fetchArchiveSnapshot, planFeedArchives, refreshFeed} from './flows'
+import {summarizeFeedItem} from './summary'
 import type {FeedProcessingTask} from './types'
 import {log, traced} from './utils/log'
 
@@ -24,6 +25,9 @@ export async function runTask(task: FeedProcessingTask, env: Env, ctx?: Executio
             return
         case 'fetch-archive-snapshot':
             await fetchArchiveSnapshot(task, env)
+            return
+        case 'summarize-feed-item':
+            await summarizeFeedItem(task.feedItemGuid, env)
             return
         default:
             // Enqueued by a different deployment; retrying would not help.

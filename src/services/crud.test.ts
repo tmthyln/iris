@@ -432,8 +432,8 @@ describe('getFeedItemFingerprintsByGuids', () => {
 
         const fingerprints = await getFeedItemFingerprintsByGuids(db, 'feed-a', ['known', 'bare', 'elsewhere', 'missing'])
         expect([...fingerprints.keys()].sort()).toEqual(['bare', 'known'])
-        expect(fingerprints.get('known')).toEqual({date: new Date(dateAt(3)), content_hash: 'hash-known'})
-        expect(fingerprints.get('bare')).toEqual({date: null, content_hash: null})
+        expect(fingerprints.get('known')).toEqual({date: new Date(dateAt(3)), content_hash: 'hash-known', summary_source_hash: null})
+        expect(fingerprints.get('bare')).toEqual({date: null, content_hash: null, summary_source_hash: null})
     })
 
     test("chunks the IN-list under D1's 100-parameter limit", async () => {
@@ -451,8 +451,8 @@ describe('getFeedItemFingerprintsByGuids', () => {
         const requested = Array.from({length: 250}, (_, i) => `bulk-${i}`)
         const fingerprints = await getFeedItemFingerprintsByGuids(db, 'feed-a', requested)
         expect(fingerprints.size).toBe(total)
-        expect(fingerprints.get('bulk-0')).toEqual({date: new Date(dateAt(0)), content_hash: 'hash-0'})
-        expect(fingerprints.get(`bulk-${total - 1}`)).toEqual({date: new Date(dateAt(total - 1)), content_hash: `hash-${total - 1}`})
+        expect(fingerprints.get('bulk-0')).toEqual({date: new Date(dateAt(0)), content_hash: 'hash-0', summary_source_hash: null})
+        expect(fingerprints.get(`bulk-${total - 1}`)).toEqual({date: new Date(dateAt(total - 1)), content_hash: `hash-${total - 1}`, summary_source_hash: null})
         expect(fingerprints.has(`bulk-${total}`)).toBe(false)
     })
 })
